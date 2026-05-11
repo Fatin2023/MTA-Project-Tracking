@@ -6,8 +6,6 @@ const path = require('path');
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-// Serve static files (index.html, app.js, styles.css)
 app.use(express.static(path.join(__dirname)));
 
 // ========================================
@@ -17,15 +15,13 @@ const pg = require('pg');
 pg.types.setTypeParser(1082, val => val);
 
 let poolConfig;
-
 if (process.env.DATABASE_URL) {
-    // On Render — use DATABASE_URL
     poolConfig = {
         connectionString: process.env.DATABASE_URL,
         ssl: { rejectUnauthorized: false }
     };
+    console.log('Connecting to Render PostgreSQL...');
 } else {
-    // On local PC
     poolConfig = {
         host: 'localhost',
         port: 5436,
@@ -34,6 +30,7 @@ if (process.env.DATABASE_URL) {
         password: 'Postgre@sql1',
         options: '-c timezone=Asia/Kuala_Lumpur'
     };
+    console.log('Connecting to local PostgreSQL...');
 }
 
 const pool = new Pool(poolConfig);
@@ -42,16 +39,9 @@ pool.on('error', (err) => {
     console.error('Unexpected DB error:', err);
 });
 
-// Test DB connection
-pool.query('SELECT NOW()', (err, result) => {
-    if (err) {
-        console.error('Database connection FAILED:', err.message);
-    } else {
-        console.log('Database connected successfully:', result.rows[0].now);
-    }
-});
-
+// ========================================
 // Helper
+// ========================================
 function toLocalISO(d) {
     if (!d) return null;
     const pad = n => String(n).padStart(2, '0');
@@ -150,11 +140,7 @@ app.get('/api/members', async (req, res) => {
             );
             const salaries = {};
             salResult.rows.forEach(s => { salaries[s.month] = parseFloat(s.amount); });
-            return {
-                id: r.id, name: r.name,
-                positionId: r.position_id, departmentId: r.department_id,
-                salaries
-            };
+            return { id: r.id, name: r.name, positionId: r.position_id, departmentId: r.department_id, salaries };
         }));
         res.json(members);
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -202,9 +188,8 @@ app.get('/api/users', async (req, res) => {
             }
             return {
                 id: r.id, username: r.username, password: r.password,
-                role: r.role, memberId: r.member_id,
-                memberName: r.member_name, positionId: r.position_id,
-                departmentId: r.department_id, salaries
+                role: r.role, memberId: r.member_id, memberName: r.member_name,
+                positionId: r.position_id, departmentId: r.department_id, salaries
             };
         }));
         res.json(users);
@@ -259,10 +244,8 @@ app.put('/api/salaries', async (req, res) => {
         if (!amount || amount <= 0) {
             await pool.query('DELETE FROM salaries WHERE member_id = $1 AND month = $2', [memberId, month]);
         } else {
-            await pool.query(`
-                INSERT INTO salaries (member_id, month, amount) VALUES ($1, $2, $3)
-                ON CONFLICT (member_id, month) DO UPDATE SET amount = $3
-            `, [memberId, month, amount]);
+            await pool.query(`INSERT INTO salaries (member_id, month, amount) VALUES ($1, $2, $3)
+                ON CONFLICT (member_id, month) DO UPDATE SET amount = $3`, [memberId, month, amount]);
         }
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -361,8 +344,7 @@ app.post('/api/assignments', async (req, res) => {
 app.delete('/api/assignments', async (req, res) => {
     const { projectId, memberId } = req.body;
     try {
-        await pool.query('DELETE FROM project_assignments WHERE project_id = $1 AND member_id = $2',
-            [projectId, memberId]);
+        await pool.query('DELETE FROM project_assignments WHERE project_id = $1 AND member_id = $2', [projectId, memberId]);
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -375,9 +357,7 @@ app.get('/api/attendance', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM attendance ORDER BY date DESC, id DESC');
         res.json(result.rows.map(r => ({
-            id: r.id,
-            memberId: r.member_id,
-            date: r.date || null,
+            id: r.id, memberId: r.member_id, date: r.date || null,
             clockIn: r.clock_in ? toLocalISO(new Date(r.clock_in)) : null,
             clockOut: r.clock_out ? toLocalISO(new Date(r.clock_out)) : null
         })));
@@ -412,7 +392,7 @@ app.delete('/api/attendance/:id', async (req, res) => {
 });
 
 // ========================================
-// Catch-all — serve index.html for any unmatched route
+// Catch-all — serve index.html for any route
 // ========================================
 
 app.get('*', (req, res) => {
@@ -420,11 +400,12 @@ app.get('*', (req, res) => {
 });
 
 // ========================================
-// Auto-create tables + start server
+// AUTO CREATE TABLES + START SERVER
 // ========================================
 
 async function initDB() {
     try {
+        console.log('Creating tables if needed...');
         await pool.query(`
             CREATE TABLE IF NOT EXISTS positions (
                 id SERIAL PRIMARY KEY,
