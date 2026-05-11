@@ -218,6 +218,20 @@ tbody tr:last-child td{border-bottom:none}
 .multi-select-count{background:var(--accent-soft);color:var(--accent);padding:1px 7px;border-radius:10px;
   font-size:.72rem;font-weight:600;font-family:var(--font-m)}
 
+/* ========== PAGINATION ========== */
+.pagination{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-top:1px solid var(--main-border);background:var(--main-surface);flex-wrap:wrap;gap:12px}
+.pagination-info{font-size:.82rem;color:var(--main-text3)}
+.pagination-controls{display:flex;align-items:center;gap:6px}
+.pagination-controls button{min-width:36px;height:36px;padding:0 10px;border:1px solid var(--main-border);background:var(--main-surface);color:var(--main-text);border-radius:var(--radius-xs);cursor:pointer;font-size:.82rem;font-family:var(--font-b);transition:all .15s}
+.pagination-controls button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.pagination-controls button:disabled{opacity:.35;cursor:default}
+.pagination-controls button.active{background:var(--accent);color:#0b0f19;border-color:var(--accent);font-weight:600}
+.pagination-size{display:flex;align-items:center;gap:6px}
+.pagination-size label{font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em}
+.pagination-size select{padding:6px 28px 6px 10px;border:1px solid var(--main-border);background:var(--main-surface);color:var(--main-text);border-radius:var(--radius-xs);font-size:.82rem;font-family:var(--font-b);cursor:pointer;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%23888' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 8px center}
+
 
 /* ========== RESPONSIVE ========== */
 @media(max-width:860px){

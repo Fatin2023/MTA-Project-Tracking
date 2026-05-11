@@ -456,38 +456,37 @@ app.get('/api/attendance', async (req, res) => {
             memberId: r.member_id,
             date: r.date || null,
             clockIn: r.clock_in ? toLocalISO(new Date(r.clock_in)) : null,
-            clockOut: r.clock_out ? toLocalISO(new Date(r.clock_out)) : null
+            clockOut: r.clock_out ? toLocalISO(new Date(r.clock_out)) : null,
+            projectId: r.project_id,
+            description: r.description || ''
         })));
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 
 app.post('/api/attendance', async (req, res) => {
-    const { memberId, date, clockIn, clockOut } = req.body;
+    const { memberId, date, clockIn, clockOut, projectId, description } = req.body;
     try {
         const result = await pool.query(
-            'INSERT INTO attendance (member_id, date, clock_in, clock_out) VALUES ($1, $2, $3, $4) RETURNING id',
-            [memberId, date, clockIn, clockOut]
+            'INSERT INTO attendance (member_id, date, clock_in, clock_out, project_id, description) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+            [memberId, date, clockIn, clockOut, projectId || null, description || '']
         );
         res.json({ id: result.rows[0].id });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
 app.put('/api/attendance/:id', async (req, res) => {
-    const { date, clockIn, clockOut } = req.body;
+    const { date, clockIn, clockOut, projectId, description } = req.body;
     try {
         await pool.query(
-            'UPDATE attendance SET date = $1, clock_in = $2, clock_out = $3 WHERE id = $4',
-            [date, clockIn, clockOut, req.params.id]
+            'UPDATE attendance SET date = $1, clock_in = $2, clock_out = $3, project_id = $4, description = $5 WHERE id = $6',
+            [date, clockIn, clockOut, projectId || null, description || '', req.params.id]
         );
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 
 app.delete('/api/attendance/:id', async (req, res) => {
     try {
@@ -543,14 +542,23 @@ async function initDB() {
                 member_id INT REFERENCES members(id) ON DELETE CASCADE,
                 UNIQUE(project_id, member_id)
             );
-            CREATE TABLE IF NOT EXISTS attendance (
-                id SERIAL PRIMARY KEY, member_id INT REFERENCES members(id) ON DELETE CASCADE,
-                date DATE NOT NULL, clock_in TIMESTAMP, clock_out TIMESTAMP,
+                        CREATE TABLE IF NOT EXISTS attendance (
+                id SERIAL PRIMARY KEY,
+                member_id INT REFERENCES members(id) ON DELETE CASCADE,
+                date DATE NOT NULL,
+                clock_in TIMESTAMP,
+                clock_out TIMESTAMP,
+                project_id INT REFERENCES projects(id) ON DELETE SET NULL,
+                description TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT NOW()
             );
             INSERT INTO users (username, password, role)
             VALUES ('admin', 'admin123', 'admin')
             ON CONFLICT (username) DO NOTHING;
+
+            ALTER TABLE attendance ADD COLUMN IF NOT EXISTS project_id INT REFERENCES projects(id) ON DELETE SET NULL;
+            ALTER TABLE attendance ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
+
         `);
         console.log('Database tables ready');
     } catch (err) {

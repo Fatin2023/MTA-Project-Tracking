@@ -108,6 +108,32 @@ function formatTime(isoStr) {
     return new Date(isoStr).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+// Cost calculation helpers
+function getHourlyRate(member) {
+    const salary = latestSalary(member);
+    if (!salary || salary <= 0) return null;
+    return salary / 176; // 8 hours × 22 working days
+}
+
+function getEntryCost(memberId, durationMs) {
+    const member = DB.members.find(m => m.id === memberId);
+    if (!member) return null;
+    const hourlyRate = getHourlyRate(member);
+    if (!hourlyRate) return null;
+    return hourlyRate * (durationMs / (1000 * 60 * 60));
+}
+
+function fmtCost(val) {
+    if (val == null) return '—';
+    return 'RM ' + Number(val).toFixed(2);
+}
+
+function fmtHourlyRate(member) {
+    const rate = getHourlyRate(member);
+    if (!rate) return '—';
+    return 'RM ' + Number(rate).toFixed(2) + '/hr';
+}
+
 
 /* ==========================================================
    SECTION 3: MODAL
@@ -720,26 +746,83 @@ function showEditUser_byMember(memberId) {
 
 function showAssignMember(pid) {
     const assignedIds = getProjectMembers(pid).map(m => m.id);
-    const available = DB.members.filter(m => !assignedIds.includes(m.id));
-    const memberOpts = available.map(m => {
+    const seen = new Set();
+    const available = DB.members.filter(m => {
+        if (assignedIds.includes(m.id)) return false;
+        if (seen.has(m.id)) return false;
+        seen.add(m.id);
+        return true;
+    });
+
+    if (available.length === 0) {
+        showModal(`<h3>Assign Members</h3>
+            <p style="color:var(--main-text3);margin-bottom:16px">All members already assigned. Add new users in User Management first.</p>
+            <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>`);
+        return;
+    }
+
+    const memberItems = available.map(m => {
         const sal = latestSalary(m);
         const salLabel = sal != null ? ' — ' + fmt(sal) : '';
-        return `<option value="${m.id}">${esc(m.name)} (${esc(getPositionName(m.positionId))}${salLabel})</option>`;
+        return `<label class="multi-select-item" style="padding:8px 10px">
+            <input type="checkbox" value="${m.id}" style="accent-color:var(--accent);width:15px;height:15px;cursor:pointer">
+            ${esc(m.name)} <span style="color:var(--main-text3);font-size:.82rem">(${esc(getPositionName(m.positionId))}${salLabel})</span>
+        </label>`;
     }).join('');
 
-    showModal(`<h3>Assign Member to Project</h3>
-    ${available.length > 0 ? `<div class="field"><label>Select Member</label><select class="input" id="assign-member-select"><option value="">-- Select --</option>${memberOpts}</select></div>
-      <p style="color:var(--main-text3);font-size:.82rem;margin-top:4px;margin-bottom:16px">Salary is set per user in User Management.</p>` : '<p style="color:var(--main-text3);margin-bottom:16px">All members assigned.</p>'}
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAssignMember(${pid})">Assign</button></div>`);
+    showModal(`<h3>Assign Members to Project</h3>
+        <div style="margin-bottom:8px;display:flex;gap:10px">
+            <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#assign-member-list input[type=checkbox]').forEach(c=>c.checked=true)">Select All</button>
+            <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#assign-member-list input[type=checkbox]').forEach(c=>c.checked=false)">Clear All</button>
+            <span id="assign-count" style="font-size:.82rem;color:var(--main-text3);display:flex;align-items:center;margin-left:auto">0 selected</span>
+        </div>
+        <div id="assign-member-list" style="max-height:300px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:6px">
+            ${memberItems}
+        </div>
+        <p class="auth-error" id="assign-error"></p>
+        <div class="btns" style="margin-top:16px">
+            <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
+            <button class="btn btn-accent" onclick="doAssignMember(${pid})">Assign Selected</button>
+        </div>`);
+
+    // Live counter
+    setTimeout(() => {
+        document.querySelectorAll('#assign-member-list input[type=checkbox]').forEach(cb => {
+            cb.addEventListener('change', updateAssignCount);
+        });
+    }, 50);
 }
 
+function updateAssignCount() {
+    const checked = document.querySelectorAll('#assign-member-list input[type=checkbox]:checked').length;
+    const el = document.getElementById('assign-count');
+    if (el) el.textContent = checked + ' selected';
+}
+
+
+
 async function doAssignMember(pid) {
-    const selectEl = document.getElementById('assign-member-select');
-    if (!selectEl || !selectEl.value) return;
-    const memberId = parseInt(selectEl.value);
-    await api('/assignments', { method: 'POST', body: { projectId: pid, memberId } });
+    const checkboxes = document.querySelectorAll('#assign-member-list input[type=checkbox]:checked');
+    const errEl = document.getElementById('assign-error');
+
+    if (checkboxes.length === 0) {
+        if (errEl) errEl.textContent = 'Please select at least one member';
+        return;
+    }
+
+    const memberIds = Array.from(checkboxes).map(c => parseInt(c.value));
+
+    for (const memberId of memberIds) {
+        const already = DB.projectAssignments.find(pa => pa.projectId === pid && pa.memberId === memberId);
+        if (!already) {
+            await api('/assignments', { method: 'POST', body: { projectId: pid, memberId } });
+        }
+    }
+
     hideModal(); await loadDB(); renderProjectDetail();
 }
+
+
 
 function confirmRemoveFromProject(pid, memberId) {
     const m = DB.members.find(x => x.id === memberId); if (!m) return;
@@ -792,17 +875,8 @@ function renderEmployeeProjects() {
 
 
 /* ==========================================================
-   SECTION 12: EMPLOYEE — CLOCK IN / OUT
+   SECTION 12: EMPLOYEE — TIME ENTRIES
    ========================================================== */
-
-let empClockInterval = null;
-let clockCurrentTimeInt = null;
-
-function todayStr() {
-    const d = new Date();
-    const pad = n => String(n).padStart(2, '0');
-    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-}
 
 function renderEmployeeAttendance() {
     if (!currentUser || !currentUser.memberId) return;
@@ -810,128 +884,203 @@ function renderEmployeeAttendance() {
     if (!member) return;
 
     const today = todayStr();
-    const todayRecord = DB.attendance.find(a => a.memberId === member.id && a.date === today);
-    const isClockedIn = todayRecord && todayRecord.clockIn && !todayRecord.clockOut;
+    const myEntries = DB.attendance.filter(a => a.memberId === member.id);
+    const todayEntries = myEntries.filter(a => a.date === today);
 
-    if (empClockInterval) { clearInterval(empClockInterval); empClockInterval = null; }
-    if (clockCurrentTimeInt) { clearInterval(clockCurrentTimeInt); clockCurrentTimeInt = null; }
-    if (isClockedIn) startClockTimer(todayRecord.clockIn);
+    const todayMs = todayEntries.reduce((s, r) => {
+        if (r.clockIn && r.clockOut) return s + (new Date(r.clockOut) - new Date(r.clockIn));
+        return s;
+    }, 0);
 
-    let historyRows = '';
-    const records = DB.attendance.filter(a => a.memberId === member.id).sort((a, b) => b.date.localeCompare(a.date));
-    if (records.length === 0) {
-        historyRows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No records</td></tr>';
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const weekStartStr = weekStart.toISOString().slice(0, 10);
+    const weekEntries = myEntries.filter(a => a.date >= weekStartStr);
+    const weekMs = weekEntries.reduce((s, r) => {
+        if (r.clockIn && r.clockOut) return s + (new Date(r.clockOut) - new Date(r.clockIn));
+        return s;
+    }, 0);
+
+    const todayCost = todayEntries.reduce((s, r) => {
+        if (r.clockIn && r.clockOut) { const c = getEntryCost(r.memberId, new Date(r.clockOut) - new Date(r.clockIn)); return s + (c || 0); }
+        return s;
+    }, 0);
+
+    const allEntries = [...myEntries].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+
+    let rows = '';
+    if (allEntries.length === 0) {
+        rows = '<tr><td colspan="7" style="text-align:center;color:var(--main-text3);padding:30px">No time entries yet</td></tr>';
     } else {
-        historyRows = records.map(r => {
+        rows = allEntries.map(r => {
+            const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
             const dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '—';
+            const startParts = r.clockIn ? r.clockIn.split('T') : [];
+            const endParts = r.clockOut ? r.clockOut.split('T') : [];
+            const startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '—';
+            const endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '—';
             return `<tr>
                 <td style="font-family:var(--font-m)">${r.date}</td>
-                <td style="font-family:var(--font-m)">${formatLocalTime(r.clockIn)}</td>
-                <td>${r.clockOut ? '<span style="font-family:var(--font-m)">' + formatLocalTime(r.clockOut) + '</span>' : '<span class="badge badge-clocked-in">Working</span>'}</td>
+                <td>${proj ? esc(proj.name) : '<span style="color:var(--main-text3)">—</span>'}</td>
+                <td style="font-family:var(--font-m)">${startTime}</td>
+                <td style="font-family:var(--font-m)">${endTime}</td>
                 <td style="text-align:right;font-family:var(--font-m)">${dur}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.description || '')}">${r.description ? esc(r.description) : '<span style="color:var(--main-text3)">—</span>'}</td>
+                <td><div class="actions-cell">
+                    <button class="btn-icon" onclick="showEditTimeEntry(${r.id})" title="Edit">&#9998;</button>
+                    <button class="btn-icon danger" onclick="confirmDeleteTimeEntry(${r.id})" title="Delete">&#10005;</button>
+                </div></td>
             </tr>`;
         }).join('');
     }
 
     document.getElementById('emp-attendance').innerHTML = `
-    <div class="app-header"><h2>Attendance</h2><div class="header-sub">Clock in and out</div></div>
-    <div class="app-body" style="max-width:640px">
-      <div class="clock-card">
-        <div class="clock-status" id="clock-status">${isClockedIn ? 'Clocked In' : 'Clocked Out'}</div>
-        <div class="clock-time" id="clock-current-time">${new Date().toLocaleTimeString('en')}</div>
-        <div class="clock-duration" id="clock-duration">${getDurationDisplay(todayRecord)}</div>
-        ${isClockedIn
-            ? '<button class="btn btn-danger btn-lg clock-btn" id="clock-action-btn" onclick="doClockOut()">Clock Out</button>'
-            : '<button class="btn btn-green btn-lg clock-btn" id="clock-action-btn" onclick="doClockIn()">Clock In</button>'}
+    <div class="app-header"><h2>My Attendance</h2><div class="header-sub">Log and track your work hours</div></div>
+    <div class="app-body" style="max-width:960px">
+      <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
+        <div class="stat-card"><div class="stat-label">Today Hours</div><div class="stat-value">${formatDuration(todayMs)}</div></div>
+        <div class="stat-card"><div class="stat-label">Today Cost</div><div class="stat-value">${fmtCost(todayCost)}</div></div>
+        <div class="stat-card"><div class="stat-label">This Week</div><div class="stat-value">${formatDuration(weekMs)}</div></div>
+        <div class="stat-card"><div class="stat-label">Total Entries</div><div class="stat-value">${myEntries.length}</div></div>
+        <div class="stat-card"><div class="stat-label">Hourly Rate</div><div class="stat-value" style="font-size:1.1rem">${fmtHourlyRate(member)}</div></div>
       </div>
-      <div class="section-head"><h2>Attendance History</h2></div>
-      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Clock In</th><th>Clock Out</th><th style="text-align:right">Duration</th></tr></thead><tbody>${historyRows}</tbody></table></div>
+      <div class="section-head"><h2>Time Entries</h2><button class="btn btn-accent" onclick="showAddTimeEntry()">+ Add Time Entry</button></div>
+      <div class="table-wrap"><table><thead><tr>
+        <th>Date</th><th>Project</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th>Description</th><th style="width:90px">Actions</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>
     </div>`;
-
-    clockCurrentTimeInt = setInterval(() => {
-        const el = document.getElementById('clock-current-time');
-        if (el) el.textContent = new Date().toLocaleTimeString('en');
-    }, 1000);
 }
 
-function formatLocalTime(str) {
-    if (!str) return '—';
-    // str is like "2026-05-08T07:30:00" — extract time part
-    const parts = str.split('T');
-    if (parts.length === 2) return parts[1].substring(0, 8);
-    return str;
-}
-
-function getDurationDisplay(record) {
-    if (!record || !record.clockIn) return '';
-    if (record.clockOut) return 'Duration: ' + formatDuration(new Date(record.clockOut) - new Date(record.clockIn));
-    return 'Working for ' + formatDuration(new Date() - new Date(record.clockIn)) + '...';
-}
-
-function startClockTimer(clockInStr) {
-    if (empClockInterval) clearInterval(empClockInterval);
-    empClockInterval = setInterval(() => {
-        const el = document.getElementById('clock-duration');
-        if (el) el.textContent = 'Working for ' + formatDuration(new Date() - new Date(clockInStr)) + '...';
-    }, 1000);
-}
-
-async function doClockIn() {
-    if (!currentUser || !currentUser.memberId) return;
-    await loadDB();
+function showAddTimeEntry() {
+    const projectOpts = DB.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
     const today = todayStr();
-    const existing = DB.attendance.find(a => a.memberId === currentUser.memberId && a.date === today && a.clockIn && !a.clockOut);
-    if (existing) { renderEmployeeAttendance(); return; }
+
+    showModal(`<h3>Add Time Entry</h3>
+        <div class="field"><label>Date</label>
+            <input class="input" id="entry-date" type="date" value="${today}"></div>
+        <div class="field"><label>Project</label>
+            <select class="input" id="entry-project"><option value="">-- Select Project --</option>${projectOpts}</select></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="field"><label>Start Time</label>
+                <input class="input" id="entry-start" type="time" value="09:00"></div>
+            <div class="field"><label>End Time</label>
+                <input class="input" id="entry-end" type="time" value="17:00"></div>
+        </div>
+        <div class="field"><label>Description</label>
+            <textarea class="input" id="entry-desc" rows="3" placeholder="What did you work on?" style="resize:vertical"></textarea></div>
+        <p class="auth-error" id="entry-error"></p>
+        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddTimeEntry()">Save</button></div>`);
+    setTimeout(() => document.getElementById('entry-project')?.focus(), 100);
+}
+
+async function doAddTimeEntry() {
+    const errEl = document.getElementById('entry-error');
+    const date = document.getElementById('entry-date').value;
+    const projectId = document.getElementById('entry-project').value;
+    const start = document.getElementById('entry-start').value;
+    const end = document.getElementById('entry-end').value;
+    const desc = document.getElementById('entry-desc').value.trim();
+
+    errEl.textContent = '';
+    if (!date) { errEl.textContent = 'Date is required'; return; }
+    if (!projectId) { errEl.textContent = 'Please select a project'; return; }
+    if (!start) { errEl.textContent = 'Start time is required'; return; }
+    if (!end) { errEl.textContent = 'End time is required'; return; }
+    if (start >= end) { errEl.textContent = 'End time must be after start time'; return; }
 
     try {
         await api('/attendance', {
             method: 'POST',
             body: {
                 memberId: currentUser.memberId,
-                date: today,
-                clockIn: localISO(new Date()),
-                clockOut: null
+                date: date,
+                clockIn: date + 'T' + start + ':00',
+                clockOut: date + 'T' + end + ':00',
+                projectId: parseInt(projectId),
+                description: desc
             }
         });
-        await loadDB();
-        renderEmployeeAttendance();
-    } catch (e) {
-        alert('Clock in failed: ' + e.message);
-    }
+        hideModal(); await loadDB(); renderEmployeeAttendance();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
-async function doClockOut() {
-    if (!currentUser || !currentUser.memberId) return;
-    await loadDB();
-    const today = todayStr();
-    const record = DB.attendance.find(a => a.memberId === currentUser.memberId && a.date === today && a.clockIn && !a.clockOut);
-    if (!record) { renderEmployeeAttendance(); return; }
+function showEditTimeEntry(entryId) {
+    const entry = DB.attendance.find(a => a.id === entryId); if (!entry) return;
+    const projectOpts = DB.projects.map(p => { const sel = entry.projectId === p.id ? 'selected' : ''; return `<option value="${p.id}" ${sel}>${esc(p.name)}</option>`; }).join('');
+    const startParts = entry.clockIn ? entry.clockIn.split('T') : [];
+    const endParts = entry.clockOut ? entry.clockOut.split('T') : [];
+    const startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
+    const endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
+
+    showModal(`<h3>Edit Time Entry</h3>
+        <div class="field"><label>Date</label>
+            <input class="input" id="entry-date" type="date" value="${entry.date}"></div>
+        <div class="field"><label>Project</label>
+            <select class="input" id="entry-project"><option value="">-- Select Project --</option>${projectOpts}</select></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="field"><label>Start Time</label>
+                <input class="input" id="entry-start" type="time" value="${startTime}"></div>
+            <div class="field"><label>End Time</label>
+                <input class="input" id="entry-end" type="time" value="${endTime}"></div>
+        </div>
+        <div class="field"><label>Description</label>
+            <textarea class="input" id="entry-desc" rows="3" style="resize:vertical">${esc(entry.description || '')}</textarea></div>
+        <p class="auth-error" id="entry-error"></p>
+        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditTimeEntry(${entryId})">Save</button></div>`);
+}
+
+async function doEditTimeEntry(entryId) {
+    const errEl = document.getElementById('entry-error');
+    const date = document.getElementById('entry-date').value;
+    const projectId = document.getElementById('entry-project').value;
+    const start = document.getElementById('entry-start').value;
+    const end = document.getElementById('entry-end').value;
+    const desc = document.getElementById('entry-desc').value.trim();
+
+    errEl.textContent = '';
+    if (!date) { errEl.textContent = 'Date is required'; return; }
+    if (!projectId) { errEl.textContent = 'Please select a project'; return; }
+    if (!start) { errEl.textContent = 'Start time is required'; return; }
+    if (!end) { errEl.textContent = 'End time is required'; return; }
+    if (start >= end) { errEl.textContent = 'End time must be after start time'; return; }
 
     try {
-        await api('/attendance/' + record.id, {
+        await api('/attendance/' + entryId, {
             method: 'PUT',
             body: {
-                date: record.date,
-                clockIn: record.clockIn,
-                clockOut: localISO(new Date())
+                date: date,
+                clockIn: date + 'T' + start + ':00',
+                clockOut: date + 'T' + end + ':00',
+                projectId: parseInt(projectId),
+                description: desc
             }
         });
-        if (empClockInterval) { clearInterval(empClockInterval); empClockInterval = null; }
-        await loadDB();
-        renderEmployeeAttendance();
-    } catch (e) {
-        alert('Clock out failed: ' + e.message);
-    }
+        hideModal(); await loadDB(); renderEmployeeAttendance();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
+function confirmDeleteTimeEntry(entryId) {
+    showModal(`<h3>Delete Time Entry</h3>
+        <p style="color:var(--main-text2);line-height:1.6">Delete this time entry?</p>
+        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteTimeEntry(${entryId})">Delete</button></div>`);
+}
+
+async function doDeleteTimeEntry(entryId) {
+    try {
+        await api('/attendance/' + entryId, { method: 'DELETE' });
+        hideModal(); await loadDB(); renderEmployeeAttendance();
+    } catch (e) { alert('Failed: ' + e.message); }
+}
 
 
 /* ==========================================================
-   SECTION 13: ADMIN — ATTENDANCE (multi-employee filter, edit, export, bulk delete)
+   SECTION 13: ADMIN — ATTENDANCE (filter, pagination, project cost)
    ========================================================== */
 
 let selectedEmployeeIds = [];
-let selectedAttendanceIds = new Set();
+let attCurrentPage = 1;
+let attPageSize = 10;
+let attFilteredData = [];
 
 function renderAdminAttendance() {
     const view = document.getElementById('admin-attendance');
@@ -939,35 +1088,47 @@ function renderAdminAttendance() {
     const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const defaultFrom = thirtyDaysAgo.toISOString().slice(0, 10);
     selectedEmployeeIds = [];
-    selectedAttendanceIds = new Set();
+    attCurrentPage = 1;
+    attPageSize = 10;
 
-    const empOpts = DB.members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+    const projOpts = DB.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
 
     view.innerHTML = `
-    <div class="app-header"><h2>Attendance</h2><div class="header-sub">View, edit and export attendance records</div></div>
+    <div class="app-header"><h2>Attendance</h2><div class="header-sub">View time entries, cost and export</div></div>
     <div class="app-body">
-      <div class="section-head">
-        <h2>Filter</h2>
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px 24px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+          <span style="font-size:1.15rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
           <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">From</label>
-            <input type="date" class="input" id="att-from" value="${defaultFrom}" style="width:150px;padding:8px 10px;font-size:.82rem">
+            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label>
+            <input type="date" class="input" id="att-from" value="${defaultFrom}" style="width:145px;padding:8px 10px;font-size:.82rem">
           </div>
           <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">To</label>
-            <input type="date" class="input" id="att-to" value="${today}" style="width:150px;padding:8px 10px;font-size:.82rem">
+            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label>
+            <input type="date" class="input" id="att-to" value="${today}" style="width:145px;padding:8px 10px;font-size:.82rem">
           </div>
           <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Employee</label>
+            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label>
             <div id="att-emp-multiselect"></div>
           </div>
-          <button class="btn btn-accent btn-sm" onclick="applyAttendanceFilter()">Search</button>
-          <button class="btn btn-ghost btn-sm" onclick="resetAttendanceFilter()">Reset</button>
-          <button class="btn btn-ghost btn-sm" onclick="exportAttendanceCSV()">Export CSV</button>
+          <div style="display:flex;align-items:center;gap:6px">
+            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Project</label>
+            <select class="input" id="att-project" style="width:160px;padding:8px 10px;font-size:.82rem">
+              <option value="">All Projects</option>
+              ${projOpts}
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;margin-left:auto">
+            <button class="btn btn-accent btn-sm" onclick="applyAttendanceFilter()">Search</button>
+            <button class="btn btn-ghost btn-sm" onclick="resetAttendanceFilter()">Reset</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportAttendanceCSV()">Export CSV</button>
+          </div>
         </div>
       </div>
-      <div id="att-bulk-bar"></div>
       <div id="att-stats-area"></div>
+      <div id="att-project-summary"></div>
       <div id="att-table-area"></div>
     </div>`;
 
@@ -976,73 +1137,11 @@ function renderAdminAttendance() {
     document.addEventListener('click', closeMultiSelectOutside);
 }
 
-function updateBulkBar() {
-    const bar = document.getElementById('att-bulk-bar');
-    if (!bar) return;
-    if (selectedAttendanceIds.size === 0) {
-        bar.innerHTML = '';
-        return;
-    }
-    bar.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;padding:12px 0;margin-bottom:4px;border-bottom:1px solid var(--main-border)">
-      <span style="font-size:.85rem;color:var(--main-accent);font-weight:600">${selectedAttendanceIds.size} selected</span>
-      <button class="btn btn-ghost btn-sm" onclick="clearAttendanceSelection()">Clear Selection</button>
-      <button class="btn btn-danger btn-sm" onclick="confirmBulkDeleteAttendance()">Delete Selected</button>
-    </div>`;
-}
-
-function toggleAttendanceCheck(id, el) {
-    if (el.checked) selectedAttendanceIds.add(id);
-    else selectedAttendanceIds.delete(id);
-    updateBulkBar();
-}
-
-function toggleSelectAllAttendance(el) {
-    const checks = document.querySelectorAll('.att-row-check');
-    checks.forEach(c => {
-        c.checked = el.checked;
-        const id = parseInt(c.dataset.id);
-        if (el.checked) selectedAttendanceIds.add(id);
-        else selectedAttendanceIds.delete(id);
-    });
-    updateBulkBar();
-}
-
-function clearAttendanceSelection() {
-    selectedAttendanceIds.clear();
-    document.querySelectorAll('.att-row-check').forEach(c => c.checked = false);
-    const selectAll = document.getElementById('att-select-all');
-    if (selectAll) selectAll.checked = false;
-    updateBulkBar();
-}
-
-function confirmBulkDeleteAttendance() {
-    if (selectedAttendanceIds.size === 0) return;
-    const count = selectedAttendanceIds.size;
-    showModal(`<h3>Delete Records</h3>
-    <p style="color:var(--main-text2);line-height:1.6">Delete <strong style="color:var(--main-text)">${count} attendance record(s)</strong>?<br>This action cannot be undone.</p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doBulkDeleteAttendance()">Delete ${count} Record(s)</button></div>`);
-}
-
-
-async function doBulkDeleteAttendance() {
-    const ids = Array.from(selectedAttendanceIds);
-    hideModal();
-    for (const id of ids) {
-        await api('/attendance/' + id, { method: 'DELETE' });
-    }
-    selectedAttendanceIds.clear();
-    await loadDB();
-    applyAttendanceFilter();
-}
-
-
 function buildEmployeeMultiSelect() {
     const container = document.getElementById('att-emp-multiselect');
     const items = DB.members.map(m =>
         `<label class="multi-select-item"><input type="checkbox" value="${m.id}" onchange="onEmpCheckChange()"> ${esc(m.name)}</label>`
     ).join('');
-
     container.innerHTML = `
     <div class="multi-select" id="emp-multiselect">
       <div class="multi-select-trigger" onclick="toggleMultiSelect()">
@@ -1071,6 +1170,7 @@ function onEmpCheckChange() {
 
 function updateEmpMsLabel() {
     const label = document.getElementById('emp-ms-label');
+    if (!label) return;
     if (selectedEmployeeIds.length === 0) { label.innerHTML = 'All Employees'; }
     else if (selectedEmployeeIds.length <= 3) {
         const names = selectedEmployeeIds.map(id => { const m = DB.members.find(x => x.id === id); return m ? m.name : '?'; }).join(', ');
@@ -1087,169 +1187,291 @@ function resetAttendanceFilter() {
     const today = todayStr(); const d = new Date(); d.setDate(d.getDate() - 30);
     document.getElementById('att-from').value = d.toISOString().slice(0, 10);
     document.getElementById('att-to').value = today;
-    clearAllEmp();
-    clearAttendanceSelection();
-    applyAttendanceFilter();
+    document.getElementById('att-project').value = '';
+    clearAllEmp(); attCurrentPage = 1; applyAttendanceFilter();
 }
 
 function applyAttendanceFilter() {
     const fromDate = document.getElementById('att-from').value;
     const toDate = document.getElementById('att-to').value;
+    const projId = document.getElementById('att-project').value;
     if (!fromDate || !toDate) return;
 
     let filtered = DB.attendance.filter(a => a.date >= fromDate && a.date <= toDate);
     if (selectedEmployeeIds.length > 0) filtered = filtered.filter(a => selectedEmployeeIds.includes(a.memberId));
-    filtered = filtered.sort((a, b) => b.date.localeCompare(a.date) || a.memberId - b.memberId);
+    if (projId) filtered = filtered.filter(a => a.projectId === parseInt(projId));
+    filtered = filtered.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
 
+    attFilteredData = filtered;
+
+    // Stats
     const totalRecords = filtered.length;
     const uniqueDays = [...new Set(filtered.map(a => a.date))].length;
     const uniqueEmployees = [...new Set(filtered.map(a => a.memberId))].length;
-    const totalHours = filtered.reduce((s, r) => { if (r.clockIn && r.clockOut) return s + (new Date(r.clockOut) - new Date(r.clockIn)); return s; }, 0);
-
-    let empBreakdown = '';
-    if (selectedEmployeeIds.length > 0) {
-        const empStats = selectedEmployeeIds.map(id => {
-            const member = DB.members.find(m => m.id === id);
-            const mName = member ? member.name : 'Unknown';
-            const empRecords = filtered.filter(a => a.memberId === id);
-            const workDays = [...new Set(empRecords.filter(a => a.clockIn && a.clockOut).map(a => a.date))].length;
-            const empHours = empRecords.reduce((s, r) => { if (r.clockIn && r.clockOut) return s + (new Date(r.clockOut) - new Date(r.clockIn)); return s; }, 0);
-            return { name: mName, records: empRecords.length, workDays, totalHours: empHours, avgHrs: workDays > 0 ? formatDuration(empHours / workDays) : '—' };
-        });
-        empBreakdown = `<div class="section-head" style="margin-top:8px"><h2>Employee Breakdown</h2></div>
-      <div class="table-wrap" style="margin-bottom:24px"><table>
-        <thead><tr><th>Employee</th><th style="text-align:right">Records</th><th style="text-align:right">Work Days</th><th style="text-align:right">Total Hours</th><th style="text-align:right">Avg/Day</th></tr></thead>
-        <tbody>${empStats.map(e => `<tr><td>${esc(e.name)}</td><td style="text-align:right;font-family:var(--font-m)">${e.records}</td><td style="text-align:right;font-family:var(--font-m)">${e.workDays}</td><td style="text-align:right;font-family:var(--font-m)">${formatDuration(e.totalHours)}</td><td style="text-align:right;font-family:var(--font-m)">${e.avgHrs}</td></tr>`).join('')}</tbody>
-      </table></div>`;
-    }
+    const totalMs = filtered.reduce((s, r) => { if (r.clockIn && r.clockOut) return s + (new Date(r.clockOut) - new Date(r.clockIn)); return s; }, 0);
+    const totalCost = filtered.reduce((s, r) => {
+        if (r.clockIn && r.clockOut) { const c = getEntryCost(r.memberId, new Date(r.clockOut) - new Date(r.clockIn)); return s + (c || 0); }
+        return s;
+    }, 0);
 
     document.getElementById('att-stats-area').innerHTML = `
     <div class="stats-grid" style="margin-top:16px">
       <div class="stat-card"><div class="stat-label">Records</div><div class="stat-value">${totalRecords}</div></div>
       <div class="stat-card"><div class="stat-label">Days</div><div class="stat-value">${uniqueDays}</div></div>
       <div class="stat-card"><div class="stat-label">Employees</div><div class="stat-value">${uniqueEmployees}</div></div>
-      <div class="stat-card"><div class="stat-label">Total Hours</div><div class="stat-value">${formatDuration(totalHours)}</div></div>
-    </div>${empBreakdown}`;
+      <div class="stat-card"><div class="stat-label">Total Hours</div><div class="stat-value">${formatDuration(totalMs)}</div></div>
+      <div class="stat-card"><div class="stat-label">Total Cost</div><div class="stat-value">${fmtCost(totalCost)}</div></div>
+    </div>`;
 
-    let rows = '';
-    if (filtered.length === 0) {
-        rows = '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No records found</td></tr>';
-    } else {
-        rows = filtered.map(r => {
-            const member = DB.members.find(m => m.id === r.memberId);
-            const mName = member ? member.name : 'Unknown';
-            const dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '—';
-            const status = r.clockOut ? '<span class="badge badge-clocked-out">Done</span>' : '<span class="badge badge-clocked-in">Working</span>';
-            const checked = selectedAttendanceIds.has(r.id) ? 'checked' : '';
+    // Project summary
+    const projectGroups = {};
+    filtered.forEach(r => {
+        if (!r.clockIn || !r.clockOut) return;
+        const pid = r.projectId || 0;
+        if (!projectGroups[pid]) projectGroups[pid] = { ms: 0, cost: 0, entries: 0 };
+        const ms = new Date(r.clockOut) - new Date(r.clockIn);
+        projectGroups[pid].ms += ms;
+        projectGroups[pid].cost += (getEntryCost(r.memberId, ms) || 0);
+        projectGroups[pid].entries++;
+    });
+
+    const hasProjects = Object.keys(projectGroups).length > 0;
+    let projectSummaryRows = '';
+    if (hasProjects) {
+        projectSummaryRows = Object.entries(projectGroups).map(([pid, data]) => {
+            const proj = pid === '0' ? null : DB.projects.find(p => p.id === parseInt(pid));
             return `<tr>
-        <td style="width:40px;text-align:center"><input type="checkbox" class="att-row-check" data-id="${r.id}" ${checked} onchange="toggleAttendanceCheck(${r.id},this)"></td>
-        <td style="font-family:var(--font-m)">${r.date}</td><td>${esc(mName)}</td>
-        <td style="font-family:var(--font-m)">${formatTime(r.clockIn)}</td>
-        <td>${r.clockOut ? '<span style="font-family:var(--font-m)">' + formatTime(r.clockOut) + '</span>' : '—'}</td>
-        <td>${status}</td><td style="text-align:right;font-family:var(--font-m)">${dur}</td>
-        <td><div class="actions-cell">
-          <button class="btn-icon" onclick="showEditAttendance(${r.id})" title="Edit">&#9998;</button>
-          <button class="btn-icon danger" onclick="confirmDeleteAttendance(${r.id})" title="Delete">&#10005;</button>
-        </div></td></tr>`;
+                <td>${proj ? esc(proj.name) : '<span style="color:var(--main-text3)">Unassigned</span>'}</td>
+                <td style="text-align:right;font-family:var(--font-m)">${data.entries}</td>
+                <td style="text-align:right;font-family:var(--font-m)">${formatDuration(data.ms)}</td>
+                <td style="text-align:right;font-family:var(--font-m)">${fmtCost(data.cost)}</td>
+            </tr>`;
         }).join('');
     }
 
-    const rangeLabel = selectedEmployeeIds.length > 0 ? selectedEmployeeIds.length + ' employee(s) — ' + fromDate + ' to ' + toDate : 'All employees — ' + fromDate + ' to ' + toDate;
-    document.getElementById('att-table-area').innerHTML = `
-    <div class="section-head"><h2>Detail Records</h2><span style="font-size:.82rem;color:var(--main-text3)">${rangeLabel}</span></div>
-    <div class="table-wrap"><table><thead><tr>
-      <th style="width:40px;text-align:center"><input type="checkbox" id="att-select-all" onchange="toggleSelectAllAttendance(this)"></th>
-      <th>Date</th><th>Employee</th><th>Clock In</th><th>Clock Out</th><th>Status</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th>
-    </tr></thead><tbody>${rows}</tbody></table></div>`;
+    document.getElementById('att-project-summary').innerHTML = hasProjects ? `
+    <div class="section-head" style="margin-top:8px"><h2>Project Summary</h2></div>
+    <div class="table-wrap" style="margin-bottom:24px"><table>
+        <thead><tr><th>Project</th><th style="text-align:right">Entries</th><th style="text-align:right">Total Hours</th><th style="text-align:right">Total Cost</th></tr></thead>
+        <tbody>${projectSummaryRows}</tbody>
+    </table></div>` : '';
 
-    // Restore select-all state
-    const selectAll = document.getElementById('att-select-all');
-    if (selectAll && filtered.length > 0) {
-        const allChecked = filtered.every(r => selectedAttendanceIds.has(r.id));
-        selectAll.checked = allChecked;
+    // Clamp page
+    const totalPages = Math.ceil(filtered.length / attPageSize) || 1;
+    if (attCurrentPage > totalPages) attCurrentPage = totalPages;
+    if (attCurrentPage < 1) attCurrentPage = 1;
+
+    renderAttendancePage();
+}
+
+function renderAttendancePage() {
+    const filtered = attFilteredData;
+    const totalPages = Math.ceil(filtered.length / attPageSize) || 1;
+    const startIdx = (attCurrentPage - 1) * attPageSize;
+    const endIdx = startIdx + attPageSize;
+    const pageData = filtered.slice(startIdx, endIdx);
+
+    // Table rows
+    let rows = '';
+    if (filtered.length === 0) {
+        rows = '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No records found</td></tr>';
+    } else {
+        rows = pageData.map(r => {
+            const member = DB.members.find(m => m.id === r.memberId);
+            const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
+            const startParts = r.clockIn ? r.clockIn.split('T') : [];
+            const endParts = r.clockOut ? r.clockOut.split('T') : [];
+            const startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '—';
+            const endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '—';
+            const durMs = r.clockIn && r.clockOut ? new Date(r.clockOut) - new Date(r.clockIn) : 0;
+            const dur = durMs > 0 ? formatDuration(durMs) : '—';
+            const cost = durMs > 0 ? fmtCost(getEntryCost(r.memberId, durMs)) : '—';
+            return `<tr>
+                <td style="font-family:var(--font-m)">${r.date}</td>
+                <td>${member ? esc(member.name) : 'Unknown'}</td>
+                <td>${proj ? esc(proj.name) : '<span style="color:var(--main-text3)">—</span>'}</td>
+                <td style="font-family:var(--font-m)">${startTime}</td>
+                <td style="font-family:var(--font-m)">${endTime}</td>
+                <td style="text-align:right;font-family:var(--font-m)">${dur}</td>
+                <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.description || '')}">${r.description ? esc(r.description) : '<span style="color:var(--main-text3)">—</span>'}</td>
+                <td style="text-align:right"><span class="salary-val">${cost}</span></td>
+                <td><div class="actions-cell">
+                    <button class="btn-icon" onclick="showEditAttendance(${r.id})" title="Edit">&#9998;</button>
+                    <button class="btn-icon danger" onclick="confirmDeleteAttendance(${r.id})" title="Delete">&#10005;</button>
+                </div></td>
+            </tr>`;
+        }).join('');
     }
-    updateBulkBar();
+
+    // Pagination controls
+    let paginationHtml = '';
+    if (filtered.length > 0) {
+        const showFrom = startIdx + 1;
+        const showTo = Math.min(endIdx, filtered.length);
+
+        // Page numbers
+        let pageButtons = '';
+        const maxVisible = 5;
+        let startPage = Math.max(1, attCurrentPage - Math.floor(maxVisible / 2));
+        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+        if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
+
+        pageButtons += `<button onclick="goAttPage(1)" ${attCurrentPage === 1 ? 'disabled' : ''}>&laquo;</button>`;
+        pageButtons += `<button onclick="goAttPage(${attCurrentPage - 1})" ${attCurrentPage === 1 ? 'disabled' : ''}>&lsaquo;</button>`;
+        for (let p = startPage; p <= endPage; p++) {
+            pageButtons += `<button onclick="goAttPage(${p})" class="${p === attCurrentPage ? 'active' : ''}">${p}</button>`;
+        }
+        pageButtons += `<button onclick="goAttPage(${attCurrentPage + 1})" ${attCurrentPage === totalPages ? 'disabled' : ''}>&rsaquo;</button>`;
+        pageButtons += `<button onclick="goAttPage(${totalPages})" ${attCurrentPage === totalPages ? 'disabled' : ''}>&raquo;</button>`;
+
+        paginationHtml = `
+        <div class="pagination">
+          <div class="pagination-info">Showing ${showFrom} to ${showTo} of ${filtered.length} entries</div>
+          <div style="display:flex;align-items:center;gap:20px">
+            <div class="pagination-size">
+              <label>Show</label>
+              <select onchange="changeAttPageSize(this.value)">
+                <option value="5" ${attPageSize === 5 ? 'selected' : ''}>5</option>
+                <option value="10" ${attPageSize === 10 ? 'selected' : ''}>10</option>
+                <option value="25" ${attPageSize === 25 ? 'selected' : ''}>25</option>
+                <option value="50" ${attPageSize === 50 ? 'selected' : ''}>50</option>
+                <option value="100" ${attPageSize === 100 ? 'selected' : ''}>100</option>
+              </select>
+            </div>
+            <div class="pagination-controls">${pageButtons}</div>
+          </div>
+        </div>`;
+    }
+
+    const projId = document.getElementById('att-project').value;
+    const fromDate = document.getElementById('att-from').value;
+    const toDate = document.getElementById('att-to').value;
+    const rangeLabel = (selectedEmployeeIds.length > 0 ? selectedEmployeeIds.length + ' employee(s)' : 'All employees') +
+        (projId ? ', ' + (DB.projects.find(p => p.id === parseInt(projId))?.name || '') : '') +
+        ' — ' + fromDate + ' to ' + toDate;
+
+    const tableWrap = document.getElementById('att-table-area');
+    tableWrap.innerHTML = `
+    <div class="section-head"><h2>Detail Records</h2><span style="font-size:.82rem;color:var(--main-text3)">${rangeLabel}</span></div>
+    <div class="table-wrap">
+      <table><thead><tr>
+        <th>Date</th><th>Employee</th><th>Project</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th>Description</th><th style="text-align:right">Cost</th><th style="width:90px">Actions</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+      ${paginationHtml}
+    </div>`;
+}
+
+function goAttPage(page) {
+    const totalPages = Math.ceil(attFilteredData.length / attPageSize) || 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    attCurrentPage = page;
+    renderAttendancePage();
+}
+
+function changeAttPageSize(size) {
+    attPageSize = parseInt(size);
+    attCurrentPage = 1;
+    renderAttendancePage();
 }
 
 function showEditAttendance(recordId) {
     const record = DB.attendance.find(a => a.id === recordId); if (!record) return;
     const member = DB.members.find(m => m.id === record.memberId);
     const mName = member ? member.name : 'Unknown';
-    const clockInLocal = record.clockIn ? isoToLocalInput(record.clockIn) : '';
-    const clockOutLocal = record.clockOut ? isoToLocalInput(record.clockOut) : '';
+    const projectOpts = DB.projects.map(p => { const sel = record.projectId === p.id ? 'selected' : ''; return `<option value="${p.id}" ${sel}>${esc(p.name)}</option>`; }).join('');
+    const startParts = record.clockIn ? record.clockIn.split('T') : [];
+    const endParts = record.clockOut ? record.clockOut.split('T') : [];
+    const startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
+    const endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
 
-    showModal(`<h3>Edit Attendance — ${esc(mName)}</h3>
-    <div class="field"><label>Date</label><input class="input" id="edit-att-date" type="date" value="${record.date}"></div>
-    <div class="field"><label>Clock In</label><input class="input" id="edit-att-in" type="datetime-local" value="${clockInLocal}" style="font-family:var(--font-m)"></div>
-    <div class="field"><label>Clock Out (blank = still working)</label><input class="input" id="edit-att-out" type="datetime-local" value="${clockOutLocal}" style="font-family:var(--font-m)"></div>
-    <p class="auth-error" id="edit-att-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditAttendance(${recordId})">Save</button></div>`);
+    showModal(`<h3>Edit Entry — ${esc(mName)}</h3>
+        <div class="field"><label>Date</label>
+            <input class="input" id="edit-att-date" type="date" value="${record.date}"></div>
+        <div class="field"><label>Project</label>
+            <select class="input" id="edit-att-project"><option value="">-- Select Project --</option>${projectOpts}</select></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="field"><label>Start Time</label>
+                <input class="input" id="edit-att-start" type="time" value="${startTime}"></div>
+            <div class="field"><label>End Time</label>
+                <input class="input" id="edit-att-end" type="time" value="${endTime}"></div>
+        </div>
+        <div class="field"><label>Description</label>
+            <textarea class="input" id="edit-att-desc" rows="3" style="resize:vertical">${esc(record.description || '')}</textarea></div>
+        <p class="auth-error" id="edit-att-error"></p>
+        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditAttendance(${recordId})">Save</button></div>`);
 }
 
 async function doEditAttendance(recordId) {
-    const record = DB.attendance.find(a => a.id === recordId); if (!record) return;
     const errEl = document.getElementById('edit-att-error');
-    const newDate = document.getElementById('edit-att-date').value;
-    const newIn = document.getElementById('edit-att-in').value;
-    const newOut = document.getElementById('edit-att-out').value;
+    const date = document.getElementById('edit-att-date').value;
+    const projectId = document.getElementById('edit-att-project').value;
+    const start = document.getElementById('edit-att-start').value;
+    const end = document.getElementById('edit-att-end').value;
+    const desc = document.getElementById('edit-att-desc').value.trim();
     errEl.textContent = '';
-    if (!newDate) { errEl.textContent = 'Date is required'; return; }
-    if (!newIn) { errEl.textContent = 'Clock in time is required'; return; }
-    const clockInISO = new Date(newIn).toISOString();
-    let clockOutISO = null;
-    if (newOut) {
-        if (new Date(newOut) <= new Date(newIn)) { errEl.textContent = 'Clock out must be after clock in'; return; }
-        clockOutISO = new Date(newOut).toISOString();
-    }
-    await api('/attendance/' + recordId, { method: 'PUT', body: { date: newDate, clockIn: clockInISO, clockOut: clockOutISO } });
-    hideModal(); await loadDB(); applyAttendanceFilter();
+    if (!date) { errEl.textContent = 'Date is required'; return; }
+    if (!start) { errEl.textContent = 'Start time is required'; return; }
+    if (!end) { errEl.textContent = 'End time is required'; return; }
+    if (start >= end) { errEl.textContent = 'End time must be after start time'; return; }
+
+    try {
+        await api('/attendance/' + recordId, {
+            method: 'PUT',
+            body: { date, clockIn: date + 'T' + start + ':00', clockOut: date + 'T' + end + ':00', projectId: projectId ? parseInt(projectId) : null, description: desc }
+        });
+        hideModal(); await loadDB(); applyAttendanceFilter();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
 function confirmDeleteAttendance(recordId) {
     const record = DB.attendance.find(a => a.id === recordId); if (!record) return;
     const member = DB.members.find(m => m.id === record.memberId);
     showModal(`<h3>Delete Record</h3>
-    <p style="color:var(--main-text2);line-height:1.6">Delete attendance for <strong style="color:var(--main-text)">${member ? esc(member.name) : 'Unknown'}</strong> on <strong style="color:var(--main-text)">${record.date}</strong>?</p>
+    <p style="color:var(--main-text2);line-height:1.6">Delete entry for <strong style="color:var(--main-text)">${member ? esc(member.name) : 'Unknown'}</strong> on <strong style="color:var(--main-text)">${record.date}</strong>?</p>
     <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteAttendance(${recordId})">Delete</button></div>`);
 }
 
 async function doDeleteAttendance(recordId) {
     await api('/attendance/' + recordId, { method: 'DELETE' });
-    selectedAttendanceIds.delete(recordId);
     hideModal(); await loadDB(); applyAttendanceFilter();
-}
-
-function isoToLocalInput(isoStr) {
-    const d = new Date(isoStr); const pad = n => String(n).padStart(2, '0');
-    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
 }
 
 function exportAttendanceCSV() {
     const fromDate = document.getElementById('att-from').value;
     const toDate = document.getElementById('att-to').value;
+    const projId = document.getElementById('att-project').value;
     let filtered = DB.attendance.filter(a => a.date >= fromDate && a.date <= toDate);
     if (selectedEmployeeIds.length > 0) filtered = filtered.filter(a => selectedEmployeeIds.includes(a.memberId));
+    if (projId) filtered = filtered.filter(a => a.projectId === parseInt(projId));
     filtered = filtered.sort((a, b) => a.date.localeCompare(b.date) || a.memberId - b.memberId);
     if (filtered.length === 0) { alert('No records to export.'); return; }
 
-    const headers = ['Date', 'Employee', 'Position', 'Department', 'Clock In', 'Clock Out', 'Duration', 'Status'];
+    const headers = ['Date', 'Employee', 'Position', 'Department', 'Project', 'Start', 'End', 'Duration', 'Description', 'Hourly Rate', 'Cost'];
     const rows = filtered.map(r => {
         const member = DB.members.find(m => m.id === r.memberId);
-        return [r.date, member ? member.name : 'Unknown', member ? getPositionName(member.positionId) : '—', member ? getDeptName(member.departmentId) : '—',
-            r.clockIn ? new Date(r.clockIn).toLocaleString('en') : '', r.clockOut ? new Date(r.clockOut).toLocaleString('en') : '',
-            r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '', r.clockOut ? 'Completed' : 'Working'];
+        const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
+        const startParts = r.clockIn ? r.clockIn.split('T') : [];
+        const endParts = r.clockOut ? r.clockOut.split('T') : [];
+        const startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
+        const endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
+        const durMs = r.clockIn && r.clockOut ? new Date(r.clockOut) - new Date(r.clockIn) : 0;
+        const dur = durMs > 0 ? formatDuration(durMs) : '';
+        const rate = member ? getHourlyRate(member) : null;
+        const cost = durMs > 0 ? getEntryCost(r.memberId, durMs) : null;
+        return [r.date, member ? member.name : 'Unknown', member ? getPositionName(member.positionId) : '', member ? getDeptName(member.departmentId) : '',
+            proj ? proj.name : '', startTime, endTime, dur, r.description || '', rate ? rate.toFixed(2) : '', cost ? cost.toFixed(2) : ''];
     });
 
     let csv = headers.join(',') + '\n';
     rows.forEach(r => { csv += r.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(',') + '\n'; });
 
-    const empLabel = selectedEmployeeIds.length > 0 ? selectedEmployeeIds.length + 'employees' : 'all';
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'attendance_' + empLabel + '_' + fromDate + '_to_' + toDate + '.csv';
+    const a = document.createElement('a'); a.href = url;
+    a.download = 'attendance_' + fromDate + '_to_' + toDate + '.csv';
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
-
 
 
 /* ==========================================================
