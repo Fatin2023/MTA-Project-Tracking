@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multitrade</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ===== LOGIN ===== -->
+<div id="login-page" class="auth-page active">
+  <div class="auth-card">
+    <h1>Multitrade</h1>
+    <p class="subtitle">Project Salary Management</p>
+    <form onsubmit="handleLogin(event)">
+      <div class="field"><label>Username</label>
+        <input class="input" id="login-user" placeholder="Enter username" autocomplete="off"></div>
+      <div class="field"><label>Password</label>
+        <input class="input" id="login-pass" type="password" placeholder="Enter password"></div>
+      <button class="btn btn-accent" type="submit">Sign In</button>
+      <p class="auth-error" id="login-error"></p>
+    </form>
+    <p class="auth-link">Don't have an account? <a onclick="showPage('register-page')">Register here</a></p>
+    <div class="auth-hint"><strong>Demo:</strong> <code>admin</code> / <code>admin123</code></div>
+  </div>
+</div>
+
+<!-- ===== REGISTER ===== -->
+<div id="register-page" class="auth-page">
+  <div class="auth-card">
+    <h1>Register</h1>
+    <p class="subtitle">Create your Multitrade account</p>
+    <form onsubmit="handleRegister(event)">
+      <div class="field"><label>Full Name</label>
+        <input class="input" id="reg-name" placeholder="e.g. John Smith" autocomplete="off"></div>
+      <div class="field"><label>Username</label>
+        <input class="input" id="reg-user" placeholder="Choose a username" autocomplete="off"></div>
+      <div class="field"><label>Password</label>
+        <input class="input" id="reg-pass" type="password" placeholder="Min. 6 characters"></div>
+      <div class="field"><label>Confirm Password</label>
+        <input class="input" id="reg-pass2" type="password" placeholder="Re-enter password"></div>
+      <button class="btn btn-accent" type="submit">Register</button>
+      <p class="auth-error" id="reg-error"></p>
+      <p class="auth-success" id="reg-success"></p>
+    </form>
+    <p class="auth-link">Already have an account? <a onclick="showPage('login-page')">Sign in</a></p>
+  </div>
+</div>
+
+<!-- ===== ADMIN LAYOUT ===== -->
+<div id="admin-layout" class="app-layout">
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <h1>Multi<span>trade</span></h1>
+      <div class="brand-sub">Management</div>
+    </div>
+    <div class="sidebar-nav" id="admin-nav">
+      <div class="nav-section">Overview</div>
+      <div class="nav-item active" onclick="adminNav('projects',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Projects</span></div>
+      <div class="nav-section">HR</div>
+      <div class="nav-item" onclick="adminNav('users',this)"><span class="nav-icon">&#128100;</span><span class="nav-label">Users</span></div>
+      <div class="nav-item" onclick="adminNav('departments',this)"><span class="nav-icon">&#9635;</span><span class="nav-label">Departments</span></div>
+      <div class="nav-item" onclick="adminNav('positions',this)"><span class="nav-icon">&#9733;</span><span class="nav-label">Positions</span></div>
+      <div class="nav-section">Time</div>
+      <div class="nav-item" onclick="adminNav('attendance',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span></div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="avatar" id="admin-avatar">A</div>
+        <div class="user-info">
+          <div class="user-name" id="admin-user-name">Admin</div>
+          <div class="user-role">Administrator</div>
+        </div>
+      </div>
+      <button class="logout-btn" onclick="logout()">&#8592; Sign Out</button>
+    </div>
+  </div>
+  <div class="app-main">
+    <div id="admin-projects" class="admin-view"></div>
+    <div id="admin-users" class="admin-view" style="display:none"></div>
+    <div id="admin-positions" class="admin-view" style="display:none"></div>
+    <div id="admin-departments" class="admin-view" style="display:none"></div>
+    <div id="admin-attendance" class="admin-view" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ===== PROJECT DETAIL LAYOUT ===== -->
+<div id="detail-layout" class="app-layout">
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <h1>Multi<span>trade</span></h1>
+      <div class="brand-sub">Management</div>
+    </div>
+    <div class="sidebar-nav">
+      <div class="nav-section">Navigation</div>
+      <div class="nav-item" onclick="showPage('admin-layout')"><span class="nav-icon">&#8592;</span><span class="nav-label">Back to Projects</span></div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="avatar" id="detail-avatar">A</div>
+        <div class="user-info">
+          <div class="user-name" id="detail-user-name">Admin</div>
+          <div class="user-role">Administrator</div>
+        </div>
+      </div>
+      <button class="logout-btn" onclick="logout()">&#8592; Sign Out</button>
+    </div>
+  </div>
+  <div class="app-main">
+    <div id="project-detail-content"></div>
+  </div>
+</div>
+
+<!-- ===== EMPLOYEE LAYOUT ===== -->
+<div id="employee-layout" class="app-layout">
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <h1>Multi<span>trade</span></h1>
+      <div class="brand-sub">Employee Portal</div>
+    </div>
+    <div class="sidebar-nav" id="emp-nav">
+      <div class="nav-item active" onclick="empNav('myprojects',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">My Projects</span></div>
+      <div class="nav-item" onclick="empNav('attendance',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span></div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="avatar" id="emp-avatar">E</div>
+        <div class="user-info">
+          <div class="user-name" id="emp-user-name">Employee</div>
+          <div class="user-role" id="emp-user-role">Employee</div>
+        </div>
+      </div>
+      <button class="logout-btn" onclick="logout()">&#8592; Sign Out</button>
+    </div>
+  </div>
+  <div class="app-main">
+    <div id="emp-myprojects" class="emp-view"></div>
+    <div id="emp-attendance" class="emp-view" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ===== MODAL ===== -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" id="modal-box"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
