@@ -11,18 +11,24 @@ app.use(express.static(path.join(__dirname)));
 // ========================================
 // PostgreSQL connection
 // ========================================
+const pg = require('pg');
+pg.types.setTypeParser(1082, val => val);
+
 const pool = new Pool({
-    host: 'localhost',
-    port: 5436,
-    database: 'ProjectManagement',
-    user: 'postgres',
-    password: 'Postgre@sql1',  // ← CHANGE THIS
-    options: '-c timezone=Asia/Kuala_Lumpur'
+    connectionString: process.env.DATABASE_URL || null,
+    host: process.env.DATABASE_URL ? undefined : 'localhost',
+    port: process.env.DATABASE_URL ? undefined : 5436,
+    database: process.env.DATABASE_URL ? undefined : 'ProjectManagement',
+    user: process.env.DATABASE_URL ? undefined : 'postgres',
+    password: process.env.DATABASE_URL ? undefined : 'Postgre@sql1',
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+    options: process.env.DATABASE_URL ? undefined : '-c timezone=Asia/Kuala_Lumpur'
 });
 
 pool.on('error', (err) => {
     console.error('Unexpected DB error:', err);
 });
+
 const pg = require('pg');
 pg.types.setTypeParser(1082, val => val);
 
