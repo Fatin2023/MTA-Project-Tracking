@@ -564,7 +564,3 @@ app.listen(PORT, async () => {
     console.log(`Multitrade server running on port ${PORT}`);
 });
 
-const PORT = 3000;
-app.listen(PORT, () => {
-    console.log(`Multitrade server running at http://localhost:${PORT}`);
-});
