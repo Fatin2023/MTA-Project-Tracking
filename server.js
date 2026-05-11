@@ -502,6 +502,67 @@ app.delete('/api/attendance/:id', async (req, res) => {
 // ========================================
 // START SERVER
 // ========================================
+// Catch-all — serve index.html for any route
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Auto-create tables + start server
+async function initDB() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS positions (
+                id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS departments (
+                id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS projects (
+                id SERIAL PRIMARY KEY, name VARCHAR(300) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS members (
+                id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL,
+                position_id INT REFERENCES positions(id) ON DELETE SET NULL,
+                department_id INT REFERENCES departments(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY, username VARCHAR(100) UNIQUE NOT NULL,
+                password VARCHAR(200) NOT NULL, role VARCHAR(20) NOT NULL DEFAULT 'employee',
+                member_id INT REFERENCES members(id) ON DELETE SET NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS salaries (
+                id SERIAL PRIMARY KEY, member_id INT REFERENCES members(id) ON DELETE CASCADE,
+                month VARCHAR(7) NOT NULL, amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+                UNIQUE(member_id, month)
+            );
+            CREATE TABLE IF NOT EXISTS project_assignments (
+                id SERIAL PRIMARY KEY,
+                project_id INT REFERENCES projects(id) ON DELETE CASCADE,
+                member_id INT REFERENCES members(id) ON DELETE CASCADE,
+                UNIQUE(project_id, member_id)
+            );
+            CREATE TABLE IF NOT EXISTS attendance (
+                id SERIAL PRIMARY KEY, member_id INT REFERENCES members(id) ON DELETE CASCADE,
+                date DATE NOT NULL, clock_in TIMESTAMP, clock_out TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+            INSERT INTO users (username, password, role)
+            VALUES ('admin', 'admin123', 'admin')
+            ON CONFLICT (username) DO NOTHING;
+        `);
+        console.log('Database tables ready');
+    } catch (err) {
+        console.error('DB init error:', err.message);
+    }
+}
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, async () => {
+    await initDB();
+    console.log(`Multitrade server running on port ${PORT}`);
+});
 
 const PORT = 3000;
 app.listen(PORT, () => {
