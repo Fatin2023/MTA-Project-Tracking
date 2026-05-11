@@ -2,7 +2,8 @@
    MULTITRADE — Project Salary Management (PostgreSQL version)
    ========================================================== */
 
-const API = 'http://localhost:3000/api';
+//const API = 'http://localhost:3000/api';
+const API = '/api';
 
 async function api(path, opts = {}) {
     const res = await fetch(API + path, {
