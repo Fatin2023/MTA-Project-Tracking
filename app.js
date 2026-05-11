@@ -7,6 +7,7 @@ const API = (window.location.hostname === 'localhost' || window.location.hostnam
     ? 'http://localhost:3000/api'
     : '/api';
 
+
 async function api(path, opts = {}) {
     const res = await fetch(API + path, {
         headers: { 'Content-Type': 'application/json' },
