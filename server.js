@@ -29,8 +29,6 @@ pool.on('error', (err) => {
     console.error('Unexpected DB error:', err);
 });
 
-const pg = require('pg');
-pg.types.setTypeParser(1082, val => val);
 
 
 // Helper: convert member row to frontend format
