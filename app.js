@@ -167,12 +167,14 @@ async function handleLogin(e) {
     try {
         currentUser = await api('/login', { method: 'POST', body: { username: u, password: p } });
         err.textContent = '';
+        localStorage.setItem('multitrade_session', JSON.stringify(currentUser));
         await loadDB();
         showPage(currentUser.role === 'admin' ? 'admin-layout' : 'employee-layout');
     } catch (ex) {
         err.textContent = ex.message;
     }
 }
+
 
 async function handleRegister(e) {
     e.preventDefault();
@@ -192,6 +194,8 @@ async function handleRegister(e) {
 
     try {
         await api('/register', { method: 'POST', body: { username, password: pass, name } });
+        const loginResult = await api('/login', { method: 'POST', body: { username, password: pass } });
+        localStorage.setItem('multitrade_session', JSON.stringify(loginResult));
         sucEl.textContent = 'Registration successful! Redirecting…';
         errEl.textContent = '';
         document.getElementById('reg-name').value = '';
@@ -206,11 +210,15 @@ async function handleRegister(e) {
 
 function logout() {
     if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
+    if (empClockInterval) { clearInterval(empClockInterval); empClockInterval = null; }
+    if (clockCurrentTimeInt) { clearInterval(clockCurrentTimeInt); clockCurrentTimeInt = null; }
     currentUser = null;
+    localStorage.removeItem('multitrade_session');
     document.getElementById('login-user').value = '';
     document.getElementById('login-pass').value = '';
     showPage('login-page');
 }
+
 
 
 /* ==========================================================
@@ -277,6 +285,25 @@ function updateAvatars() {
     const roleEl = document.getElementById('emp-user-role');
     if (roleEl) { const member = currentUser.memberId ? DB.members.find(m => m.id === currentUser.memberId) : null; roleEl.textContent = member && member.positionId ? getPositionName(member.positionId) : 'Employee'; }
 }
+
+// Mobile menu
+function toggleMobileMenu() {
+    const sidebar = document.querySelector('.app-layout.active .sidebar');
+    const overlay = document.querySelector('.app-layout.active .mobile-overlay');
+    if (sidebar) sidebar.classList.toggle('open');
+    if (overlay) overlay.classList.toggle('active');
+}
+
+function closeMobileMenu() {
+    document.querySelectorAll('.sidebar').forEach(s => s.classList.remove('open'));
+    document.querySelectorAll('.mobile-overlay').forEach(o => o.classList.remove('active'));
+}
+
+// Close mobile menu when nav item clicked
+document.addEventListener('click', e => {
+    if (e.target.closest('.nav-item')) closeMobileMenu();
+});
+
 
 
 /* ==========================================================
@@ -1479,4 +1506,18 @@ function exportAttendanceCSV() {
    ========================================================== */
 
 // Pre-load data on page load
-loadDB();
+(async function init() {
+    const saved = localStorage.getItem('multitrade_session');
+    if (saved) {
+        try {
+            currentUser = JSON.parse(saved);
+            await loadDB();
+            showPage(currentUser.role === 'admin' ? 'admin-layout' : 'employee-layout');
+            return;
+        } catch (e) {
+            localStorage.removeItem('multitrade_session');
+        }
+    }
+    showPage('login-page');
+})();
+

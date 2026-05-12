@@ -72,7 +72,7 @@ h1,h2,h3{font-family:var(--font-d);font-weight:600;letter-spacing:-.01em}
 .logout-btn:hover{color:#f87171;background:rgba(248,113,113,.1)}
 
 /* Main content = LIGHT */
-.app-main{flex:1;margin-left:var(--sidebar-w);min-height:100vh;background:var(--main-bg)}
+.app-main{flex:1;margin-left:var(--sidebar-w);min-height:100vh;background:var(--main-bg);padding-top:0}
 .app-header{padding:24px 36px;border-bottom:1px solid var(--main-border);background:var(--main-surface)}
 .app-header h2{font-size:1.35rem;color:var(--main-text)}
 .app-header .header-sub{font-size:.82rem;color:var(--main-text3);margin-top:2px}
@@ -232,19 +232,49 @@ tbody tr:last-child td{border-bottom:none}
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%23888' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 8px center}
 
+/* ========== MOBILE HEADER ========== */
+.mobile-header{
+  display:none;
+  position:fixed;top:0;left:0;right:0;height:56px;
+  background:var(--surface);border-bottom:1px solid var(--border);
+  align-items:center;justify-content:space-between;padding:0 16px;z-index:80;
+  box-shadow:0 2px 8px rgba(0,0,0,.2)
+}
+.mobile-header .brand{font-family:var(--font-d);font-size:1.1rem;color:rgba(255,255,255,.95)}
+.mobile-header .brand span{color:var(--accent)}
+.mobile-menu-btn{background:none;border:none;color:rgba(255,255,255,.8);font-size:1.4rem;cursor:pointer;padding:8px}
+.mobile-header .mobile-logout{background:none;border:none;color:rgba(255,255,255,.5);font-size:.82rem;cursor:pointer;padding:8px;font-family:var(--font-b)}
+.mobile-header .mobile-logout:hover{color:#f87171}
+
 
 /* ========== RESPONSIVE ========== */
 @media(max-width:860px){
-  .sidebar{width:60px}
-  .sidebar .brand-text,.sidebar .nav-label,.sidebar .user-info,
-  .sidebar .brand-sub,.sidebar .nav-section,.logout-btn{display:none}
+  .sidebar{width:0;overflow:hidden;transition:width .3s ease}
+  .sidebar.open{width:260px;z-index:100}
+  .sidebar .nav-label,.sidebar .user-info,
+  .sidebar .brand-sub,.sidebar .nav-section{display:none}
+  .sidebar.open .nav-label,.sidebar.open .user-info,
+  .sidebar.open .brand-sub,.sidebar.open .nav-section{display:block}
   .sidebar-brand{padding:20px 12px;text-align:center}
-  .sidebar-brand h1{font-size:0}
-  .sidebar-brand h1 span{font-size:1.1rem}
+  .sidebar-brand h1{font-size:1.2rem}
   .nav-item{justify-content:center;padding:10px 8px}
+  .sidebar.open .nav-item{justify-content:flex-start;padding:10px 14px}
   .sidebar-user{justify-content:center;padding:10px 8px}
-  .app-main{margin-left:60px}
+  .sidebar.open .sidebar-user{justify-content:flex-start;padding:10px 14px}
+  .logout-btn{display:none}
+  .sidebar.open .logout-btn{display:flex}
+  .app-main{margin-left:0;padding-top:56px}
   .app-body{padding:20px 16px 40px}
   .app-header{padding:18px 16px}
   .project-grid{grid-template-columns:1fr}
+  .mobile-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:90}
+  .mobile-overlay.active{display:block}
+  .mobile-header{display:flex}
 }
+
+@media(min-width:861px){
+  .mobile-header{display:none}
+  .mobile-overlay{display:none}
+}
+
+

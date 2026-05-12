@@ -52,6 +52,14 @@
 
 <!-- ===== ADMIN LAYOUT ===== -->
 <div id="admin-layout" class="app-layout">
+  <!-- ADD THIS inside admin-layout, before the sidebar -->
+  <div class="mobile-header">
+    <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
+    <div class="brand">Multi<span>trade</span></div>
+    <button class="mobile-logout" onclick="logout()">Sign Out</button>
+  </div>
+  <div class="mobile-overlay" id="mobile-overlay" onclick="closeMobileMenu()"></div>
+
   <div class="sidebar">
     <div class="sidebar-brand">
       <h1>Multi<span>trade</span></h1>
@@ -79,6 +87,7 @@
     </div>
   </div>
   <div class="app-main">
+    <div class="app-main" style="padding-top:0"></div>
     <div id="admin-projects" class="admin-view"></div>
     <div id="admin-users" class="admin-view" style="display:none"></div>
     <div id="admin-positions" class="admin-view" style="display:none"></div>
@@ -89,6 +98,14 @@
 
 <!-- ===== PROJECT DETAIL LAYOUT ===== -->
 <div id="detail-layout" class="app-layout">
+  <!-- ADD THIS inside detail-layout, before the sidebar -->
+  <div class="mobile-header">
+    <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
+    <div class="brand">Multi<span>trade</span></div>
+    <button class="mobile-logout" onclick="logout()">Sign Out</button>
+  </div>
+  <div class="mobile-overlay" id="mobile-overlay-detail" onclick="closeMobileMenu()"></div>
+
   <div class="sidebar">
     <div class="sidebar-brand">
       <h1>Multi<span>trade</span></h1>
@@ -110,12 +127,21 @@
     </div>
   </div>
   <div class="app-main">
+    <div class="app-main" style="padding-top:0"></div>
     <div id="project-detail-content"></div>
   </div>
 </div>
 
 <!-- ===== EMPLOYEE LAYOUT ===== -->
 <div id="employee-layout" class="app-layout">
+  <!-- ADD THIS inside employee-layout, before the sidebar -->
+  <div class="mobile-header">
+    <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
+    <div class="brand">Multi<span>trade</span></div>
+    <button class="mobile-logout" onclick="logout()">Sign Out</button>
+  </div>
+  <div class="mobile-overlay" id="mobile-overlay-emp" onclick="closeMobileMenu()"></div>
+
   <div class="sidebar">
     <div class="sidebar-brand">
       <h1>Multi<span>trade</span></h1>
@@ -137,6 +163,7 @@
     </div>
   </div>
   <div class="app-main">
+    <div class="app-main" style="padding-top:0"></div>
     <div id="emp-myprojects" class="emp-view"></div>
     <div id="emp-attendance" class="emp-view" style="display:none"></div>
   </div>
