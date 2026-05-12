@@ -75,12 +75,11 @@
           <div class="user-role">Administrator</div>
         </div>
       </div>
-      <button class="logout-btn" onclick="logout()">&#8592; Sign Out</button>
+      <button class="logout-btn" onclick="confirmLogout()">&#8592; Sign Out</button>
     </div>
   </div>
   <div class="app-main">
-    <button class="logout-btn" onclick="window.logout && logout()">&#8592; Sign Out</button>
-
+    <div class="mobile-logout-bar"><button onclick="confirmLogout()">Sign Out</button></div>
     <div id="admin-projects" class="admin-view"></div>
     <div id="admin-users" class="admin-view" style="display:none"></div>
     <div id="admin-positions" class="admin-view" style="display:none"></div>
@@ -108,11 +107,11 @@
           <div class="user-role">Administrator</div>
         </div>
       </div>
-      <button class="logout-btn" onclick="logout()">&#8592; Sign Out</button>
+      <button class="logout-btn" onclick="confirmLogout()">&#8592; Sign Out</button>
     </div>
   </div>
   <div class="app-main">
-    <div class="mobile-logout-bar"><button onclick="window.logout && logout()">Sign Out</button></div>
+    <div class="mobile-logout-bar"><button onclick="confirmLogout()">Sign Out</button></div>
     <div id="project-detail-content"></div>
   </div>
 </div>
@@ -136,11 +135,11 @@
           <div class="user-role" id="emp-user-role">Employee</div>
         </div>
       </div>
-      <button class="logout-btn" onclick="logout()">&#8592; Sign Out</button>
+      <button class="logout-btn" onclick="confirmLogout()">&#8592; Sign Out</button>
     </div>
   </div>
   <div class="app-main">
-    <div class="mobile-logout-bar"><button onclick="window.logout && logout()">Sign Out</button></div>
+    <div class="mobile-logout-bar"><button onclick="confirmLogout()">Sign Out</button></div>
     <div id="emp-myprojects" class="emp-view"></div>
     <div id="emp-attendance" class="emp-view" style="display:none"></div>
   </div>

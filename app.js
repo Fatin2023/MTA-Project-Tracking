@@ -209,11 +209,23 @@ async function handleRegister(e) {
     }
 }
 
-function logout() {
-    alert('Logout clicked');  // debug — remove later
+
+function confirmLogout() {
+    showModal(`
+        <h3>Sign Out</h3>
+        <p style="color:var(--main-text2);line-height:1.6">Are you sure you want to sign out?</p>
+        <div class="btns">
+            <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
+            <button class="btn btn-danger" onclick="doLogout()">Sign Out</button>
+        </div>
+    `);
+}
+
+function doLogout() {
     localStorage.removeItem('multitrade_session');
     window.location.href = window.location.pathname;
 }
+
 
 
 /* ==========================================================
