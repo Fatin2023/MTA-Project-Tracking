@@ -210,19 +210,10 @@ async function handleRegister(e) {
 }
 
 function logout() {
-    if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
-    if (empClockInterval) { clearInterval(empClockInterval); empClockInterval = null; }
-    if (clockCurrentTimeInt) { clearInterval(clockCurrentTimeInt); clockCurrentTimeInt = null; }
-    currentUser = null;
+    alert('Logout clicked');  // debug — remove later
     localStorage.removeItem('multitrade_session');
-    document.getElementById('login-user').value = '';
-    document.getElementById('login-pass').value = '';
-    // Hide everything, show login
-    document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
-    document.getElementById('login-page').classList.add('active');
+    window.location.href = window.location.pathname;
 }
-
-
 
 
 /* ==========================================================

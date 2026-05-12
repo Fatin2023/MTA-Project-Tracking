@@ -11,7 +11,7 @@
 <body>
 
 <!-- ===== LOGIN ===== -->
-<div id="login-page" class="auth-page active">
+<div id="login-page" class="auth-page">
   <div class="auth-card">
     <h1>Multitrade</h1>
     <p class="subtitle">Project Salary Management</p>
@@ -79,7 +79,8 @@
     </div>
   </div>
   <div class="app-main">
-    <div class="mobile-logout-bar"><button onclick="logout()">Sign Out</button></div>
+    <button class="logout-btn" onclick="window.logout && logout()">&#8592; Sign Out</button>
+
     <div id="admin-projects" class="admin-view"></div>
     <div id="admin-users" class="admin-view" style="display:none"></div>
     <div id="admin-positions" class="admin-view" style="display:none"></div>
