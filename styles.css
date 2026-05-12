@@ -243,7 +243,8 @@ tbody tr:last-child td{border-bottom:none}
   .sidebar .brand-sub,.sidebar .nav-section,.sidebar-footer .logout-btn{display:none}
   .sidebar-brand{padding:20px 12px;text-align:center}
   .sidebar-brand h1{font-size:0}
-  .sidebar-brand h1 span{font-size:1.1rem}
+  .sidebar-brand h1::before{content:'M';font-size:1.4rem;color:var(--accent);font-weight:700}
+  .sidebar-brand h1 span{display:none}
   .nav-item{justify-content:center;padding:10px 8px}
   .sidebar-user{justify-content:center;padding:10px 8px}
   .sidebar-footer{padding:12px}
