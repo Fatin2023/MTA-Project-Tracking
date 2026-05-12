@@ -254,7 +254,7 @@ tbody tr:last-child td{border-bottom:none}
   .app-header h2{font-size:1.1rem}
   .project-grid{grid-template-columns:1fr}
   .mobile-logout-bar{
-    display:flex;align-items:center;justify-content:center;
+    display:flex;align-items:center;justify-content:flex-start;
     padding:10px 16px;background:var(--main-surface);
     border-bottom:1px solid var(--main-border)
   }
