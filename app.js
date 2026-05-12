@@ -293,23 +293,30 @@ function updateAvatars() {
     if (roleEl) { const member = currentUser.memberId ? DB.members.find(m => m.id === currentUser.memberId) : null; roleEl.textContent = member && member.positionId ? getPositionName(member.positionId) : 'Employee'; }
 }
 
+
 // Mobile menu
 function toggleMobileMenu() {
-    const sidebar = document.querySelector('.app-layout.active .sidebar');
-    const overlay = document.querySelector('.app-layout.active .mobile-overlay');
-    if (sidebar) sidebar.classList.toggle('open');
-    if (overlay) overlay.classList.toggle('active');
+    document.querySelectorAll('.sidebar').forEach(function(s) { s.classList.toggle('open'); });
+    document.querySelectorAll('.mobile-overlay').forEach(function(o) { o.classList.toggle('active'); });
 }
 
 function closeMobileMenu() {
-    document.querySelectorAll('.sidebar').forEach(s => s.classList.remove('open'));
-    document.querySelectorAll('.mobile-overlay').forEach(o => o.classList.remove('active'));
+    document.querySelectorAll('.sidebar').forEach(function(s) { s.classList.remove('open'); });
+    document.querySelectorAll('.mobile-overlay').forEach(function(o) { o.classList.remove('active'); });
 }
 
-// Close mobile menu when nav item clicked
-document.addEventListener('click', e => {
+document.addEventListener('click', function(e) {
     if (e.target.closest('.nav-item')) closeMobileMenu();
 });
+
+// Close sidebar when touching/moving on content area only
+document.addEventListener('touchmove', function(e) {
+    if (!e.target.closest('.sidebar')) {
+        var anyOpen = document.querySelector('.sidebar.open');
+        if (anyOpen) closeMobileMenu();
+    }
+}, { passive: true });
+
 
 
 

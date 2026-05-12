@@ -79,7 +79,6 @@
     </div>
   </div>
   <div class="app-main">
-    <div class="mobile-logout-bar"><button onclick="confirmLogout()">Sign Out</button></div>
     <div id="admin-projects" class="admin-view"></div>
     <div id="admin-users" class="admin-view" style="display:none"></div>
     <div id="admin-positions" class="admin-view" style="display:none"></div>
@@ -87,6 +86,13 @@
     <div id="admin-attendance" class="admin-view" style="display:none"></div>
   </div>
 </div>
+  <div class="mobile-header">
+    <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
+    <div class="brand">Multi<span>trade</span></div>
+    <button class="mobile-logout-hdr" onclick="confirmLogout()">Sign Out</button>
+  </div>
+  <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+
 
 <!-- ===== PROJECT DETAIL LAYOUT ===== -->
 <div id="detail-layout" class="app-layout">
@@ -111,10 +117,16 @@
     </div>
   </div>
   <div class="app-main">
-    <div class="mobile-logout-bar"><button onclick="confirmLogout()">Sign Out</button></div>
     <div id="project-detail-content"></div>
   </div>
 </div>
+  <div class="mobile-header">
+    <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
+    <div class="brand">Multi<span>trade</span></div>
+    <button class="mobile-logout-hdr" onclick="confirmLogout()">Sign Out</button>
+  </div>
+  <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+
 
 <!-- ===== EMPLOYEE LAYOUT ===== -->
 <div id="employee-layout" class="app-layout">
@@ -139,11 +151,17 @@
     </div>
   </div>
   <div class="app-main">
-    <div class="mobile-logout-bar"><button onclick="confirmLogout()">Sign Out</button></div>
     <div id="emp-myprojects" class="emp-view"></div>
     <div id="emp-attendance" class="emp-view" style="display:none"></div>
   </div>
 </div>
+  <div class="mobile-header">
+    <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
+    <div class="brand">Multi<span>trade</span></div>
+    <button class="mobile-logout-hdr" onclick="confirmLogout()">Sign Out</button>
+  </div>
+  <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+
 
 <!-- ===== MODAL ===== -->
 <div class="modal-overlay" id="modal-overlay">
