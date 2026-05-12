@@ -165,6 +165,7 @@ async function handleLogin(e) {
     const err = document.getElementById('login-error');
     if (!u || !p) { err.textContent = 'Please enter username and password'; return; }
     try {
+        localStorage.setItem('multitrade_session', JSON.stringify(currentUser));
         currentUser = await api('/login', { method: 'POST', body: { username: u, password: p } });
         err.textContent = '';
         localStorage.setItem('multitrade_session', JSON.stringify(currentUser));
@@ -209,6 +210,8 @@ async function handleRegister(e) {
 }
 
 function logout() {
+    localStorage.removeItem('multitrade_session');
+
     if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
     if (empClockInterval) { clearInterval(empClockInterval); empClockInterval = null; }
     if (clockCurrentTimeInt) { clearInterval(clockCurrentTimeInt); clockCurrentTimeInt = null; }
@@ -1506,18 +1509,17 @@ function exportAttendanceCSV() {
    ========================================================== */
 
 // Pre-load data on page load
-(async function init() {
-    const saved = localStorage.getItem('multitrade_session');
-    if (saved) {
-        try {
-            currentUser = JSON.parse(saved);
+(async function(){
+    const saved=localStorage.getItem('multitrade_session');
+    if(saved){
+        try{
+            currentUser=JSON.parse(saved);
             await loadDB();
-            showPage(currentUser.role === 'admin' ? 'admin-layout' : 'employee-layout');
+            showPage(currentUser.role==='admin'?'admin-layout':'employee-layout');
             return;
-        } catch (e) {
-            localStorage.removeItem('multitrade_session');
-        }
+        }catch(e){localStorage.removeItem('multitrade_session');}
     }
     showPage('login-page');
 })();
+
 
