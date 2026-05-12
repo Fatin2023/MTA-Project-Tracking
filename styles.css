@@ -266,9 +266,8 @@ tbody tr:last-child td{border-bottom:none}
   .sidebar .brand-sub,.sidebar .nav-section,.sidebar-footer .logout-btn{display:none}
   .sidebar.open .nav-label,.sidebar.open .user-info,
   .sidebar.open .brand-sub,.sidebar.open .nav-section,.sidebar-footer .logout-btn{display:block}
-  .sidebar-brand h1{font-size:0}
-  .sidebar-brand h1::before{content:'M';font-size:1.4rem;color:var(--accent);font-weight:700}
-  .sidebar-brand h1 span{display:none}
+  .sidebar-brand h1{font-size:1.2rem}
+  .sidebar-brand h1 span{color:var(--accent)}
   .nav-item{justify-content:flex-start;padding:10px 14px}
   .sidebar-user{justify-content:flex-start;padding:10px 14px}
   .sidebar-footer{padding:16px 12px}
