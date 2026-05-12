@@ -210,8 +210,6 @@ async function handleRegister(e) {
 }
 
 function logout() {
-    localStorage.removeItem('multitrade_session');
-
     if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
     if (empClockInterval) { clearInterval(empClockInterval); empClockInterval = null; }
     if (clockCurrentTimeInt) { clearInterval(clockCurrentTimeInt); clockCurrentTimeInt = null; }
@@ -219,8 +217,11 @@ function logout() {
     localStorage.removeItem('multitrade_session');
     document.getElementById('login-user').value = '';
     document.getElementById('login-pass').value = '';
-    showPage('login-page');
+    // Hide everything, show login
+    document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
+    document.getElementById('login-page').classList.add('active');
 }
+
 
 
 
@@ -1510,16 +1511,25 @@ function exportAttendanceCSV() {
 
 // Pre-load data on page load
 (async function(){
-    const saved=localStorage.getItem('multitrade_session');
-    if(saved){
-        try{
-            currentUser=JSON.parse(saved);
+    const saved = localStorage.getItem('multitrade_session');
+    if (saved) {
+        try {
+            currentUser = JSON.parse(saved);
             await loadDB();
-            showPage(currentUser.role==='admin'?'admin-layout':'employee-layout');
+            document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
+            const target = currentUser.role === 'admin' ? 'admin-layout' : 'employee-layout';
+            document.getElementById(target).classList.add('active');
+            if (currentUser.role === 'admin') { adminNav('projects'); }
+            else { empNav('myprojects'); }
+            updateAvatars();
             return;
-        }catch(e){localStorage.removeItem('multitrade_session');}
+        } catch (e) {
+            localStorage.removeItem('multitrade_session');
+            currentUser = null;
+        }
     }
-    showPage('login-page');
+    document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
+    document.getElementById('login-page').classList.add('active');
 })();
 
 
