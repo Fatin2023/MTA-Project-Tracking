@@ -76,7 +76,7 @@ h1,h2,h3{font-family:var(--font-d);font-weight:600;letter-spacing:-.01em}
 .app-header{padding:24px 36px;border-bottom:1px solid var(--main-border);background:var(--main-surface)}
 .app-header h2{font-size:1.35rem;color:var(--main-text)}
 .app-header .header-sub{font-size:.82rem;color:var(--main-text3);margin-top:2px}
-.app-body{padding:28px 36px 60px;max-width:1100px}
+.app-body{padding:28px 36px 60px;max-width:none}
 
 /* ========== BUTTONS ========== */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border:none;border-radius:var(--radius-sm);
@@ -87,8 +87,25 @@ h1,h2,h3{font-family:var(--font-d);font-weight:600;letter-spacing:-.01em}
 .btn-ghost:hover{border-color:var(--main-text2);color:var(--main-text)}
 .btn-danger{background:rgba(220,38,38,.08);color:var(--red);border:1px solid rgba(220,38,38,.2)}
 .btn-danger:hover{background:rgba(220,38,38,.15)}
-.btn-green{background:var(--green-soft);color:var(--green);border:1px solid var(--green-border)}
-.btn-green:hover{background:rgba(22,163,74,.18)}
+.btn-green{
+    background:linear-gradient(135deg,#166534,#15803d);
+    color:white;
+    border:1px solid #22c55e;
+}
+.btn-green:hover{
+    background:linear-gradient(135deg,#15803d,#16a34a);
+    letter-spacing:.04em;
+}
+.btn-blue{
+    background:linear-gradient(135deg,#1d4ed8,#2563eb);
+    color:white;
+    border:1px solid #60a5fa;
+}
+
+.btn-blue:hover{
+    background:linear-gradient(135deg,#2563eb,#3b82f6);
+    letter-spacing:.04em;
+}
 .btn-sm{padding:6px 14px;font-size:.8rem}
 .btn-lg{padding:14px 32px;font-size:1rem}
 .btn-icon{width:34px;height:34px;padding:0;display:inline-flex;align-items:center;justify-content:center;
@@ -150,6 +167,42 @@ tbody tr:last-child td{border-bottom:none}
 .badge-employee{background:var(--green-soft);color:var(--green);border:1px solid var(--green-border)}
 .badge-clocked-in{background:rgba(22,163,74,.1);color:var(--green);border:1px solid rgba(22,163,74,.2)}
 .badge-clocked-out{background:rgba(136,136,136,.1);color:var(--main-text3);border:1px solid rgba(136,136,136,.2)}
+  /* ===== 表格横向滚动 ===== */
+.table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* ===== Actions 列固定在右边 ===== */
+.table-wrap table thead th:last-child,
+.table-wrap table tbody td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: var(--main-bg);
+    /* 右边加一个阴影，让人知道右边还有内容 */
+    box-shadow: -4px 0 8px rgba(0, 0, 0, 0.08);
+}
+
+/* thead 背景色要和原来一致 */
+.table-wrap table thead th:last-child {
+    background: var(--main-surface);
+}
+
+/* ===== 让一些列更紧凑 ===== */
+.table-wrap table th,
+.table-wrap table td {
+    white-space: nowrap;
+}
+
+/* Description 列可以换行，不要占太多宽度 */
+.table-wrap table th:nth-child(9),
+.table-wrap table tbody td:nth-child(9) {
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 /* ========== DETAIL ========== */
 .detail-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}

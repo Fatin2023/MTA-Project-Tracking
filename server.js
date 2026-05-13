@@ -458,6 +458,8 @@ app.get('/api/attendance', async (req, res) => {
             clockIn: r.clock_in ? toLocalISO(new Date(r.clock_in)) : null,
             clockOut: r.clock_out ? toLocalISO(new Date(r.clock_out)) : null,
             projectId: r.project_id,
+            subScopeId: r.sub_scope_id,
+            detailId: r.detail_id,
             description: r.description || ''
         })));
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -465,11 +467,11 @@ app.get('/api/attendance', async (req, res) => {
 
 
 app.post('/api/attendance', async (req, res) => {
-    const { memberId, date, clockIn, clockOut, projectId, description } = req.body;
+    const { memberId, date, clockIn, clockOut, projectId, subScopeId, detailId, description } = req.body;
     try {
         const result = await pool.query(
-            'INSERT INTO attendance (member_id, date, clock_in, clock_out, project_id, description) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-            [memberId, date, clockIn, clockOut, projectId || null, description || '']
+            'INSERT INTO attendance (member_id, date, clock_in, clock_out, project_id, sub_scope_id, detail_id, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+            [memberId, date, clockIn, clockOut, projectId || null, subScopeId || null, detailId || null, description || '']
         );
         res.json({ id: result.rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -477,11 +479,11 @@ app.post('/api/attendance', async (req, res) => {
 
 
 app.put('/api/attendance/:id', async (req, res) => {
-    const { date, clockIn, clockOut, projectId, description } = req.body;
+    const { date, clockIn, clockOut, projectId, subScopeId, detailId, description } = req.body;
     try {
         await pool.query(
-            'UPDATE attendance SET date = $1, clock_in = $2, clock_out = $3, project_id = $4, description = $5 WHERE id = $6',
-            [date, clockIn, clockOut, projectId || null, description || '', req.params.id]
+            'UPDATE attendance SET date = $1, clock_in = $2, clock_out = $3, project_id = $4, sub_scope_id = $5, detail_id = $6, description = $7 WHERE id = $8',
+            [date, clockIn, clockOut, projectId || null, subScopeId || null, detailId || null, description || '', req.params.id]
         );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -496,6 +498,75 @@ app.delete('/api/attendance/:id', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// ========================================
+// SUB SCOPES
+// ========================================
+
+app.get('/api/subscopes', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM sub_scopes ORDER BY id');
+        res.json(result.rows.map(r => ({ id: r.id, name: r.name, createdAt: r.created_at })));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/subscopes', async (req, res) => {
+    const { name } = req.body;
+    try {
+        const result = await pool.query('INSERT INTO sub_scopes (name) VALUES ($1) RETURNING id', [name]);
+        res.json({ id: result.rows[0].id });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/subscopes/:id', async (req, res) => {
+    const { name } = req.body;
+    try {
+        await pool.query('UPDATE sub_scopes SET name = $1 WHERE id = $2', [name, req.params.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/subscopes/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM sub_scopes WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ========================================
+// DETAILS
+// ========================================
+
+app.get('/api/details', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM details ORDER BY id');
+        res.json(result.rows.map(r => ({ id: r.id, name: r.name, createdAt: r.created_at })));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/details', async (req, res) => {
+    const { name } = req.body;
+    try {
+        const result = await pool.query('INSERT INTO details (name) VALUES ($1) RETURNING id', [name]);
+        res.json({ id: result.rows[0].id });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/details/:id', async (req, res) => {
+    const { name } = req.body;
+    try {
+        await pool.query('UPDATE details SET name = $1 WHERE id = $2', [name, req.params.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/details/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM details WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 
 
 // ========================================
@@ -542,7 +613,7 @@ async function initDB() {
                 member_id INT REFERENCES members(id) ON DELETE CASCADE,
                 UNIQUE(project_id, member_id)
             );
-                        CREATE TABLE IF NOT EXISTS attendance (
+            CREATE TABLE IF NOT EXISTS attendance (
                 id SERIAL PRIMARY KEY,
                 member_id INT REFERENCES members(id) ON DELETE CASCADE,
                 date DATE NOT NULL,
@@ -552,12 +623,23 @@ async function initDB() {
                 description TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT NOW()
             );
+
+            CREATE TABLE IF NOT EXISTS sub_scopes (
+                id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS details (
+                id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
+            );
+
             INSERT INTO users (username, password, role)
             VALUES ('admin', 'admin123', 'admin')
             ON CONFLICT (username) DO NOTHING;
 
             ALTER TABLE attendance ADD COLUMN IF NOT EXISTS project_id INT REFERENCES projects(id) ON DELETE SET NULL;
             ALTER TABLE attendance ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
+            ALTER TABLE attendance ADD COLUMN IF NOT EXISTS sub_scope_id INT REFERENCES sub_scopes(id) ON DELETE SET NULL;
+            ALTER TABLE attendance ADD COLUMN IF NOT EXISTS detail_id INT REFERENCES details(id) ON DELETE SET NULL;
+
 
         `);
         console.log('Database tables ready');

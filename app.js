@@ -37,18 +37,22 @@ let DB = {
     users: [],
     positions: [],
     departments: [],
+    subScopes: [],
+    details: [],
     projectAssignments: [],
     attendance: []
 };
 
 async function loadDB() {
     try {
-        const [projects, members, users, positions, departments, assignments, attendance] = await Promise.all([
+        const [projects, members, users, positions, departments, subScopes, details, assignments, attendance] = await Promise.all([
             api('/projects'),
             api('/members'),
             api('/users'),
             api('/positions'),
             api('/departments'),
+            api('/subscopes'),
+            api('/details'),
             api('/assignments'),
             api('/attendance')
         ]);
@@ -57,12 +61,15 @@ async function loadDB() {
         DB.users = users;
         DB.positions = positions;
         DB.departments = departments;
+        DB.subScopes = subScopes;
+        DB.details = details;
         DB.projectAssignments = assignments;
         DB.attendance = attendance;
     } catch (e) {
         console.error('Failed to load data:', e);
     }
 }
+
 
 
 /* ==========================================================
@@ -133,6 +140,29 @@ function fmtHourlyRate(member) {
     if (!rate) return '—';
     return 'RM ' + Number(rate).toFixed(2) + '/hr';
 }
+
+function getSubScopeName(id) {
+    if (!id) return '—';
+    const s = DB.subScopes.find(x => x.id === id);
+    return s ? s.name : '—';
+}
+
+function getDetailName(id) {
+    if (!id) return '—';
+    const d = DB.details.find(x => x.id === id);
+    return d ? d.name : '—';
+}
+
+function subScopeOpts(selectedId) {
+    return '<option value="">-- None --</option>' +
+        DB.subScopes.map(s => '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('');
+}
+
+function detailOpts(selectedId) {
+    return '<option value="">-- None --</option>' +
+        DB.details.map(d => '<option value="' + d.id + '"' + (d.id === selectedId ? ' selected' : '') + '>' + esc(d.name) + '</option>').join('');
+}
+
 
 
 /* ==========================================================
@@ -258,6 +288,8 @@ async function adminNav(tab, el) {
         case 'positions': renderPositionsList(); break;
         case 'departments': renderDepartmentsList(); break;
         case 'attendance': renderAdminAttendance(); break;
+        case 'subscopes': renderAdminSubScopes(); break;
+        case 'details': renderAdminDetails(); break;
     }
 }
 
@@ -338,7 +370,7 @@ function renderDashboard() {
         <div class="stat-card"><div class="stat-label">Total Members</div><div class="stat-value">${totalMembers}</div></div>
         <div class="stat-card"><div class="stat-label">Monthly Cost</div><div class="stat-value">${fmt(totalCost)}</div></div>
       </div>
-      <div class="section-head"><h2>All Projects</h2><button class="btn btn-accent" onclick="showAddProject()">+ New Project</button></div>
+      <div class="section-head"><h2>All Projects</h2><button class="btn btn-green" onclick="showAddProject()">+ New Project</button></div>
       <div id="project-grid" class="project-grid"></div>
     </div>`;
 
@@ -445,7 +477,7 @@ function renderUsersList() {
     view.innerHTML = `
     <div class="app-header"><h2>Users</h2><div class="header-sub">Manage accounts, salaries, positions and departments</div></div>
     <div class="app-body">
-      <div class="section-head"><h2>All Users</h2><button class="btn btn-accent" onclick="showAddUser()">+ Add User</button></div>
+      <div class="section-head"><h2>All Users</h2><button class="btn btn-green" onclick="showAddUser()">+ Add User</button></div>
       <div class="table-wrap"><table><thead><tr>
         <th>Username</th><th>Name</th><th>Role</th><th>Position</th><th>Department</th><th>Salary</th><th>Projects</th><th>Actions</th>
       </tr></thead><tbody>${rows}</tbody></table></div>
@@ -619,7 +651,7 @@ function renderPositionsList() {
     view.innerHTML = `
     <div class="app-header"><h2>Positions</h2><div class="header-sub">Manage job positions</div></div>
     <div class="app-body">
-      <div class="section-head"><h2>All Positions</h2><button class="btn btn-accent" onclick="showAddPosition()">+ New Position</button></div>
+      <div class="section-head"><h2>All Positions</h2><button class="btn btn-green" onclick="showAddPosition()">+ New Position</button></div>
       <div class="table-wrap"><table><thead><tr><th style="width:60px">ID</th><th>Position Name</th><th style="width:100px">Members</th><th style="width:100px">Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
     </div>`;
 }
@@ -687,7 +719,7 @@ function renderDepartmentsList() {
     view.innerHTML = `
     <div class="app-header"><h2>Departments</h2><div class="header-sub">Manage departments</div></div>
     <div class="app-body">
-      <div class="section-head"><h2>All Departments</h2><button class="btn btn-accent" onclick="showAddDepartment()">+ New Department</button></div>
+      <div class="section-head"><h2>All Departments</h2><button class="btn btn-green" onclick="showAddDepartment()">+ New Department</button></div>
       <div class="table-wrap"><table><thead><tr><th style="width:60px">ID</th><th>Department Name</th><th style="width:100px">Members</th><th style="width:100px">Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
     </div>`;
 }
@@ -903,7 +935,7 @@ function renderEmployeeProjects() {
 
     document.getElementById('emp-myprojects').innerHTML = `
     <div class="app-header"><h2>My Projects</h2><div class="header-sub">Projects you are involved in</div></div>
-    <div class="app-body" style="max-width:640px">
+    <div class="app-body" style="max-width:none">
       <div class="emp-card">
         <div class="emp-name">${esc(member.name)}</div>
         <div class="emp-project">Position: ${esc(getPositionName(member.positionId))} &nbsp;|&nbsp; Dept: ${esc(getDeptName(member.departmentId))}</div>
@@ -916,15 +948,35 @@ function renderEmployeeProjects() {
 
 
 /* ==========================================================
-   SECTION 12: EMPLOYEE — TIME ENTRIES
+   SECTION 12: EMPLOYEE — TIME ENTRIES (filter by project + date + pagination)
    ========================================================== */
+
+let empAttCurrentPage = 1;
+let empAttPageSize = 10;
+let empAttFilteredData = [];
+
+function getEmployeeProjects(memberId) {
+    return DB.projectAssignments
+        .filter(pa => pa.memberId === memberId)
+        .map(pa => DB.projects.find(p => p.id === pa.projectId))
+        .filter(Boolean);
+}
 
 function renderEmployeeAttendance() {
     if (!currentUser || !currentUser.memberId) return;
     const member = DB.members.find(m => m.id === currentUser.memberId);
     if (!member) return;
 
+    empAttCurrentPage = 1;
+    empAttPageSize = 10;
+
+    const myProjects = getEmployeeProjects(member.id);
+    const projOpts = myProjects.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
+
     const today = todayStr();
+    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const defaultFrom = thirtyDaysAgo.toISOString().slice(0, 10);
+
     const myEntries = DB.attendance.filter(a => a.memberId === member.id);
     const todayEntries = myEntries.filter(a => a.date === today);
 
@@ -947,80 +999,279 @@ function renderEmployeeAttendance() {
         return s;
     }, 0);
 
-    const allEntries = [...myEntries].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+    const projectInfo = myProjects.length > 0
+        ? myProjects.map(p => '<span class="badge badge-employee" style="margin:2px">' + esc(p.name) + '</span>').join(' ')
+        : '<span style="color:var(--main-text3)">Not assigned to any project</span>';
 
-    let rows = '';
-    if (allEntries.length === 0) {
-        rows = '<tr><td colspan="7" style="text-align:center;color:var(--main-text3);padding:30px">No time entries yet</td></tr>';
-    } else {
-        rows = allEntries.map(r => {
-            const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
-            const dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '—';
-            const startParts = r.clockIn ? r.clockIn.split('T') : [];
-            const endParts = r.clockOut ? r.clockOut.split('T') : [];
-            const startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '—';
-            const endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '—';
-            return `<tr>
-                <td style="font-family:var(--font-m)">${r.date}</td>
-                <td>${proj ? esc(proj.name) : '<span style="color:var(--main-text3)">—</span>'}</td>
-                <td style="font-family:var(--font-m)">${startTime}</td>
-                <td style="font-family:var(--font-m)">${endTime}</td>
-                <td style="text-align:right;font-family:var(--font-m)">${dur}</td>
-                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.description || '')}">${r.description ? esc(r.description) : '<span style="color:var(--main-text3)">—</span>'}</td>
-                <td><div class="actions-cell">
-                    <button class="btn-icon" onclick="showEditTimeEntry(${r.id})" title="Edit">&#9998;</button>
-                    <button class="btn-icon danger" onclick="confirmDeleteTimeEntry(${r.id})" title="Delete">&#10005;</button>
-                </div></td>
-            </tr>`;
+    document.getElementById('emp-attendance').innerHTML = '<div class="app-header"><h2>My Attendance</h2><div class="header-sub">Log and track your work hours</div></div>' +
+    '<div class="app-body" style="max-width:none">' +
+      '<div class="emp-card" style="text-align:left;padding:28px 32px">' +
+        '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">' +
+          '<div class="emp-name" style="margin-bottom:0;font-size:1.3rem">' + esc(member.name) + '</div>' +
+          '<span style="color:var(--main-text3);font-size:.85rem">' + esc(getPositionName(member.positionId)) + ' | ' + esc(getDeptName(member.departmentId)) + '</span>' +
+        '</div>' +
+        '<div style="font-size:.85rem;color:var(--main-text2)">My Projects: ' + projectInfo + '</div>' +
+      '</div>' +
+      '<div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">' +
+        '<div class="stat-card"><div class="stat-label">Today</div><div class="stat-value" style="font-size:1.2rem">' + formatDuration(todayMs) + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Today Cost</div><div class="stat-value" style="font-size:1.2rem">' + fmtCost(todayCost) + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">This Week</div><div class="stat-value" style="font-size:1.2rem">' + formatDuration(weekMs) + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Entries</div><div class="stat-value" style="font-size:1.2rem">' + myEntries.length + '</div></div>' +
+        '<div class="stat-card"><div class="stat-label">Hourly Rate</div><div class="stat-value" style="font-size:1.1rem">' + fmtHourlyRate(member) + '</div></div>' +
+      '</div>' +
+
+      // Filter bar
+      '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">' +
+          '<span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span>' +
+        '</div>' +
+        '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+          '<div style="display:flex;align-items:center;gap:6px">' +
+            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label>' +
+            '<input type="date" class="input" id="emp-att-from" value="' + defaultFrom + '" style="width:145px;padding:8px 10px;font-size:.82rem">' +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:6px">' +
+            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label>' +
+            '<input type="date" class="input" id="emp-att-to" value="' + today + '" style="width:145px;padding:8px 10px;font-size:.82rem">' +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:6px">' +
+            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Project</label>' +
+            '<select class="input" id="emp-att-project" style="width:160px;padding:8px 10px;font-size:.82rem">' +
+              '<option value="">All Projects</option>' + projOpts +
+            '</select>' +
+          '</div>' +
+          '<div style="display:flex;gap:8px;margin-left:auto">' +
+            '<button class="btn btn-accent btn-sm" onclick="applyEmpAttendanceFilter()">Search</button>' +
+            '<button class="btn btn-ghost btn-sm" onclick="resetEmpAttendanceFilter()">Reset</button>' +
+            
+          '</div>' +
+        '</div>' +
+      '</div>' +
+
+      '<div id="emp-att-stats-area"></div>' +
+      '<div id="emp-att-project-summary"></div>' +
+      '<div class="section-head time-entry-head">' +
+        '<h2>Time Entries</h2>' +
+        '<button class="btn btn-green" onclick="showAddTimeEntry()">+ Add Attendance</button>' +
+      '</div>' +
+      '<div id="emp-att-table-area"></div>' +
+    '</div>';
+
+    applyEmpAttendanceFilter();
+}
+
+function resetEmpAttendanceFilter() {
+    const today = todayStr();
+    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    document.getElementById('emp-att-from').value = thirtyDaysAgo.toISOString().slice(0, 10);
+    document.getElementById('emp-att-to').value = today;
+    document.getElementById('emp-att-project').value = '';
+    empAttCurrentPage = 1;
+    applyEmpAttendanceFilter();
+}
+
+function applyEmpAttendanceFilter() {
+    if (!currentUser || !currentUser.memberId) return;
+    const member = DB.members.find(m => m.id === currentUser.memberId);
+    if (!member) return;
+
+    const fromDate = document.getElementById('emp-att-from').value;
+    const toDate = document.getElementById('emp-att-to').value;
+    const projId = document.getElementById('emp-att-project').value;
+    if (!fromDate || !toDate) return;
+
+    let filtered = DB.attendance.filter(a => a.memberId === member.id && a.date >= fromDate && a.date <= toDate);
+    if (projId) filtered = filtered.filter(a => a.projectId === parseInt(projId));
+    filtered = filtered.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+
+    empAttFilteredData = filtered;
+
+    // Stats for filtered range
+    const totalMs = filtered.reduce((s, r) => {
+        if (r.clockIn && r.clockOut) return s + (new Date(r.clockOut) - new Date(r.clockIn));
+        return s;
+    }, 0);
+    const totalCost = filtered.reduce((s, r) => {
+        if (r.clockIn && r.clockOut) { const c = getEntryCost(r.memberId, new Date(r.clockOut) - new Date(r.clockIn)); return s + (c || 0); }
+        return s;
+    }, 0);
+
+    document.getElementById('emp-att-stats-area').innerHTML =
+        '<div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:16px">' +
+            '<div class="stat-card"><div class="stat-label">Filtered Entries</div><div class="stat-value" style="font-size:1.2rem">' + filtered.length + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Filtered Hours</div><div class="stat-value" style="font-size:1.2rem">' + formatDuration(totalMs) + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Filtered Cost</div><div class="stat-value" style="font-size:1.2rem">' + fmtCost(totalCost) + '</div></div>' +
+        '</div>';
+
+    // Summary by project
+    const projectGroups = {};
+    filtered.forEach(r => {
+        if (!r.clockIn || !r.clockOut) return;
+        const pid = r.projectId || 0;
+        if (!projectGroups[pid]) projectGroups[pid] = { ms: 0, cost: 0, entries: 0 };
+        const ms = new Date(r.clockOut) - new Date(r.clockIn);
+        projectGroups[pid].ms += ms;
+        projectGroups[pid].cost += (getEntryCost(r.memberId, ms) || 0);
+        projectGroups[pid].entries++;
+    });
+
+    const hasGroups = Object.keys(projectGroups).length > 0;
+    let summaryRows = '';
+    if (hasGroups) {
+        summaryRows = Object.entries(projectGroups).map(([pid, data]) => {
+            const proj = pid === '0' ? null : DB.projects.find(p => p.id === parseInt(pid));
+            return '<tr><td>' + (proj ? esc(proj.name) : '<span style="color:var(--main-text3)">Unassigned</span>') +
+                '</td><td style="text-align:right;font-family:var(--font-m)">' + data.entries +
+                '</td><td style="text-align:right;font-family:var(--font-m)">' + formatDuration(data.ms) +
+                '</td><td style="text-align:right;font-family:var(--font-m)">' + fmtCost(data.cost) + '</td></tr>';
         }).join('');
     }
 
-    document.getElementById('emp-attendance').innerHTML = `
-    <div class="app-header"><h2>My Attendance</h2><div class="header-sub">Log and track your work hours</div></div>
-    <div class="app-body" style="max-width:960px">
-      <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
-        <div class="stat-card"><div class="stat-label">Today Hours</div><div class="stat-value">${formatDuration(todayMs)}</div></div>
-        <div class="stat-card"><div class="stat-label">Today Cost</div><div class="stat-value">${fmtCost(todayCost)}</div></div>
-        <div class="stat-card"><div class="stat-label">This Week</div><div class="stat-value">${formatDuration(weekMs)}</div></div>
-        <div class="stat-card"><div class="stat-label">Total Entries</div><div class="stat-value">${myEntries.length}</div></div>
-        <div class="stat-card"><div class="stat-label">Hourly Rate</div><div class="stat-value" style="font-size:1.1rem">${fmtHourlyRate(member)}</div></div>
-      </div>
-      <div class="section-head"><h2>Time Entries</h2><button class="btn btn-accent" onclick="showAddTimeEntry()">+ Add Time Entry</button></div>
-      <div class="table-wrap"><table><thead><tr>
-        <th>Date</th><th>Project</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th>Description</th><th style="width:90px">Actions</th>
-      </tr></thead><tbody>${rows}</tbody></table></div>
-    </div>`;
+    document.getElementById('emp-att-project-summary').innerHTML = hasGroups
+        ? '<div class="section-head" style="margin-top:4px"><h2>Project Summary</h2></div>' +
+          '<div class="table-wrap" style="margin-bottom:24px"><table>' +
+          '<thead><tr><th>Project</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
+          '<tbody>' + summaryRows + '</tbody></table></div>'
+        : '';
+
+    // Clamp page
+    const totalPages = Math.ceil(filtered.length / empAttPageSize) || 1;
+    if (empAttCurrentPage > totalPages) empAttCurrentPage = totalPages;
+    if (empAttCurrentPage < 1) empAttCurrentPage = 1;
+
+    renderEmpAttendancePage();
+}
+
+function renderEmpAttendancePage() {
+    const filtered = empAttFilteredData;
+    const totalPages = Math.ceil(filtered.length / empAttPageSize) || 1;
+    const startIdx = (empAttCurrentPage - 1) * empAttPageSize;
+    const endIdx = startIdx + empAttPageSize;
+    const pageData = filtered.slice(startIdx, endIdx);
+
+    let rows = '';
+    if (filtered.length === 0) {
+        rows = '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No time entries found</td></tr>';
+    } else {
+        rows = pageData.map(r => {
+            var proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
+            var dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '—';
+            var startParts = r.clockIn ? r.clockIn.split('T') : [];
+            var endParts = r.clockOut ? r.clockOut.split('T') : [];
+            var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '—';
+            var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '—';
+            var subScopeName = r.subScopeId ? getSubScopeName(r.subScopeId) : '';
+            var detailName = r.detailId ? getDetailName(r.detailId) : '';
+            return '<tr>' +
+                '<td style="font-family:var(--font-m)">' + r.date + '</td>' +
+                '<td>' + (proj ? esc(proj.name) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td>' + (subScopeName ? esc(subScopeName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td>' + (detailName ? esc(detailName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td style="font-family:var(--font-m)">' + startTime + '</td>' +
+                '<td style="font-family:var(--font-m)">' + endTime + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + dur + '</td>' +
+                '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.description || '') + '">' + (r.description ? esc(r.description) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td><div class="actions-cell">' +
+                    '<button class="btn-icon" onclick="showEditTimeEntry(' + r.id + ')" title="Edit">&#9998;</button>' +
+                    '<button class="btn-icon danger" onclick="confirmDeleteTimeEntry(' + r.id + ')" title="Delete">&#10005;</button>' +
+                '</div></td></tr>';
+        }).join('');
+
+    }
+
+    // Pagination
+    let paginationHtml = '';
+    if (filtered.length > 0) {
+        const showFrom = startIdx + 1;
+        const showTo = Math.min(endIdx, filtered.length);
+
+        let pageButtons = '';
+        const maxVisible = 5;
+        let startPage = Math.max(1, empAttCurrentPage - Math.floor(maxVisible / 2));
+        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+        if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
+
+        pageButtons += '<button onclick="goEmpAttPage(1)" ' + (empAttCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
+        pageButtons += '<button onclick="goEmpAttPage(' + (empAttCurrentPage - 1) + ')" ' + (empAttCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
+        for (let p = startPage; p <= endPage; p++) {
+            pageButtons += '<button onclick="goEmpAttPage(' + p + ')" class="' + (p === empAttCurrentPage ? 'active' : '') + '">' + p + '</button>';
+        }
+        pageButtons += '<button onclick="goEmpAttPage(' + (empAttCurrentPage + 1) + ')" ' + (empAttCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
+        pageButtons += '<button onclick="goEmpAttPage(' + totalPages + ')" ' + (empAttCurrentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
+
+        paginationHtml = '<div class="pagination">' +
+            '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + filtered.length + ' entries</div>' +
+            '<div style="display:flex;align-items:center;gap:20px">' +
+                '<div class="pagination-size"><label>Show</label>' +
+                    '<select onchange="changeEmpAttPageSize(this.value)">' +
+                        '<option value="5"' + (empAttPageSize === 5 ? ' selected' : '') + '>5</option>' +
+                        '<option value="10"' + (empAttPageSize === 10 ? ' selected' : '') + '>10</option>' +
+                        '<option value="25"' + (empAttPageSize === 25 ? ' selected' : '') + '>25</option>' +
+                        '<option value="50"' + (empAttPageSize === 50 ? ' selected' : '') + '>50</option>' +
+                        '<option value="100"' + (empAttPageSize === 100 ? ' selected' : '') + '>100</option>' +
+                    '</select></div>' +
+                '<div class="pagination-controls">' + pageButtons + '</div>' +
+            '</div></div>';
+    }
+
+    document.getElementById('emp-att-table-area').innerHTML =
+        '<div class="table-wrap"><table><thead><tr>' +
+             '<th>Date</th><th>Project</th><th>Sub Scope</th><th>Detail</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th>Description</th><th style="width:90px">Actions</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table>'  + '</div>' + paginationHtml;
+}
+
+function goEmpAttPage(page) {
+    const totalPages = Math.ceil(empAttFilteredData.length / empAttPageSize) || 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    empAttCurrentPage = page;
+    renderEmpAttendancePage();
+}
+
+function changeEmpAttPageSize(size) {
+    empAttPageSize = parseInt(size);
+    empAttCurrentPage = 1;
+    renderEmpAttendancePage();
 }
 
 function showAddTimeEntry() {
-    const projectOpts = DB.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
-    const today = todayStr();
+    var myProjects = getEmployeeProjects(currentUser.memberId);
 
-    showModal(`<h3>Add Time Entry</h3>
-        <div class="field"><label>Date</label>
-            <input class="input" id="entry-date" type="date" value="${today}"></div>
-        <div class="field"><label>Project</label>
-            <select class="input" id="entry-project"><option value="">-- Select Project --</option>${projectOpts}</select></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="field"><label>Start Time</label>
-                <input class="input" id="entry-start" type="time" value="09:00"></div>
-            <div class="field"><label>End Time</label>
-                <input class="input" id="entry-end" type="time" value="17:00"></div>
-        </div>
-        <div class="field"><label>Description</label>
-            <textarea class="input" id="entry-desc" rows="3" placeholder="What did you work on?" style="resize:vertical"></textarea></div>
-        <p class="auth-error" id="entry-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddTimeEntry()">Save</button></div>`);
-    setTimeout(() => document.getElementById('entry-project')?.focus(), 100);
+    if (myProjects.length === 0) {
+        showModal('<h3>Add Time Entry</h3>' +
+            '<p style="color:var(--main-text3);line-height:1.6">You are not assigned to any project.<br>Please ask admin to assign you to a project first.</p>' +
+            '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>');
+        return;
+    }
+
+    var projectOpts = myProjects.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
+    var today = todayStr();
+
+    showModal('<h3>Add Time Entry</h3>' +
+        '<div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="' + today + '"></div>' +
+        '<div class="field"><label>Project</label><select class="input" id="entry-project"><option value="">-- Select Project --</option>' + projectOpts + '</select></div>' +
+        '<div class="field"><label>Sub Scope</label><select class="input" id="entry-subscope">' + subScopeOpts(null) + '</select></div>' +
+        '<div class="field"><label>Detail</label><select class="input" id="entry-detail">' + detailOpts(null) + '</select></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+            '<div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="09:00"></div>' +
+            '<div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="17:00"></div>' +
+        '</div>' +
+        '<div class="field"><label>Description</label><textarea class="input" id="entry-desc" rows="3" placeholder="What did you work on?" style="resize:vertical"></textarea></div>' +
+        '<p class="auth-error" id="entry-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddTimeEntry()">Save</button></div>');
+    setTimeout(function() { document.getElementById('entry-project').focus(); }, 100);
 }
 
+
 async function doAddTimeEntry() {
-    const errEl = document.getElementById('entry-error');
-    const date = document.getElementById('entry-date').value;
-    const projectId = document.getElementById('entry-project').value;
-    const start = document.getElementById('entry-start').value;
-    const end = document.getElementById('entry-end').value;
-    const desc = document.getElementById('entry-desc').value.trim();
+    var errEl = document.getElementById('entry-error');
+    var date = document.getElementById('entry-date').value;
+    var projectId = document.getElementById('entry-project').value;
+    var subScopeId = document.getElementById('entry-subscope').value;
+    var detailId = document.getElementById('entry-detail').value;
+    var start = document.getElementById('entry-start').value;
+    var end = document.getElementById('entry-end').value;
+    var desc = document.getElementById('entry-desc').value.trim();
 
     errEl.textContent = '';
     if (!date) { errEl.textContent = 'Date is required'; return; }
@@ -1028,6 +1279,26 @@ async function doAddTimeEntry() {
     if (!start) { errEl.textContent = 'Start time is required'; return; }
     if (!end) { errEl.textContent = 'End time is required'; return; }
     if (start >= end) { errEl.textContent = 'End time must be after start time'; return; }
+
+    var newStart = date + 'T' + start + ':00';
+    var newEnd = date + 'T' + end + ':00';
+
+    var myEntries = DB.attendance.filter(function(a) {
+        return a.memberId === currentUser.memberId && a.date === date && a.clockIn && a.clockOut;
+    });
+    var overlap = null;
+    for (var i = 0; i < myEntries.length; i++) {
+        if (newStart < myEntries[i].clockOut && newEnd > myEntries[i].clockIn) {
+            overlap = myEntries[i]; break;
+        }
+    }
+    if (overlap) {
+        var oStart = overlap.clockIn.split('T')[1].substring(0, 5);
+        var oEnd = overlap.clockOut.split('T')[1].substring(0, 5);
+        var oProj = overlap.projectId ? DB.projects.find(function(p) { return p.id === overlap.projectId; }) : null;
+        errEl.textContent = 'Overlaps with ' + oStart + '-' + oEnd + (oProj ? ' (' + oProj.name + ')' : '');
+        return;
+    }
 
     try {
         await api('/attendance', {
@@ -1035,9 +1306,11 @@ async function doAddTimeEntry() {
             body: {
                 memberId: currentUser.memberId,
                 date: date,
-                clockIn: date + 'T' + start + ':00',
-                clockOut: date + 'T' + end + ':00',
+                clockIn: newStart,
+                clockOut: newEnd,
                 projectId: parseInt(projectId),
+                subScopeId: subScopeId ? parseInt(subScopeId) : null,
+                detailId: detailId ? parseInt(detailId) : null,
                 description: desc
             }
         });
@@ -1045,38 +1318,50 @@ async function doAddTimeEntry() {
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
-function showEditTimeEntry(entryId) {
-    const entry = DB.attendance.find(a => a.id === entryId); if (!entry) return;
-    const projectOpts = DB.projects.map(p => { const sel = entry.projectId === p.id ? 'selected' : ''; return `<option value="${p.id}" ${sel}>${esc(p.name)}</option>`; }).join('');
-    const startParts = entry.clockIn ? entry.clockIn.split('T') : [];
-    const endParts = entry.clockOut ? entry.clockOut.split('T') : [];
-    const startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
-    const endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
 
-    showModal(`<h3>Edit Time Entry</h3>
-        <div class="field"><label>Date</label>
-            <input class="input" id="entry-date" type="date" value="${entry.date}"></div>
-        <div class="field"><label>Project</label>
-            <select class="input" id="entry-project"><option value="">-- Select Project --</option>${projectOpts}</select></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="field"><label>Start Time</label>
-                <input class="input" id="entry-start" type="time" value="${startTime}"></div>
-            <div class="field"><label>End Time</label>
-                <input class="input" id="entry-end" type="time" value="${endTime}"></div>
-        </div>
-        <div class="field"><label>Description</label>
-            <textarea class="input" id="entry-desc" rows="3" style="resize:vertical">${esc(entry.description || '')}</textarea></div>
-        <p class="auth-error" id="entry-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditTimeEntry(${entryId})">Save</button></div>`);
+function showEditTimeEntry(entryId) {
+    var entry = DB.attendance.find(function(a) { return a.id === entryId; });
+    if (!entry) return;
+    var myProjects = getEmployeeProjects(currentUser.memberId);
+    var allProjects = myProjects;
+    if (entry.projectId && !allProjects.find(function(p) { return p.id === entry.projectId; })) {
+        var curProj = DB.projects.find(function(p) { return p.id === entry.projectId; });
+        if (curProj) allProjects = [curProj].concat(allProjects);
+    }
+    var projectOpts = allProjects.map(function(p) {
+        var sel = entry.projectId === p.id ? 'selected' : '';
+        return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>';
+    }).join('');
+
+    var startParts = entry.clockIn ? entry.clockIn.split('T') : [];
+    var endParts = entry.clockOut ? entry.clockOut.split('T') : [];
+    var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
+    var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
+
+    showModal('<h3>Edit Time Entry</h3>' +
+        '<div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="' + entry.date + '"></div>' +
+        '<div class="field"><label>Project</label><select class="input" id="entry-project"><option value="">-- Select Project --</option>' + projectOpts + '</select></div>' +
+        '<div class="field"><label>Sub Scope</label><select class="input" id="entry-subscope">' + subScopeOpts(entry.subScopeId) + '</select></div>' +
+        '<div class="field"><label>Detail</label><select class="input" id="entry-detail">' + detailOpts(entry.detailId) + '</select></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+            '<div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="' + startTime + '"></div>' +
+            '<div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="' + endTime + '"></div>' +
+        '</div>' +
+        '<div class="field"><label>Description</label><textarea class="input" id="entry-desc" rows="3" style="resize:vertical">' + esc(entry.description || '') + '</textarea></div>' +
+        '<p class="auth-error" id="entry-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditTimeEntry(' + entryId + ')">Save</button></div>');
 }
 
+
 async function doEditTimeEntry(entryId) {
-    const errEl = document.getElementById('entry-error');
-    const date = document.getElementById('entry-date').value;
-    const projectId = document.getElementById('entry-project').value;
-    const start = document.getElementById('entry-start').value;
-    const end = document.getElementById('entry-end').value;
-    const desc = document.getElementById('entry-desc').value.trim();
+    var errEl = document.getElementById('entry-error');
+    var date = document.getElementById('entry-date').value;
+    var projectId = document.getElementById('entry-project').value;
+    var subScopeId = document.getElementById('entry-subscope').value;
+    var detailId = document.getElementById('entry-detail').value;
+    var start = document.getElementById('entry-start').value;
+    var end = document.getElementById('entry-end').value;
+    var desc = document.getElementById('entry-desc').value.trim();
 
     errEl.textContent = '';
     if (!date) { errEl.textContent = 'Date is required'; return; }
@@ -1085,14 +1370,36 @@ async function doEditTimeEntry(entryId) {
     if (!end) { errEl.textContent = 'End time is required'; return; }
     if (start >= end) { errEl.textContent = 'End time must be after start time'; return; }
 
+    var newStart = date + 'T' + start + ':00';
+    var newEnd = date + 'T' + end + ':00';
+
+    var myEntries = DB.attendance.filter(function(a) {
+        return a.memberId === currentUser.memberId && a.date === date && a.clockIn && a.clockOut && a.id !== entryId;
+    });
+    var overlap = null;
+    for (var i = 0; i < myEntries.length; i++) {
+        if (newStart < myEntries[i].clockOut && newEnd > myEntries[i].clockIn) {
+            overlap = myEntries[i]; break;
+        }
+    }
+    if (overlap) {
+        var oStart = overlap.clockIn.split('T')[1].substring(0, 5);
+        var oEnd = overlap.clockOut.split('T')[1].substring(0, 5);
+        var oProj = overlap.projectId ? DB.projects.find(function(p) { return p.id === overlap.projectId; }) : null;
+        errEl.textContent = 'Overlaps with ' + oStart + '-' + oEnd + (oProj ? ' (' + oProj.name + ')' : '');
+        return;
+    }
+
     try {
         await api('/attendance/' + entryId, {
             method: 'PUT',
             body: {
                 date: date,
-                clockIn: date + 'T' + start + ':00',
-                clockOut: date + 'T' + end + ':00',
+                clockIn: newStart,
+                clockOut: newEnd,
                 projectId: parseInt(projectId),
+                subScopeId: subScopeId ? parseInt(subScopeId) : null,
+                detailId: detailId ? parseInt(detailId) : null,
                 description: desc
             }
         });
@@ -1100,11 +1407,6 @@ async function doEditTimeEntry(entryId) {
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
-function confirmDeleteTimeEntry(entryId) {
-    showModal(`<h3>Delete Time Entry</h3>
-        <p style="color:var(--main-text2);line-height:1.6">Delete this time entry?</p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteTimeEntry(${entryId})">Delete</button></div>`);
-}
 
 async function doDeleteTimeEntry(entryId) {
     try {
@@ -1112,6 +1414,8 @@ async function doDeleteTimeEntry(entryId) {
         hideModal(); await loadDB(); renderEmployeeAttendance();
     } catch (e) { alert('Failed: ' + e.message); }
 }
+
+
 
 
 /* ==========================================================
@@ -1164,7 +1468,7 @@ function renderAdminAttendance() {
           <div style="display:flex;gap:8px;margin-left:auto">
             <button class="btn btn-accent btn-sm" onclick="applyAttendanceFilter()">Search</button>
             <button class="btn btn-ghost btn-sm" onclick="resetAttendanceFilter()">Reset</button>
-            <button class="btn btn-ghost btn-sm" onclick="exportAttendanceCSV()">Export CSV</button>
+            <button class="btn btn-blue btn-sm" onclick="exportAttendanceCSV()">Export CSV</button>
           </div>
         </div>
       </div>
@@ -1315,7 +1619,7 @@ function renderAttendancePage() {
     // Table rows
     let rows = '';
     if (filtered.length === 0) {
-        rows = '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No records found</td></tr>';
+        rows = '<tr><td colspan="11" style="text-align:center;color:var(--main-text3);padding:30px">No records found</td></tr>';
     } else {
         rows = pageData.map(r => {
             const member = DB.members.find(m => m.id === r.memberId);
@@ -1327,21 +1631,25 @@ function renderAttendancePage() {
             const durMs = r.clockIn && r.clockOut ? new Date(r.clockOut) - new Date(r.clockIn) : 0;
             const dur = durMs > 0 ? formatDuration(durMs) : '—';
             const cost = durMs > 0 ? fmtCost(getEntryCost(r.memberId, durMs)) : '—';
-            return `<tr>
-                <td style="font-family:var(--font-m)">${r.date}</td>
-                <td>${member ? esc(member.name) : 'Unknown'}</td>
-                <td>${proj ? esc(proj.name) : '<span style="color:var(--main-text3)">—</span>'}</td>
-                <td style="font-family:var(--font-m)">${startTime}</td>
-                <td style="font-family:var(--font-m)">${endTime}</td>
-                <td style="text-align:right;font-family:var(--font-m)">${dur}</td>
-                <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.description || '')}">${r.description ? esc(r.description) : '<span style="color:var(--main-text3)">—</span>'}</td>
-                <td style="text-align:right"><span class="salary-val">${cost}</span></td>
-                <td><div class="actions-cell">
-                    <button class="btn-icon" onclick="showEditAttendance(${r.id})" title="Edit">&#9998;</button>
-                    <button class="btn-icon danger" onclick="confirmDeleteAttendance(${r.id})" title="Delete">&#10005;</button>
-                </div></td>
-            </tr>`;
+            const subScopeName = r.subScopeId ? getSubScopeName(r.subScopeId) : '';
+            const detailName = r.detailId ? getDetailName(r.detailId) : '';
+            return '<tr>' +
+                '<td style="font-family:var(--font-m)">' + r.date + '</td>' +
+                '<td>' + (member ? esc(member.name) : 'Unknown') + '</td>' +
+                '<td>' + (proj ? esc(proj.name) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td>' + (subScopeName ? esc(subScopeName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td>' + (detailName ? esc(detailName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td style="font-family:var(--font-m)">' + startTime + '</td>' +
+                '<td style="font-family:var(--font-m)">' + endTime + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + dur + '</td>' +
+                '<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.description || '') + '">' + (r.description ? esc(r.description) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td style="text-align:right"><span class="salary-val">' + cost + '</span></td>' +
+                '<td><div class="actions-cell">' +
+                    '<button class="btn-icon" onclick="showEditAttendance(' + r.id + ')" title="Edit">&#9998;</button>' +
+                    '<button class="btn-icon danger" onclick="confirmDeleteAttendance(' + r.id + ')" title="Delete">&#10005;</button>' +
+                '</div></td></tr>';
         }).join('');
+
     }
 
     // Pagination controls
@@ -1396,10 +1704,11 @@ function renderAttendancePage() {
     <div class="section-head"><h2>Detail Records</h2><span style="font-size:.82rem;color:var(--main-text3)">${rangeLabel}</span></div>
     <div class="table-wrap">
       <table><thead><tr>
-        <th>Date</th><th>Employee</th><th>Project</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th>Description</th><th style="text-align:right">Cost</th><th style="width:90px">Actions</th>
+        <th>Date</th><th>Employee</th><th>Project</th><th>Sub Scope</th><th>Detail</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th>Description</th><th style="text-align:right">Cost</th><th style="width:90px">Actions</th>
       </tr></thead><tbody>${rows}</tbody></table>
-      ${paginationHtml}
-    </div>`;
+      
+    </div>
+    ${paginationHtml}`;
 }
 
 function goAttPage(page) {
@@ -1420,33 +1729,33 @@ function showEditAttendance(recordId) {
     const record = DB.attendance.find(a => a.id === recordId); if (!record) return;
     const member = DB.members.find(m => m.id === record.memberId);
     const mName = member ? member.name : 'Unknown';
-    const projectOpts = DB.projects.map(p => { const sel = record.projectId === p.id ? 'selected' : ''; return `<option value="${p.id}" ${sel}>${esc(p.name)}</option>`; }).join('');
+    const projectOpts = DB.projects.map(p => { const sel = record.projectId === p.id ? 'selected' : ''; return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>'; }).join('');
     const startParts = record.clockIn ? record.clockIn.split('T') : [];
     const endParts = record.clockOut ? record.clockOut.split('T') : [];
     const startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
     const endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
 
-    showModal(`<h3>Edit Entry — ${esc(mName)}</h3>
-        <div class="field"><label>Date</label>
-            <input class="input" id="edit-att-date" type="date" value="${record.date}"></div>
-        <div class="field"><label>Project</label>
-            <select class="input" id="edit-att-project"><option value="">-- Select Project --</option>${projectOpts}</select></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="field"><label>Start Time</label>
-                <input class="input" id="edit-att-start" type="time" value="${startTime}"></div>
-            <div class="field"><label>End Time</label>
-                <input class="input" id="edit-att-end" type="time" value="${endTime}"></div>
-        </div>
-        <div class="field"><label>Description</label>
-            <textarea class="input" id="edit-att-desc" rows="3" style="resize:vertical">${esc(record.description || '')}</textarea></div>
-        <p class="auth-error" id="edit-att-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditAttendance(${recordId})">Save</button></div>`);
+    showModal('<h3>Edit Entry — ' + esc(mName) + '</h3>' +
+        '<div class="field"><label>Date</label><input class="input" id="edit-att-date" type="date" value="' + record.date + '"></div>' +
+        '<div class="field"><label>Project</label><select class="input" id="edit-att-project"><option value="">-- Select Project --</option>' + projectOpts + '</select></div>' +
+        '<div class="field"><label>Sub Scope</label><select class="input" id="edit-att-subscope">' + subScopeOpts(record.subScopeId) + '</select></div>' +
+        '<div class="field"><label>Detail</label><select class="input" id="edit-att-detail">' + detailOpts(record.detailId) + '</select></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+            '<div class="field"><label>Start Time</label><input class="input" id="edit-att-start" type="time" value="' + startTime + '"></div>' +
+            '<div class="field"><label>End Time</label><input class="input" id="edit-att-end" type="time" value="' + endTime + '"></div>' +
+        '</div>' +
+        '<div class="field"><label>Description</label><textarea class="input" id="edit-att-desc" rows="3" style="resize:vertical">' + esc(record.description || '') + '</textarea></div>' +
+        '<p class="auth-error" id="edit-att-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditAttendance(' + recordId + ')">Save</button></div>');
 }
+
 
 async function doEditAttendance(recordId) {
     const errEl = document.getElementById('edit-att-error');
     const date = document.getElementById('edit-att-date').value;
     const projectId = document.getElementById('edit-att-project').value;
+    const subScopeId = document.getElementById('edit-att-subscope').value;
+    const detailId = document.getElementById('edit-att-detail').value;
     const start = document.getElementById('edit-att-start').value;
     const end = document.getElementById('edit-att-end').value;
     const desc = document.getElementById('edit-att-desc').value.trim();
@@ -1459,11 +1768,20 @@ async function doEditAttendance(recordId) {
     try {
         await api('/attendance/' + recordId, {
             method: 'PUT',
-            body: { date, clockIn: date + 'T' + start + ':00', clockOut: date + 'T' + end + ':00', projectId: projectId ? parseInt(projectId) : null, description: desc }
+            body: {
+                date,
+                clockIn: date + 'T' + start + ':00',
+                clockOut: date + 'T' + end + ':00',
+                projectId: projectId ? parseInt(projectId) : null,
+                subScopeId: subScopeId ? parseInt(subScopeId) : null,
+                detailId: detailId ? parseInt(detailId) : null,
+                description: desc
+            }
         });
         hideModal(); await loadDB(); applyAttendanceFilter();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
+
 
 function confirmDeleteAttendance(recordId) {
     const record = DB.attendance.find(a => a.id === recordId); if (!record) return;
@@ -1488,7 +1806,7 @@ function exportAttendanceCSV() {
     filtered = filtered.sort((a, b) => a.date.localeCompare(b.date) || a.memberId - b.memberId);
     if (filtered.length === 0) { alert('No records to export.'); return; }
 
-    const headers = ['Date', 'Employee', 'Position', 'Department', 'Project', 'Start', 'End', 'Duration', 'Description', 'Hourly Rate', 'Cost'];
+    const headers = ['Date', 'Employee', 'Position', 'Department', 'Project', 'Sub Scope', 'Detail', 'Start', 'End', 'Duration', 'Description', 'Hourly Rate', 'Cost'];
     const rows = filtered.map(r => {
         const member = DB.members.find(m => m.id === r.memberId);
         const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
@@ -1500,9 +1818,12 @@ function exportAttendanceCSV() {
         const dur = durMs > 0 ? formatDuration(durMs) : '';
         const rate = member ? getHourlyRate(member) : null;
         const cost = durMs > 0 ? getEntryCost(r.memberId, durMs) : null;
+        const subScopeName = r.subScopeId ? getSubScopeName(r.subScopeId) : '';
+        const detailName = r.detailId ? getDetailName(r.detailId) : '';
         return [r.date, member ? member.name : 'Unknown', member ? getPositionName(member.positionId) : '', member ? getDeptName(member.departmentId) : '',
-            proj ? proj.name : '', startTime, endTime, dur, r.description || '', rate ? rate.toFixed(2) : '', cost ? cost.toFixed(2) : ''];
+            proj ? proj.name : '', subScopeName, detailName, startTime, endTime, dur, r.description || '', rate ? rate.toFixed(2) : '', cost ? cost.toFixed(2) : ''];
     });
+
 
     let csv = headers.join(',') + '\n';
     rows.forEach(r => { csv += r.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(',') + '\n'; });
@@ -1518,6 +1839,209 @@ function exportAttendanceCSV() {
 /* ==========================================================
    SECTION 14: INITIALIZATION
    ========================================================== */
+/* ==========================================================
+   SECTION: ADMIN — SUB SCOPES
+   ========================================================== */
+
+function renderAdminSubScopes() {
+    const view = document.getElementById('admin-subscopes');
+    let rows = '';
+    if (DB.subScopes.length === 0) {
+        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No sub scopes yet</td></tr>';
+    } else {
+        rows = DB.subScopes.map(s =>
+            '<tr>' +
+                '<td style="font-family:var(--font-m);width:60px">' + s.id + '</td>' +
+                '<td>' + esc(s.name) + '</td>' +
+                '<td style="color:var(--main-text3);font-size:.82rem">' + (s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '—') + '</td>' +
+                '<td><div class="actions-cell">' +
+                    '<button class="btn-icon" onclick="showEditSubScope(' + s.id + ')" title="Edit">&#9998;</button>' +
+                    '<button class="btn-icon danger" onclick="confirmDeleteSubScope(' + s.id + ')" title="Delete">&#10005;</button>' +
+                '</div></td>' +
+            '</tr>'
+        ).join('');
+    }
+
+    view.innerHTML =
+        '<div class="app-header">' +
+            '<h2>Sub Scopes</h2>' +
+            '<div class="header-sub">Manage sub scope categories</div>' +
+        '</div>' +
+        '<div class="app-body">' +
+            '<div class="section-head">' +
+                '<h2>All Sub Scopes <span style="color:var(--main-text3);font-weight:400;font-size:.85rem">(' + DB.subScopes.length + ')</span></h2>' +
+                '<button class="btn btn-green" onclick="showAddSubScope()">+ Add Sub Scope</button>' +
+            '</div>' +
+            '<div class="table-wrap"><table>' +
+                '<thead><tr>' +
+                    '<th style="width:60px">ID</th>' +
+                    '<th>Name</th>' +
+                    '<th style="width:140px">Created</th>' +
+                    '<th style="width:90px">Actions</th>' +
+                '</tr></thead>' +
+                '<tbody>' + rows + '</tbody>' +
+            '</table></div>' +
+        '</div>';
+}
+
+function showAddSubScope() {
+    showModal('<h3>Add Sub Scope</h3>' +
+        '<div class="field"><label>Name</label><input class="input" id="subscope-name" placeholder="Enter sub scope name"></div>' +
+        '<p class="auth-error" id="subscope-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddSubScope()">Save</button></div>');
+    setTimeout(function() { document.getElementById('subscope-name').focus(); }, 100);
+}
+
+async function doAddSubScope() {
+    var errEl = document.getElementById('subscope-error');
+    var name = document.getElementById('subscope-name').value.trim();
+    errEl.textContent = '';
+    if (!name) { errEl.textContent = 'Name is required'; return; }
+    try {
+        await api('/subscopes', { method: 'POST', body: { name: name } });
+        hideModal(); await loadDB(); renderAdminSubScopes();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
+}
+
+function showEditSubScope(id) {
+    var item = DB.subScopes.find(s => s.id === id);
+    if (!item) return;
+    showModal('<h3>Edit Sub Scope</h3>' +
+        '<div class="field"><label>Name</label><input class="input" id="subscope-name" value="' + esc(item.name) + '"></div>' +
+        '<p class="auth-error" id="subscope-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditSubScope(' + id + ')">Save</button></div>');
+    setTimeout(function() { document.getElementById('subscope-name').focus(); }, 100);
+}
+
+async function doEditSubScope(id) {
+    var errEl = document.getElementById('subscope-error');
+    var name = document.getElementById('subscope-name').value.trim();
+    errEl.textContent = '';
+    if (!name) { errEl.textContent = 'Name is required'; return; }
+    try {
+        await api('/subscopes/' + id, { method: 'PUT', body: { name: name } });
+        hideModal(); await loadDB(); renderAdminSubScopes();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
+}
+
+function confirmDeleteSubScope(id) {
+    var item = DB.subScopes.find(s => s.id === id);
+    if (!item) return;
+    showModal('<h3>Delete Sub Scope</h3>' +
+        '<p style="color:var(--main-text2);line-height:1.6">Delete <strong style="color:var(--main-text)">' + esc(item.name) + '</strong>?</p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteSubScope(' + id + ')">Delete</button></div>');
+}
+
+async function doDeleteSubScope(id) {
+    try {
+        await api('/subscopes/' + id, { method: 'DELETE' });
+        hideModal(); await loadDB(); renderAdminSubScopes();
+    } catch (e) { alert('Failed: ' + e.message); }
+}
+
+
+/* ==========================================================
+   SECTION: ADMIN — DETAILS
+   ========================================================== */
+
+function renderAdminDetails() {
+    const view = document.getElementById('admin-details');
+    let rows = '';
+    if (DB.details.length === 0) {
+        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No details yet</td></tr>';
+    } else {
+        rows = DB.details.map(d =>
+            '<tr>' +
+                '<td style="font-family:var(--font-m);width:60px">' + d.id + '</td>' +
+                '<td>' + esc(d.name) + '</td>' +
+                '<td style="color:var(--main-text3);font-size:.82rem">' + (d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—') + '</td>' +
+                '<td><div class="actions-cell">' +
+                    '<button class="btn-icon" onclick="showEditDetail(' + d.id + ')" title="Edit">&#9998;</button>' +
+                    '<button class="btn-icon danger" onclick="confirmDeleteDetail(' + d.id + ')" title="Delete">&#10005;</button>' +
+                '</div></td>' +
+            '</tr>'
+        ).join('');
+    }
+
+    view.innerHTML =
+        '<div class="app-header">' +
+            '<h2>Details</h2>' +
+            '<div class="header-sub">Manage detail categories</div>' +
+        '</div>' +
+        '<div class="app-body">' +
+            '<div class="section-head">' +
+                '<h2>All Details <span style="color:var(--main-text3);font-weight:400;font-size:.85rem">(' + DB.details.length + ')</span></h2>' +
+                '<button class="btn btn-green" onclick="showAddDetail()">+ Add Detail</button>' +
+            '</div>' +
+            '<div class="table-wrap"><table>' +
+                '<thead><tr>' +
+                    '<th style="width:60px">ID</th>' +
+                    '<th>Name</th>' +
+                    '<th style="width:140px">Created</th>' +
+                    '<th style="width:90px">Actions</th>' +
+                '</tr></thead>' +
+                '<tbody>' + rows + '</tbody>' +
+            '</table></div>' +
+        '</div>';
+}
+
+function showAddDetail() {
+    showModal('<h3>Add Detail</h3>' +
+        '<div class="field"><label>Name</label><input class="input" id="detail-name" placeholder="Enter detail name"></div>' +
+        '<p class="auth-error" id="detail-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddDetail()">Save</button></div>');
+    setTimeout(function() { document.getElementById('detail-name').focus(); }, 100);
+}
+
+async function doAddDetail() {
+    var errEl = document.getElementById('detail-error');
+    var name = document.getElementById('detail-name').value.trim();
+    errEl.textContent = '';
+    if (!name) { errEl.textContent = 'Name is required'; return; }
+    try {
+        await api('/details', { method: 'POST', body: { name: name } });
+        hideModal(); await loadDB(); renderAdminDetails();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
+}
+
+function showEditDetail(id) {
+    var item = DB.details.find(d => d.id === id);
+    if (!item) return;
+    showModal('<h3>Edit Detail</h3>' +
+        '<div class="field"><label>Name</label><input class="input" id="detail-name" value="' + esc(item.name) + '"></div>' +
+        '<p class="auth-error" id="detail-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditDetail(' + id + ')">Save</button></div>');
+    setTimeout(function() { document.getElementById('detail-name').focus(); }, 100);
+}
+
+async function doEditDetail(id) {
+    var errEl = document.getElementById('detail-error');
+    var name = document.getElementById('detail-name').value.trim();
+    errEl.textContent = '';
+    if (!name) { errEl.textContent = 'Name is required'; return; }
+    try {
+        await api('/details/' + id, { method: 'PUT', body: { name: name } });
+        hideModal(); await loadDB(); renderAdminDetails();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
+}
+
+function confirmDeleteDetail(id) {
+    var item = DB.details.find(d => d.id === id);
+    if (!item) return;
+    showModal('<h3>Delete Detail</h3>' +
+        '<p style="color:var(--main-text2);line-height:1.6">Delete <strong style="color:var(--main-text)">' + esc(item.name) + '</strong>?</p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteDetail(' + id + ')">Delete</button></div>');
+}
+
+async function doDeleteDetail(id) {
+    try {
+        await api('/details/' + id, { method: 'DELETE' });
+        hideModal(); await loadDB(); renderAdminDetails();
+    } catch (e) { alert('Failed: ' + e.message); }
+}
+
+
+
 
 // Pre-load data on page load
 (async function(){
