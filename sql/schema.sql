@@ -76,9 +76,18 @@ CREATE TABLE IF NOT EXISTS details (
     created_at  TIMESTAMP DEFAULT NOW()
 );
 
+-- 建 scopes 表
+CREATE TABLE IF NOT EXISTS scopes (
+    id          SERIAL PRIMARY KEY,
+    name        VARCHAR(200) NOT NULL,
+    created_at  TIMESTAMP DEFAULT NOW()
+);
+
+
 -- Add columns to attendance
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS sub_scope_id INT REFERENCES sub_scopes(id) ON DELETE SET NULL;
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS detail_id INT REFERENCES details(id) ON DELETE SET NULL;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS scope_id INT REFERENCES scopes(id) ON DELETE SET NULL;
 
 
 -- ========================================
@@ -101,3 +110,4 @@ CREATE INDEX IF NOT EXISTS idx_attendance_member ON attendance(member_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
 CREATE INDEX IF NOT EXISTS idx_attendance_sub_scope ON attendance(sub_scope_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_detail ON attendance(detail_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_scope ON attendance(scope_id);

@@ -4,7 +4,7 @@
 
 //const API = 'http://localhost:3000/api';
 const API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? 'http://localhost:3000/api'
+    ? 'http://localhost:3001/api'
     : '/api';
 
 
@@ -37,6 +37,7 @@ let DB = {
     users: [],
     positions: [],
     departments: [],
+    scopes: [],
     subScopes: [],
     details: [],
     projectAssignments: [],
@@ -45,12 +46,13 @@ let DB = {
 
 async function loadDB() {
     try {
-        const [projects, members, users, positions, departments, subScopes, details, assignments, attendance] = await Promise.all([
+        const [projects, members, users, positions, departments, scopes, subScopes, details, assignments, attendance] = await Promise.all([
             api('/projects'),
             api('/members'),
             api('/users'),
             api('/positions'),
             api('/departments'),
+            api('/scopes'),
             api('/subscopes'),
             api('/details'),
             api('/assignments'),
@@ -61,6 +63,7 @@ async function loadDB() {
         DB.users = users;
         DB.positions = positions;
         DB.departments = departments;
+        DB.scopes = scopes;
         DB.subScopes = subScopes;
         DB.details = details;
         DB.projectAssignments = assignments;
@@ -69,6 +72,7 @@ async function loadDB() {
         console.error('Failed to load data:', e);
     }
 }
+
 
 
 
@@ -161,6 +165,17 @@ function subScopeOpts(selectedId) {
 function detailOpts(selectedId) {
     return '<option value="">-- None --</option>' +
         DB.details.map(d => '<option value="' + d.id + '"' + (d.id === selectedId ? ' selected' : '') + '>' + esc(d.name) + '</option>').join('');
+}
+
+function getScopeName(id) {
+    if (!id) return '—';
+    const s = DB.scopes.find(x => x.id === id);
+    return s ? s.name : '—';
+}
+
+function scopeOpts(selectedId) {
+    return '<option value="">-- None --</option>' +
+        DB.scopes.map(s => '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('');
 }
 
 
@@ -288,6 +303,7 @@ async function adminNav(tab, el) {
         case 'positions': renderPositionsList(); break;
         case 'departments': renderDepartmentsList(); break;
         case 'attendance': renderAdminAttendance(); break;
+        case 'scopes': renderAdminScopes(); break;
         case 'subscopes': renderAdminSubScopes(); break;
         case 'details': renderAdminDetails(); break;
     }
@@ -1151,7 +1167,7 @@ function renderEmpAttendancePage() {
 
     let rows = '';
     if (filtered.length === 0) {
-        rows = '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No time entries found</td></tr>';
+        rows = '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No time entries found</td></tr>';
     } else {
         rows = pageData.map(r => {
             var proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
@@ -1160,11 +1176,13 @@ function renderEmpAttendancePage() {
             var endParts = r.clockOut ? r.clockOut.split('T') : [];
             var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '—';
             var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '—';
+            var scopeName = r.scopeId ? getScopeName(r.scopeId) : '';
             var subScopeName = r.subScopeId ? getSubScopeName(r.subScopeId) : '';
             var detailName = r.detailId ? getDetailName(r.detailId) : '';
             return '<tr>' +
                 '<td style="font-family:var(--font-m)">' + r.date + '</td>' +
                 '<td>' + (proj ? esc(proj.name) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td>' + (scopeName ? esc(scopeName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td>' + (subScopeName ? esc(subScopeName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td>' + (detailName ? esc(detailName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td style="font-family:var(--font-m)">' + startTime + '</td>' +
@@ -1176,21 +1194,17 @@ function renderEmpAttendancePage() {
                     '<button class="btn-icon danger" onclick="confirmDeleteTimeEntry(' + r.id + ')" title="Delete">&#10005;</button>' +
                 '</div></td></tr>';
         }).join('');
-
     }
 
-    // Pagination
     let paginationHtml = '';
     if (filtered.length > 0) {
         const showFrom = startIdx + 1;
         const showTo = Math.min(endIdx, filtered.length);
-
         let pageButtons = '';
         const maxVisible = 5;
         let startPage = Math.max(1, empAttCurrentPage - Math.floor(maxVisible / 2));
         let endPage = Math.min(totalPages, startPage + maxVisible - 1);
         if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
-
         pageButtons += '<button onclick="goEmpAttPage(1)" ' + (empAttCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
         pageButtons += '<button onclick="goEmpAttPage(' + (empAttCurrentPage - 1) + ')" ' + (empAttCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
         for (let p = startPage; p <= endPage; p++) {
@@ -1198,7 +1212,6 @@ function renderEmpAttendancePage() {
         }
         pageButtons += '<button onclick="goEmpAttPage(' + (empAttCurrentPage + 1) + ')" ' + (empAttCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
         pageButtons += '<button onclick="goEmpAttPage(' + totalPages + ')" ' + (empAttCurrentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
-
         paginationHtml = '<div class="pagination">' +
             '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + filtered.length + ' entries</div>' +
             '<div style="display:flex;align-items:center;gap:20px">' +
@@ -1214,11 +1227,16 @@ function renderEmpAttendancePage() {
             '</div></div>';
     }
 
-    document.getElementById('emp-att-table-area').innerHTML =
-        '<div class="table-wrap"><table><thead><tr>' +
-             '<th>Date</th><th>Project</th><th>Sub Scope</th><th>Detail</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th>Description</th><th style="width:90px">Actions</th>' +
-        '</tr></thead><tbody>' + rows + '</tbody></table>'  + '</div>' + paginationHtml;
+    var tableArea = document.getElementById('emp-att-table-area');
+    tableArea.innerHTML =
+        '<div class="table-wrap">' +
+            '<table><thead><tr>' +
+                '<th>Date</th><th>Project</th><th>Scope</th><th>Sub Scope</th><th>Detail</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th>Description</th><th style="width:90px">Actions</th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table>' +
+        '</div>' +
+        paginationHtml;
 }
+
 
 function goEmpAttPage(page) {
     const totalPages = Math.ceil(empAttFilteredData.length / empAttPageSize) || 1;
@@ -1236,20 +1254,19 @@ function changeEmpAttPageSize(size) {
 
 function showAddTimeEntry() {
     var myProjects = getEmployeeProjects(currentUser.memberId);
-
     if (myProjects.length === 0) {
         showModal('<h3>Add Time Entry</h3>' +
             '<p style="color:var(--main-text3);line-height:1.6">You are not assigned to any project.<br>Please ask admin to assign you to a project first.</p>' +
             '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>');
         return;
     }
-
     var projectOpts = myProjects.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
     var today = todayStr();
 
     showModal('<h3>Add Time Entry</h3>' +
         '<div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="' + today + '"></div>' +
         '<div class="field"><label>Project</label><select class="input" id="entry-project"><option value="">-- Select Project --</option>' + projectOpts + '</select></div>' +
+        '<div class="field"><label>Scope</label><select class="input" id="entry-scope">' + scopeOpts(null) + '</select></div>' +
         '<div class="field"><label>Sub Scope</label><select class="input" id="entry-subscope">' + subScopeOpts(null) + '</select></div>' +
         '<div class="field"><label>Detail</label><select class="input" id="entry-detail">' + detailOpts(null) + '</select></div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
@@ -1263,10 +1280,12 @@ function showAddTimeEntry() {
 }
 
 
+
 async function doAddTimeEntry() {
     var errEl = document.getElementById('entry-error');
     var date = document.getElementById('entry-date').value;
     var projectId = document.getElementById('entry-project').value;
+    var scopeId = document.getElementById('entry-scope').value;
     var subScopeId = document.getElementById('entry-subscope').value;
     var detailId = document.getElementById('entry-detail').value;
     var start = document.getElementById('entry-start').value;
@@ -1309,6 +1328,7 @@ async function doAddTimeEntry() {
                 clockIn: newStart,
                 clockOut: newEnd,
                 projectId: parseInt(projectId),
+                scopeId: scopeId ? parseInt(scopeId) : null,
                 subScopeId: subScopeId ? parseInt(subScopeId) : null,
                 detailId: detailId ? parseInt(detailId) : null,
                 description: desc
@@ -1319,20 +1339,17 @@ async function doAddTimeEntry() {
 }
 
 
+
 function showEditTimeEntry(entryId) {
-    var entry = DB.attendance.find(function(a) { return a.id === entryId; });
+    var entry = DB.attendance.find(a => a.id === entryId);
     if (!entry) return;
     var myProjects = getEmployeeProjects(currentUser.memberId);
     var allProjects = myProjects;
-    if (entry.projectId && !allProjects.find(function(p) { return p.id === entry.projectId; })) {
-        var curProj = DB.projects.find(function(p) { return p.id === entry.projectId; });
+    if (entry.projectId && !allProjects.find(p => p.id === entry.projectId)) {
+        var curProj = DB.projects.find(p => p.id === entry.projectId);
         if (curProj) allProjects = [curProj].concat(allProjects);
     }
-    var projectOpts = allProjects.map(function(p) {
-        var sel = entry.projectId === p.id ? 'selected' : '';
-        return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>';
-    }).join('');
-
+    var projectOpts = allProjects.map(p => { var sel = entry.projectId === p.id ? 'selected' : ''; return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>'; }).join('');
     var startParts = entry.clockIn ? entry.clockIn.split('T') : [];
     var endParts = entry.clockOut ? entry.clockOut.split('T') : [];
     var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
@@ -1341,6 +1358,7 @@ function showEditTimeEntry(entryId) {
     showModal('<h3>Edit Time Entry</h3>' +
         '<div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="' + entry.date + '"></div>' +
         '<div class="field"><label>Project</label><select class="input" id="entry-project"><option value="">-- Select Project --</option>' + projectOpts + '</select></div>' +
+        '<div class="field"><label>Scope</label><select class="input" id="entry-scope">' + scopeOpts(entry.scopeId) + '</select></div>' +
         '<div class="field"><label>Sub Scope</label><select class="input" id="entry-subscope">' + subScopeOpts(entry.subScopeId) + '</select></div>' +
         '<div class="field"><label>Detail</label><select class="input" id="entry-detail">' + detailOpts(entry.detailId) + '</select></div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
@@ -1353,10 +1371,12 @@ function showEditTimeEntry(entryId) {
 }
 
 
+
 async function doEditTimeEntry(entryId) {
     var errEl = document.getElementById('entry-error');
     var date = document.getElementById('entry-date').value;
     var projectId = document.getElementById('entry-project').value;
+    var scopeId = document.getElementById('entry-scope').value;
     var subScopeId = document.getElementById('entry-subscope').value;
     var detailId = document.getElementById('entry-detail').value;
     var start = document.getElementById('entry-start').value;
@@ -1398,6 +1418,7 @@ async function doEditTimeEntry(entryId) {
                 clockIn: newStart,
                 clockOut: newEnd,
                 projectId: parseInt(projectId),
+                scopeId: scopeId ? parseInt(scopeId) : null,
                 subScopeId: subScopeId ? parseInt(subScopeId) : null,
                 detailId: detailId ? parseInt(detailId) : null,
                 description: desc
@@ -1406,6 +1427,7 @@ async function doEditTimeEntry(entryId) {
         hideModal(); await loadDB(); renderEmployeeAttendance();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
+
 
 
 async function doDeleteTimeEntry(entryId) {
@@ -1631,12 +1653,14 @@ function renderAttendancePage() {
             const durMs = r.clockIn && r.clockOut ? new Date(r.clockOut) - new Date(r.clockIn) : 0;
             const dur = durMs > 0 ? formatDuration(durMs) : '—';
             const cost = durMs > 0 ? fmtCost(getEntryCost(r.memberId, durMs)) : '—';
+            const scopeName = r.scopeId ? getScopeName(r.scopeId) : '';
             const subScopeName = r.subScopeId ? getSubScopeName(r.subScopeId) : '';
             const detailName = r.detailId ? getDetailName(r.detailId) : '';
             return '<tr>' +
                 '<td style="font-family:var(--font-m)">' + r.date + '</td>' +
                 '<td>' + (member ? esc(member.name) : 'Unknown') + '</td>' +
                 '<td>' + (proj ? esc(proj.name) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td>' + (scopeName ? esc(scopeName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td>' + (subScopeName ? esc(subScopeName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td>' + (detailName ? esc(detailName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td style="font-family:var(--font-m)">' + startTime + '</td>' +
@@ -1649,8 +1673,8 @@ function renderAttendancePage() {
                     '<button class="btn-icon danger" onclick="confirmDeleteAttendance(' + r.id + ')" title="Delete">&#10005;</button>' +
                 '</div></td></tr>';
         }).join('');
-
     }
+
 
     // Pagination controls
     let paginationHtml = '';
@@ -1704,7 +1728,7 @@ function renderAttendancePage() {
     <div class="section-head"><h2>Detail Records</h2><span style="font-size:.82rem;color:var(--main-text3)">${rangeLabel}</span></div>
     <div class="table-wrap">
       <table><thead><tr>
-        <th>Date</th><th>Employee</th><th>Project</th><th>Sub Scope</th><th>Detail</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th>Description</th><th style="text-align:right">Cost</th><th style="width:90px">Actions</th>
+        <th>Date</th><th>Employee</th><th>Project</th><th>Scope</th><th>Sub Scope</th><th>Detail</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th>Description</th><th style="text-align:right">Cost</th><th style="width:90px">Actions</th>
       </tr></thead><tbody>${rows}</tbody></table>
       
     </div>
@@ -1726,53 +1750,52 @@ function changeAttPageSize(size) {
 }
 
 function showEditAttendance(recordId) {
-    const record = DB.attendance.find(a => a.id === recordId); if (!record) return;
-    const member = DB.members.find(m => m.id === record.memberId);
-    const mName = member ? member.name : 'Unknown';
-    const projectOpts = DB.projects.map(p => { const sel = record.projectId === p.id ? 'selected' : ''; return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>'; }).join('');
-    const startParts = record.clockIn ? record.clockIn.split('T') : [];
-    const endParts = record.clockOut ? record.clockOut.split('T') : [];
-    const startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
-    const endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
+    var record = DB.attendance.find(a => a.id === recordId);
+    if (!record) return;
+    var member = DB.members.find(m => m.id === record.memberId);
+    var mName = member ? member.name : 'Unknown';
+    var projectOpts = DB.projects.map(p => { var sel = record.projectId === p.id ? 'selected' : ''; return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>'; }).join('');
+    var startParts = record.clockIn ? record.clockIn.split('T') : [];
+    var endParts = record.clockOut ? record.clockOut.split('T') : [];
+    var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
+    var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
 
     showModal('<h3>Edit Entry — ' + esc(mName) + '</h3>' +
         '<div class="field"><label>Date</label><input class="input" id="edit-att-date" type="date" value="' + record.date + '"></div>' +
         '<div class="field"><label>Project</label><select class="input" id="edit-att-project"><option value="">-- Select Project --</option>' + projectOpts + '</select></div>' +
+        '<div class="field"><label>Scope</label><select class="input" id="edit-att-scope">' + scopeOpts(record.scopeId) + '</select></div>' +
         '<div class="field"><label>Sub Scope</label><select class="input" id="edit-att-subscope">' + subScopeOpts(record.subScopeId) + '</select></div>' +
         '<div class="field"><label>Detail</label><select class="input" id="edit-att-detail">' + detailOpts(record.detailId) + '</select></div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-            '<div class="field"><label>Start Time</label><input class="input" id="edit-att-start" type="time" value="' + startTime + '"></div>' +
-            '<div class="field"><label>End Time</label><input class="input" id="edit-att-end" type="time" value="' + endTime + '"></div>' +
-        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div class="field"><label>Start Time</label><input class="input" id="edit-att-start" type="time" value="' + startTime + '"></div><div class="field"><label>End Time</label><input class="input" id="edit-att-end" type="time" value="' + endTime + '"></div></div>' +
         '<div class="field"><label>Description</label><textarea class="input" id="edit-att-desc" rows="3" style="resize:vertical">' + esc(record.description || '') + '</textarea></div>' +
         '<p class="auth-error" id="edit-att-error"></p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditAttendance(' + recordId + ')">Save</button></div>');
 }
 
 
+
 async function doEditAttendance(recordId) {
-    const errEl = document.getElementById('edit-att-error');
-    const date = document.getElementById('edit-att-date').value;
-    const projectId = document.getElementById('edit-att-project').value;
-    const subScopeId = document.getElementById('edit-att-subscope').value;
-    const detailId = document.getElementById('edit-att-detail').value;
-    const start = document.getElementById('edit-att-start').value;
-    const end = document.getElementById('edit-att-end').value;
-    const desc = document.getElementById('edit-att-desc').value.trim();
+    var errEl = document.getElementById('edit-att-error');
+    var date = document.getElementById('edit-att-date').value;
+    var projectId = document.getElementById('edit-att-project').value;
+    var scopeId = document.getElementById('edit-att-scope').value;
+    var subScopeId = document.getElementById('edit-att-subscope').value;
+    var detailId = document.getElementById('edit-att-detail').value;
+    var start = document.getElementById('edit-att-start').value;
+    var end = document.getElementById('edit-att-end').value;
+    var desc = document.getElementById('edit-att-desc').value.trim();
     errEl.textContent = '';
     if (!date) { errEl.textContent = 'Date is required'; return; }
     if (!start) { errEl.textContent = 'Start time is required'; return; }
     if (!end) { errEl.textContent = 'End time is required'; return; }
     if (start >= end) { errEl.textContent = 'End time must be after start time'; return; }
-
     try {
         await api('/attendance/' + recordId, {
             method: 'PUT',
             body: {
-                date,
-                clockIn: date + 'T' + start + ':00',
-                clockOut: date + 'T' + end + ':00',
+                date, clockIn: date + 'T' + start + ':00', clockOut: date + 'T' + end + ':00',
                 projectId: projectId ? parseInt(projectId) : null,
+                scopeId: scopeId ? parseInt(scopeId) : null,
                 subScopeId: subScopeId ? parseInt(subScopeId) : null,
                 detailId: detailId ? parseInt(detailId) : null,
                 description: desc
@@ -1781,6 +1804,7 @@ async function doEditAttendance(recordId) {
         hideModal(); await loadDB(); applyAttendanceFilter();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
+
 
 
 function confirmDeleteAttendance(recordId) {
@@ -1806,7 +1830,7 @@ function exportAttendanceCSV() {
     filtered = filtered.sort((a, b) => a.date.localeCompare(b.date) || a.memberId - b.memberId);
     if (filtered.length === 0) { alert('No records to export.'); return; }
 
-    const headers = ['Date', 'Employee', 'Position', 'Department', 'Project', 'Sub Scope', 'Detail', 'Start', 'End', 'Duration', 'Description', 'Hourly Rate', 'Cost'];
+    const headers = ['Date', 'Employee', 'Position', 'Department', 'Project', 'Scope','Sub Scope', 'Detail', 'Start', 'End', 'Duration', 'Description', 'Hourly Rate', 'Cost'];
     const rows = filtered.map(r => {
         const member = DB.members.find(m => m.id === r.memberId);
         const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
@@ -1818,6 +1842,7 @@ function exportAttendanceCSV() {
         const dur = durMs > 0 ? formatDuration(durMs) : '';
         const rate = member ? getHourlyRate(member) : null;
         const cost = durMs > 0 ? getEntryCost(r.memberId, durMs) : null;
+        const scopeName = r.scopeId ? getScopeName(r.scopeId) : '';
         const subScopeName = r.subScopeId ? getSubScopeName(r.subScopeId) : '';
         const detailName = r.detailId ? getDetailName(r.detailId) : '';
         return [r.date, member ? member.name : 'Unknown', member ? getPositionName(member.positionId) : '', member ? getDeptName(member.departmentId) : '',
@@ -1836,11 +1861,9 @@ function exportAttendanceCSV() {
 }
 
 
+
 /* ==========================================================
-   SECTION 14: INITIALIZATION
-   ========================================================== */
-/* ==========================================================
-   SECTION: ADMIN — SUB SCOPES
+   SECTION 14: ADMIN — SUB SCOPES
    ========================================================== */
 
 function renderAdminSubScopes() {
@@ -1941,7 +1964,7 @@ async function doDeleteSubScope(id) {
 
 
 /* ==========================================================
-   SECTION: ADMIN — DETAILS
+   SECTION 15: ADMIN — DETAILS
    ========================================================== */
 
 function renderAdminDetails() {
@@ -2040,6 +2063,104 @@ async function doDeleteDetail(id) {
     } catch (e) { alert('Failed: ' + e.message); }
 }
 
+
+/* ==========================================================
+   SECTION 16: ADMIN — SCOPES
+   ========================================================== */
+
+function renderAdminScopes() {
+    const view = document.getElementById('admin-scopes');
+    let rows = '';
+    if (DB.scopes.length === 0) {
+        rows = '<tr><td colspan="3" style="text-align:center;color:var(--main-text3);padding:30px">No scopes yet</td></tr>';
+    } else {
+        rows = DB.scopes.map(s =>
+            '<tr>' +
+                '<td style="font-family:var(--font-m);width:60px">' + s.id + '</td>' +
+                '<td>' + esc(s.name) + '</td>' +
+                '<td><div class="actions-cell">' +
+                    '<button class="btn-icon" onclick="showEditScope(' + s.id + ')" title="Edit">&#9998;</button>' +
+                    '<button class="btn-icon danger" onclick="confirmDeleteScope(' + s.id + ')" title="Delete">&#10005;</button>' +
+                '</div></td>' +
+            '</tr>'
+        ).join('');
+    }
+
+    view.innerHTML =
+        '<div class="app-header">' +
+            '<h2>Scopes</h2>' +
+            '<div class="header-sub">Manage scope categories</div>' +
+        '</div>' +
+        '<div class="app-body">' +
+            '<div class="section-head">' +
+                '<h2>All Scopes <span style="color:var(--main-text3);font-weight:400;font-size:.85rem">(' + DB.scopes.length + ')</span></h2>' +
+                '<button class="btn btn-green" onclick="showAddScope()">+ Add Scope</button>' +
+            '</div>' +
+            '<div class="table-wrap"><table>' +
+                '<thead><tr>' +
+                    '<th style="width:60px">ID</th>' +
+                    '<th>Name</th>' +
+                    '<th style="width:90px">Actions</th>' +
+                '</tr></thead>' +
+                '<tbody>' + rows + '</tbody>' +
+            '</table></div>' +
+        '</div>';
+}
+
+function showAddScope() {
+    showModal('<h3>Add Scope</h3>' +
+        '<div class="field"><label>Name</label><input class="input" id="scope-name" placeholder="Enter scope name"></div>' +
+        '<p class="auth-error" id="scope-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddScope()">Save</button></div>');
+    setTimeout(function() { document.getElementById('scope-name').focus(); }, 100);
+}
+
+async function doAddScope() {
+    var errEl = document.getElementById('scope-error');
+    var name = document.getElementById('scope-name').value.trim();
+    errEl.textContent = '';
+    if (!name) { errEl.textContent = 'Name is required'; return; }
+    try {
+        await api('/scopes', { method: 'POST', body: { name: name } });
+        hideModal(); await loadDB(); renderAdminScopes();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
+}
+
+function showEditScope(id) {
+    var item = DB.scopes.find(s => s.id === id);
+    if (!item) return;
+    showModal('<h3>Edit Scope</h3>' +
+        '<div class="field"><label>Name</label><input class="input" id="scope-name" value="' + esc(item.name) + '"></div>' +
+        '<p class="auth-error" id="scope-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditScope(' + id + ')">Save</button></div>');
+    setTimeout(function() { document.getElementById('scope-name').focus(); }, 100);
+}
+
+async function doEditScope(id) {
+    var errEl = document.getElementById('scope-error');
+    var name = document.getElementById('scope-name').value.trim();
+    errEl.textContent = '';
+    if (!name) { errEl.textContent = 'Name is required'; return; }
+    try {
+        await api('/scopes/' + id, { method: 'PUT', body: { name: name } });
+        hideModal(); await loadDB(); renderAdminScopes();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
+}
+
+function confirmDeleteScope(id) {
+    var item = DB.scopes.find(s => s.id === id);
+    if (!item) return;
+    showModal('<h3>Delete Scope</h3>' +
+        '<p style="color:var(--main-text2);line-height:1.6">Delete <strong style="color:var(--main-text)">' + esc(item.name) + '</strong>?</p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteScope(' + id + ')">Delete</button></div>');
+}
+
+async function doDeleteScope(id) {
+    try {
+        await api('/scopes/' + id, { method: 'DELETE' });
+        hideModal(); await loadDB(); renderAdminScopes();
+    } catch (e) { alert('Failed: ' + e.message); }
+}
 
 
 

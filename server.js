@@ -458,36 +458,38 @@ app.get('/api/attendance', async (req, res) => {
             clockIn: r.clock_in ? toLocalISO(new Date(r.clock_in)) : null,
             clockOut: r.clock_out ? toLocalISO(new Date(r.clock_out)) : null,
             projectId: r.project_id,
-            subScopeId: r.sub_scope_id,
-            detailId: r.detail_id,
+            scopeId: r.scope_id || null,
+            subScopeId: r.sub_scope_id || null,
+            detailId: r.detail_id || null,
             description: r.description || ''
         })));
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-
 app.post('/api/attendance', async (req, res) => {
-    const { memberId, date, clockIn, clockOut, projectId, subScopeId, detailId, description } = req.body;
+    const { memberId, date, clockIn, clockOut, projectId, scopeId, subScopeId, detailId, description } = req.body;
     try {
         const result = await pool.query(
-            'INSERT INTO attendance (member_id, date, clock_in, clock_out, project_id, sub_scope_id, detail_id, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
-            [memberId, date, clockIn, clockOut, projectId || null, subScopeId || null, detailId || null, description || '']
+            `INSERT INTO attendance (member_id, date, clock_in, clock_out, project_id, scope_id, sub_scope_id, detail_id, description)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+            [memberId, date, clockIn, clockOut, projectId || null, scopeId || null, subScopeId || null, detailId || null, description || '']
         );
         res.json({ id: result.rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-
 app.put('/api/attendance/:id', async (req, res) => {
-    const { date, clockIn, clockOut, projectId, subScopeId, detailId, description } = req.body;
+    const { date, clockIn, clockOut, projectId, scopeId, subScopeId, detailId, description } = req.body;
     try {
         await pool.query(
-            'UPDATE attendance SET date = $1, clock_in = $2, clock_out = $3, project_id = $4, sub_scope_id = $5, detail_id = $6, description = $7 WHERE id = $8',
-            [date, clockIn, clockOut, projectId || null, subScopeId || null, detailId || null, description || '', req.params.id]
+            `UPDATE attendance SET date=$1, clock_in=$2, clock_out=$3, project_id=$4,
+             scope_id=$5, sub_scope_id=$6, detail_id=$7, description=$8 WHERE id=$9`,
+            [date, clockIn, clockOut, projectId || null, scopeId || null, subScopeId || null, detailId || null, description || '', req.params.id]
         );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 
 
 app.delete('/api/attendance/:id', async (req, res) => {
@@ -567,6 +569,40 @@ app.delete('/api/details/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ========================================
+// SCOPES
+// ========================================
+
+app.get('/api/scopes', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT id, name, created_at FROM scopes ORDER BY name');
+        res.json(rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/scopes', async (req, res) => {
+    const { name } = req.body;
+    try {
+        const { rows } = await pool.query('INSERT INTO scopes(name) VALUES($1) RETURNING *', [name]);
+        res.json(rows[0]);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/scopes/:id', async (req, res) => {
+    const { name } = req.body;
+    try {
+        await pool.query('UPDATE scopes SET name=$1 WHERE id=$2', [name, req.params.id]);
+        res.json({ ok: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/scopes/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM scopes WHERE id=$1', [req.params.id]);
+        res.json({ ok: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 
 
 // ========================================
@@ -631,6 +667,12 @@ async function initDB() {
                 id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
             );
 
+            CREATE TABLE IF NOT EXISTS scopes (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(200) NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+
             INSERT INTO users (username, password, role)
             VALUES ('admin', 'admin123', 'admin')
             ON CONFLICT (username) DO NOTHING;
@@ -639,6 +681,9 @@ async function initDB() {
             ALTER TABLE attendance ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
             ALTER TABLE attendance ADD COLUMN IF NOT EXISTS sub_scope_id INT REFERENCES sub_scopes(id) ON DELETE SET NULL;
             ALTER TABLE attendance ADD COLUMN IF NOT EXISTS detail_id INT REFERENCES details(id) ON DELETE SET NULL;
+            ALTER TABLE attendance ADD COLUMN IF NOT EXISTS scope_id INT REFERENCES scopes(id) ON DELETE SET NULL;
+            
+            CREATE INDEX IF NOT EXISTS idx_attendance_scope ON attendance(scope_id);
 
 
         `);
@@ -648,7 +693,7 @@ async function initDB() {
     }
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {
     await initDB();
     console.log(`Multitrade server running on port ${PORT}`);
