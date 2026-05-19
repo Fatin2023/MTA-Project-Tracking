@@ -256,15 +256,19 @@ async function handleRegister(e) {
 
 
 function confirmLogout() {
-    showModal(`
-        <h3>Sign Out</h3>
-        <p style="color:var(--main-text2);line-height:1.6">Are you sure you want to sign out?</p>
-        <div class="btns">
-            <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
-            <button class="btn btn-danger" onclick="doLogout()">Sign Out</button>
-        </div>
-    `);
+    showModal('<h3>Sign Out</h3><p style="color:var(--main-text2);line-height:1.6">Are you sure you want to sign out?</p><div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doLogout()">Sign Out</button></div>');
 }
+
+function doLogout() {
+    localStorage.removeItem('multitrade_session');
+    localStorage.removeItem('multitrade_admin_page');
+    localStorage.removeItem('multitrade_emp_page');
+    currentUser = null;
+    hideModal();
+    document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
+    document.getElementById('login-page').classList.add('active');
+}
+
 
 function doLogout() {
     localStorage.removeItem('multitrade_session');
@@ -289,13 +293,18 @@ async function showPage(id) {
 }
 
 async function adminNav(tab, el) {
+    localStorage.setItem('multitrade_admin_page', tab);
     const nav = document.getElementById('admin-nav');
-    if (nav) nav.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     document.querySelectorAll('#admin-layout .admin-view').forEach(v => v.style.display = 'none');
     const target = document.getElementById('admin-' + tab);
     if (target) target.style.display = '';
-    if (el) el.classList.add('active');
-    else { const items = nav ? nav.querySelectorAll('.nav-item') : []; items.forEach(i => { if (i.textContent.trim().toLowerCase().includes(tab)) i.classList.add('active'); }); }
+
+    if (nav) {
+        nav.querySelectorAll('.nav-item').forEach(n => {
+            n.classList.toggle('active', n.dataset.page === tab);
+        });
+    }
+
     await loadDB();
     switch (tab) {
         case 'projects': renderDashboard(); break;
@@ -306,23 +315,30 @@ async function adminNav(tab, el) {
         case 'scopes': renderAdminScopes(); break;
         case 'subscopes': renderAdminSubScopes(); break;
         case 'details': renderAdminDetails(); break;
+        case 'report': renderAdminReport(); break;
     }
 }
 
 async function empNav(tab, el) {
+    localStorage.setItem('multitrade_emp_page', tab);
     const nav = document.getElementById('emp-nav');
-    if (nav) nav.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     document.querySelectorAll('#employee-layout .emp-view').forEach(v => v.style.display = 'none');
     const target = document.getElementById('emp-' + tab);
     if (target) target.style.display = '';
-    if (el) el.classList.add('active');
-    else { const items = nav ? nav.querySelectorAll('.nav-item') : []; items.forEach(i => { if (i.textContent.trim().toLowerCase().includes(tab)) i.classList.add('active'); }); }
+
+    if (nav) {
+        nav.querySelectorAll('.nav-item').forEach(n => {
+            n.classList.toggle('active', n.dataset.page === tab);
+        });
+    }
+
     await loadDB();
     switch (tab) {
         case 'myprojects': renderEmployeeProjects(); break;
         case 'attendance': renderEmployeeAttendance(); break;
     }
 }
+
 
 async function openProject(pid) {
     activeProjectId = pid;
@@ -341,7 +357,6 @@ function updateAvatars() {
     if (roleEl) { const member = currentUser.memberId ? DB.members.find(m => m.id === currentUser.memberId) : null; roleEl.textContent = member && member.positionId ? getPositionName(member.positionId) : 'Employee'; }
 }
 
-
 // Mobile menu
 function toggleMobileMenu() {
     document.querySelectorAll('.sidebar').forEach(function(s) { s.classList.toggle('open'); });
@@ -357,13 +372,58 @@ document.addEventListener('click', function(e) {
     if (e.target.closest('.nav-item')) closeMobileMenu();
 });
 
-// Close sidebar when touching/moving on content area only
 document.addEventListener('touchmove', function(e) {
     if (!e.target.closest('.sidebar')) {
         var anyOpen = document.querySelector('.sidebar.open');
         if (anyOpen) closeMobileMenu();
     }
 }, { passive: true });
+
+// ===== INITIALIZATION =====
+(async function(){
+    const saved = localStorage.getItem('multitrade_session');
+    if (saved) {
+        try {
+            currentUser = JSON.parse(saved);
+            await loadDB();
+            document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
+
+            if (currentUser.role === 'admin') {
+                document.getElementById('admin-layout').classList.add('active');
+                var page = localStorage.getItem('multitrade_admin_page') || 'projects';
+                var navItems = document.querySelectorAll('#admin-nav .nav-item');
+                navItems.forEach(n => n.classList.remove('active'));
+                navItems.forEach(n => {
+                    if (n.getAttribute('onclick') && n.getAttribute('onclick').indexOf("'" + page + "'") !== -1) {
+                        n.classList.add('active');
+                    }
+                });
+                await adminNav(page);
+            } else {
+                document.getElementById('employee-layout').classList.add('active');
+                var page = localStorage.getItem('multitrade_emp_page') || 'myprojects';
+                var navItems = document.querySelectorAll('#emp-nav .nav-item');
+                navItems.forEach(n => n.classList.remove('active'));
+                navItems.forEach(n => {
+                    if (n.getAttribute('onclick') && n.getAttribute('onclick').indexOf("'" + page + "'") !== -1) {
+                        n.classList.add('active');
+                    }
+                });
+                await empNav(page);
+            }
+            updateAvatars();
+            return;
+        } catch (e) {
+            localStorage.removeItem('multitrade_session');
+            localStorage.removeItem('multitrade_admin_page');
+            localStorage.removeItem('multitrade_emp_page');
+            currentUser = null;
+        }
+    }
+    document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
+    document.getElementById('login-page').classList.add('active');
+})();
+
 
 
 
@@ -655,9 +715,9 @@ function renderPositionsList() {
     if (DB.positions.length === 0) {
         rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No positions defined</td></tr>';
     } else {
-        rows = DB.positions.map(p => {
+        rows = DB.positions.map((p, index) => {
             const count = DB.members.filter(m => m.positionId === p.id).length;
-            return `<tr><td style="font-family:var(--font-m)">${p.id}</td><td>${esc(p.name)}</td><td>${count}</td>
+            return `<tr><td style="font-family:var(--font-m)">${index + 1}</td><td>${esc(p.name)}</td><td>${count}</td>
         <td><div class="actions-cell">
           <button class="btn-icon" onclick="showEditPosition(${p.id})">&#9998;</button>
           <button class="btn-icon danger" onclick="confirmDeletePosition(${p.id})">&#10005;</button>
@@ -668,7 +728,7 @@ function renderPositionsList() {
     <div class="app-header"><h2>Positions</h2><div class="header-sub">Manage job positions</div></div>
     <div class="app-body">
       <div class="section-head"><h2>All Positions</h2><button class="btn btn-green" onclick="showAddPosition()">+ New Position</button></div>
-      <div class="table-wrap"><table><thead><tr><th style="width:60px">ID</th><th>Position Name</th><th style="width:100px">Members</th><th style="width:100px">Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th style="width:60px">No</th><th>Position Name</th><th style="width:100px">Members</th><th style="width:100px">Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
     </div>`;
 }
 
@@ -723,20 +783,21 @@ function renderDepartmentsList() {
     if (DB.departments.length === 0) {
         rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No departments defined</td></tr>';
     } else {
-        rows = DB.departments.map(d => {
+        rows = DB.departments.map((d, index) => {
             const count = DB.members.filter(m => m.departmentId === d.id).length;
-            return `<tr><td style="font-family:var(--font-m)">${d.id}</td><td>${esc(d.name)}</td><td>${count}</td>
-        <td><div class="actions-cell">
-          <button class="btn-icon" onclick="showEditDepartment(${d.id})">&#9998;</button>
-          <button class="btn-icon danger" onclick="confirmDeleteDepartment(${d.id})">&#10005;</button>
-        </div></td></tr>`;
+            return `<tr><td style="font-family:var(--font-m)">${index + 1}</td><td>${esc(d.name)}</td><td>${count}</td>
+            <td><div class="actions-cell">
+            <button class="btn-icon" onclick="showEditDepartment(${d.id})">&#9998;</button>
+            <button class="btn-icon danger" onclick="confirmDeleteDepartment(${d.id})">&#10005;</button>
+            </div></td></tr>`;
         }).join('');
     }
+
     view.innerHTML = `
     <div class="app-header"><h2>Departments</h2><div class="header-sub">Manage departments</div></div>
     <div class="app-body">
       <div class="section-head"><h2>All Departments</h2><button class="btn btn-green" onclick="showAddDepartment()">+ New Department</button></div>
-      <div class="table-wrap"><table><thead><tr><th style="width:60px">ID</th><th>Department Name</th><th style="width:100px">Members</th><th style="width:100px">Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th style="width:60px">No</th><th>Department Name</th><th style="width:100px">Members</th><th style="width:100px">Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
     </div>`;
 }
 
@@ -1872,9 +1933,9 @@ function renderAdminSubScopes() {
     if (DB.subScopes.length === 0) {
         rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No sub scopes yet</td></tr>';
     } else {
-        rows = DB.subScopes.map(s =>
+        rows = DB.subScopes.map((s, index) =>
             '<tr>' +
-                '<td style="font-family:var(--font-m);width:60px">' + s.id + '</td>' +
+                '<td style="font-family:var(--font-m);width:60px">' + (index + 1) + '</td>' +
                 '<td>' + esc(s.name) + '</td>' +
                 '<td style="color:var(--main-text3);font-size:.82rem">' + (s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '—') + '</td>' +
                 '<td><div class="actions-cell">' +
@@ -1884,6 +1945,7 @@ function renderAdminSubScopes() {
             '</tr>'
         ).join('');
     }
+
 
     view.innerHTML =
         '<div class="app-header">' +
@@ -1897,7 +1959,7 @@ function renderAdminSubScopes() {
             '</div>' +
             '<div class="table-wrap"><table>' +
                 '<thead><tr>' +
-                    '<th style="width:60px">ID</th>' +
+                    '<th style="width:60px">No</th>' +
                     '<th>Name</th>' +
                     '<th style="width:140px">Created</th>' +
                     '<th style="width:90px">Actions</th>' +
@@ -1973,9 +2035,9 @@ function renderAdminDetails() {
     if (DB.details.length === 0) {
         rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No details yet</td></tr>';
     } else {
-        rows = DB.details.map(d =>
+        rows = DB.details.map((d, index) =>
             '<tr>' +
-                '<td style="font-family:var(--font-m);width:60px">' + d.id + '</td>' +
+                '<td style="font-family:var(--font-m);width:60px">' + (index + 1) + '</td>' +
                 '<td>' + esc(d.name) + '</td>' +
                 '<td style="color:var(--main-text3);font-size:.82rem">' + (d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—') + '</td>' +
                 '<td><div class="actions-cell">' +
@@ -1984,6 +2046,7 @@ function renderAdminDetails() {
                 '</div></td>' +
             '</tr>'
         ).join('');
+
     }
 
     view.innerHTML =
@@ -1998,7 +2061,7 @@ function renderAdminDetails() {
             '</div>' +
             '<div class="table-wrap"><table>' +
                 '<thead><tr>' +
-                    '<th style="width:60px">ID</th>' +
+                    '<th style="width:60px">No</th>' +
                     '<th>Name</th>' +
                     '<th style="width:140px">Created</th>' +
                     '<th style="width:90px">Actions</th>' +
@@ -2074,9 +2137,9 @@ function renderAdminScopes() {
     if (DB.scopes.length === 0) {
         rows = '<tr><td colspan="3" style="text-align:center;color:var(--main-text3);padding:30px">No scopes yet</td></tr>';
     } else {
-        rows = DB.scopes.map(s =>
+        rows = DB.scopes.map((s, index) =>
             '<tr>' +
-                '<td style="font-family:var(--font-m);width:60px">' + s.id + '</td>' +
+                '<td style="font-family:var(--font-m);width:60px">' + (index + 1) + '</td>' +
                 '<td>' + esc(s.name) + '</td>' +
                 '<td><div class="actions-cell">' +
                     '<button class="btn-icon" onclick="showEditScope(' + s.id + ')" title="Edit">&#9998;</button>' +
@@ -2084,6 +2147,7 @@ function renderAdminScopes() {
                 '</div></td>' +
             '</tr>'
         ).join('');
+
     }
 
     view.innerHTML =
@@ -2098,7 +2162,7 @@ function renderAdminScopes() {
             '</div>' +
             '<div class="table-wrap"><table>' +
                 '<thead><tr>' +
-                    '<th style="width:60px">ID</th>' +
+                    '<th style="width:60px">No</th>' +
                     '<th>Name</th>' +
                     '<th style="width:90px">Actions</th>' +
                 '</tr></thead>' +
@@ -2163,28 +2227,363 @@ async function doDeleteScope(id) {
 }
 
 
+/* ==========================================================
+   SECTION 18: ADMIN — Report
+   ========================================================== */
+
+function renderAdminReport() {
+    var view = document.getElementById('admin-report');
+    var today = todayStr();
+    var defaultMonth = today.substring(0, 7);
+    var sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+    var defaultFrom = sixMonthsAgo.toISOString().slice(0, 7);
+
+    view.innerHTML =
+        '<div class="app-header">' +
+            '<h2>Report</h2>' +
+            '<div class="header-sub">Summary and analytics</div>' +
+        '</div>' +
+        '<div class="app-body">' +
+            '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>' +
+                '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="month" class="input" id="rpt-from" value="' + defaultFrom + '" style="width:160px;padding:8px 10px;font-size:.82rem"></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="month" class="input" id="rpt-to" value="' + defaultMonth + '" style="width:160px;padding:8px 10px;font-size:.82rem"></div>' +
+                    '<div style="display:flex;gap:8px;margin-left:auto">' +
+                        '<button class="btn btn-accent btn-sm" onclick="generateReport()">Generate</button>' +
+                        '<button class="btn btn-ghost btn-sm" onclick="resetReport()">Reset</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+            '<div id="rpt-stats"></div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px" id="rpt-charts-row1"></div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px" id="rpt-charts-row2"></div>' +
+            '<div id="rpt-tables"></div>' +
+        '</div>';
+
+    generateReport();
+}
+
+function resetReport() {
+    var today = todayStr();
+    var sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
+    document.getElementById('rpt-from').value = sixMonthsAgo.toISOString().slice(0, 7);
+    document.getElementById('rpt-to').value = today.substring(0, 7);
+    generateReport();
+}
+
+function generateReport() {
+    var fromMonth = document.getElementById('rpt-from').value;
+    var toMonth = document.getElementById('rpt-to').value;
+    if (!fromMonth || !toMonth) return;
+
+    // Filter attendance by month range
+    var filtered = DB.attendance.filter(function(a) {
+        var m = a.date ? a.date.substring(0, 7) : '';
+        return m >= fromMonth && m <= toMonth;
+    });
+
+    // ===== STATS =====
+    var totalHours = 0, totalCost = 0;
+    filtered.forEach(function(r) {
+        if (r.clockIn && r.clockOut) {
+            var ms = new Date(r.clockOut) - new Date(r.clockIn);
+            totalHours += ms;
+            totalCost += (getEntryCost(r.memberId, ms) || 0);
+        }
+    });
+    var uniqueEmployees = new Set(filtered.map(function(a) { return a.memberId; })).size;
+    var uniqueProjects = new Set(filtered.filter(function(a) { return a.projectId; }).map(function(a) { return a.projectId; })).size;
+
+    document.getElementById('rpt-stats').innerHTML =
+        '<div class="stats-grid" style="margin-bottom:24px">' +
+            '<div class="stat-card"><div class="stat-label">Total Records</div><div class="stat-value">' + filtered.length + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Total Hours</div><div class="stat-value">' + formatDuration(totalHours) + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Total Cost</div><div class="stat-value">' + fmtCost(totalCost) + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Active Employees</div><div class="stat-value">' + uniqueEmployees + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Active Projects</div><div class="stat-value">' + uniqueProjects + '</div></div>' +
+        '</div>';
+
+    // ===== CHART 1: Cost by Project (Bar) =====
+    var projCosts = {};
+    filtered.forEach(function(r) {
+        if (!r.clockIn || !r.clockOut) return;
+        var ms = new Date(r.clockOut) - new Date(r.clockIn);
+        var cost = getEntryCost(r.memberId, ms) || 0;
+        var pid = r.projectId || 0;
+        if (!projCosts[pid]) projCosts[pid] = 0;
+        projCosts[pid] += cost;
+    });
+    var projLabels = [], projData = [], projColors = [];
+    var palette = ['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
+    Object.entries(projCosts).forEach(function(entry, i) {
+        var pid = parseInt(entry[0]);
+        var cost = entry[1];
+        var proj = pid === 0 ? null : DB.projects.find(function(p) { return p.id === pid; });
+        projLabels.push(proj ? proj.name : 'Unassigned');
+        projData.push(Math.round(cost * 100) / 100);
+        projColors.push(palette[i % palette.length]);
+    });
+
+    // ===== CHART 2: Cost by Scope (Pie) =====
+    var scopeCosts = {};
+    filtered.forEach(function(r) {
+        if (!r.clockIn || !r.clockOut) return;
+        var ms = new Date(r.clockOut) - new Date(r.clockIn);
+        var cost = getEntryCost(r.memberId, ms) || 0;
+        var sid = r.scopeId || 0;
+        if (!scopeCosts[sid]) scopeCosts[sid] = 0;
+        scopeCosts[sid] += cost;
+    });
+    var scopeLabels = [], scopeData = [], scopeColors = [];
+    Object.entries(scopeCosts).forEach(function(entry, i) {
+        var sid = parseInt(entry[0]);
+        var cost = entry[1];
+        var scope = sid === 0 ? null : DB.scopes.find(function(s) { return s.id === sid; });
+        scopeLabels.push(scope ? scope.name : 'No Scope');
+        scopeData.push(Math.round(cost * 100) / 100);
+        scopeColors.push(palette[i % palette.length]);
+    });
+
+    document.getElementById('rpt-charts-row1').innerHTML =
+        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">' +
+            '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Cost by Project</h3>' +
+            '<div style="position:relative;height:280px"><canvas id="chart-proj-cost"></canvas></div>' +
+        '</div>' +
+        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">' +
+            '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Cost by Scope</h3>' +
+            '<div style="position:relative;height:280px"><canvas id="chart-scope-cost"></canvas></div>' +
+        '</div>';
+
+    // ===== CHART 3: Monthly Hours Trend (Bar) =====
+    var monthlyHours = {};
+    var monthlyCost = {};
+    DB.attendance.forEach(function(r) {
+        if (!r.clockIn || !r.clockOut || !r.date) return;
+        var m = r.date.substring(0, 7);
+        if (m < fromMonth || m > toMonth) return;
+        var ms = new Date(r.clockOut) - new Date(r.clockIn);
+        var cost = getEntryCost(r.memberId, ms) || 0;
+        if (!monthlyHours[m]) { monthlyHours[m] = 0; monthlyCost[m] = 0; }
+        monthlyHours[m] += ms;
+        monthlyCost[m] += cost;
+    });
+    var monthLabels = Object.keys(monthlyHours).sort();
+    var monthHoursData = monthLabels.map(function(m) { return Math.round(monthlyHours[m] / (1000 * 60 * 60) * 10) / 10; });
+    var monthCostData = monthLabels.map(function(m) { return Math.round(monthlyCost[m] * 100) / 100; });
+    var prettyMonths = monthLabels.map(function(m) { var parts = m.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(parts[1])-1] + ' ' + parts[0].substring(2); });
+
+    // ===== CHART 4: Employee Hours (Horizontal Bar) =====
+    var empHours = {};
+    filtered.forEach(function(r) {
+        if (!r.clockIn || !r.clockOut) return;
+        var ms = new Date(r.clockOut) - new Date(r.clockIn);
+        if (!empHours[r.memberId]) empHours[r.memberId] = 0;
+        empHours[r.memberId] += ms;
+    });
+    var empSorted = Object.entries(empHours).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 10);
+    var empLabels = empSorted.map(function(e) {
+        var m = DB.members.find(function(x) { return x.id === parseInt(e[0]); });
+        return m ? m.name : 'Unknown';
+    });
+    var empData = empSorted.map(function(e) { return Math.round(e[1] / (1000 * 60 * 60) * 10) / 10; });
+
+    document.getElementById('rpt-charts-row2').innerHTML =
+        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">' +
+            '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Monthly Trend</h3>' +
+            '<div style="position:relative;height:280px"><canvas id="chart-monthly"></canvas></div>' +
+        '</div>' +
+        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">' +
+            '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Top Employees by Hours</h3>' +
+            '<div style="position:relative;height:280px"><canvas id="chart-emp-hours"></canvas></div>' +
+        '</div>';
+
+    // ===== TABLES =====
+    // Project summary table
+    var projSummaryRows = '';
+    Object.entries(projCosts).sort(function(a, b) { return b[1] - a[1]; }).forEach(function(entry) {
+        var pid = parseInt(entry[0]);
+        var cost = entry[1];
+        var proj = pid === 0 ? null : DB.projects.find(function(p) { return p.id === pid; });
+        var hours = filtered.filter(function(r) { return (r.projectId || 0) === pid && r.clockIn && r.clockOut; }).reduce(function(s, r) { return s + (new Date(r.clockOut) - new Date(r.clockIn)); }, 0);
+        var entries = filtered.filter(function(r) { return (r.projectId || 0) === pid; }).length;
+        var members = new Set(filtered.filter(function(r) { return (r.projectId || 0) === pid; }).map(function(r) { return r.memberId; })).size;
+        projSummaryRows += '<tr><td>' + (proj ? esc(proj.name) : '<span style="color:var(--main-text3)">Unassigned</span>') + '</td>' +
+            '<td style="text-align:right;font-family:var(--font-m)">' + members + '</td>' +
+            '<td style="text-align:right;font-family:var(--font-m)">' + entries + '</td>' +
+            '<td style="text-align:right;font-family:var(--font-m)">' + formatDuration(hours) + '</td>' +
+            '<td style="text-align:right;font-family:var(--font-m)">' + fmtCost(cost) + '</td></tr>';
+    });
+
+    // Employee summary table
+    var empSummaryRows = '';
+    var empStats = {};
+    filtered.forEach(function(r) {
+        if (!r.clockIn || !r.clockOut) return;
+        var ms = new Date(r.clockOut) - new Date(r.clockIn);
+        var cost = getEntryCost(r.memberId, ms) || 0;
+        if (!empStats[r.memberId]) empStats[r.memberId] = { ms: 0, cost: 0, entries: 0, days: new Set() };
+        empStats[r.memberId].ms += ms;
+        empStats[r.memberId].cost += cost;
+        empStats[r.memberId].entries++;
+        empStats[r.memberId].days.add(r.date);
+    });
+    Object.entries(empStats).sort(function(a, b) { return b[1].ms - a[1].ms; }).forEach(function(entry) {
+        var mid = parseInt(entry[0]);
+        var data = entry[1];
+        var member = DB.members.find(function(m) { return m.id === mid; });
+        empSummaryRows += '<tr><td>' + (member ? esc(member.name) : 'Unknown') + '</td>' +
+            '<td>' + (member ? esc(getPositionName(member.positionId)) : '—') + '</td>' +
+            '<td>' + (member ? esc(getDeptName(member.departmentId)) : '—') + '</td>' +
+            '<td style="text-align:right;font-family:var(--font-m)">' + data.entries + '</td>' +
+            '<td style="text-align:right;font-family:var(--font-m)">' + data.days.size + '</td>' +
+            '<td style="text-align:right;font-family:var(--font-m)">' + formatDuration(data.ms) + '</td>' +
+            '<td style="text-align:right;font-family:var(--font-m)">' + fmtCost(data.cost) + '</td>' +
+            '<td style="text-align:right;font-family:var(--font-m)">' + fmtHourlyRate(member) + '</td></tr>';
+    });
+
+    document.getElementById('rpt-tables').innerHTML =
+        '<div class="section-head" style="margin-top:8px"><h2>Project Summary</h2></div>' +
+        '<div class="table-wrap" style="margin-bottom:32px"><table>' +
+            '<thead><tr><th>Project</th><th style="text-align:right">Members</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
+            '<tbody>' + projSummaryRows + '</tbody>' +
+        '</table></div>' +
+        '<div class="section-head"><h2>Employee Summary</h2></div>' +
+        '<div class="table-wrap"><table>' +
+            '<thead><tr><th>Employee</th><th>Position</th><th>Department</th><th style="text-align:right">Entries</th><th style="text-align:right">Days</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th><th style="text-align:right">Rate</th></tr></thead>' +
+            '<tbody>' + empSummaryRows + '</tbody>' +
+        '</table></div>';
+
+    // ===== RENDER CHARTS =====
+    var chartTextColor = '#7a7570';
+    var chartGridColor = 'rgba(122,117,112,0.15)';
+
+    // Chart 1: Cost by Project (Bar)
+    new Chart(document.getElementById('chart-proj-cost'), {
+        type: 'bar',
+        data: {
+            labels: projLabels,
+            datasets: [{ label: 'Cost (RM)', data: projData, backgroundColor: projColors, borderRadius: 6, maxBarThickness: 50 }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { color: chartTextColor, callback: function(v) { return 'RM' + v; } }, grid: { color: chartGridColor } },
+                x: { ticks: { color: chartTextColor, maxRotation: 45 }, grid: { display: false } }
+            }
+        }
+    });
+
+    // Chart 2: Cost by Scope (Doughnut)
+    new Chart(document.getElementById('chart-scope-cost'), {
+        type: 'doughnut',
+        data: {
+            labels: scopeLabels,
+            datasets: [{ data: scopeData, backgroundColor: scopeColors, borderWidth: 0, hoverOffset: 8 }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'right', labels: { color: chartTextColor, padding: 12, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } } },
+                tooltip: { callbacks: { label: function(ctx) { return ctx.label + ': RM' + ctx.parsed.toFixed(2); } } }
+            }
+        }
+    });
+
+    // Chart 3: Monthly Trend (Bar with dual axis)
+    new Chart(document.getElementById('chart-monthly'), {
+        type: 'bar',
+        data: {
+            labels: prettyMonths,
+            datasets: [
+                { label: 'Hours', data: monthHoursData, backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 6, yAxisID: 'y', maxBarThickness: 40 },
+                { label: 'Cost (RM)', data: monthCostData, type: 'line', borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', pointRadius: 4, pointBackgroundColor: '#ef4444', tension: 0.3, yAxisID: 'y1', fill: true }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: chartTextColor, usePointStyle: true, padding: 16 } } },
+            scales: {
+                y: { beginAtZero: true, position: 'left', ticks: { color: chartTextColor, callback: function(v) { return v + 'h'; } }, grid: { color: chartGridColor } },
+                y1: { beginAtZero: true, position: 'right', ticks: { color: '#ef4444', callback: function(v) { return 'RM' + v; } }, grid: { drawOnChartArea: false } },
+                x: { ticks: { color: chartTextColor }, grid: { display: false } }
+            }
+        }
+    });
+
+    // Chart 4: Employee Hours (Horizontal Bar)
+    new Chart(document.getElementById('chart-emp-hours'), {
+        type: 'bar',
+        data: {
+            labels: empLabels,
+            datasets: [{ label: 'Hours', data: empData, backgroundColor: 'rgba(34,197,94,0.7)', borderRadius: 6, maxBarThickness: 30 }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { beginAtZero: true, ticks: { color: chartTextColor, callback: function(v) { return v + 'h'; } }, grid: { color: chartGridColor } },
+                y: { ticks: { color: chartTextColor, font: { size: 11 } }, grid: { display: false } }
+            }
+        }
+    });
+}
+
+
+
+/* ==========================================================
+   Pre-load data on page load
+   ========================================================== */
 
 // Pre-load data on page load
 (async function(){
     const saved = localStorage.getItem('multitrade_session');
+
+    function activateNav(navId, page) {
+        document.querySelectorAll('#' + navId + ' .nav-item').forEach(function(n) {
+            n.classList.toggle('active', n.dataset.page === page);
+        });
+    }
+
+    function showLogin() {
+        document.querySelectorAll('.auth-page,.app-layout').forEach(function(p) { p.classList.remove('active'); });
+        document.getElementById('login-page').classList.add('active');
+    }
+
     if (saved) {
         try {
             currentUser = JSON.parse(saved);
             await loadDB();
-            document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
-            const target = currentUser.role === 'admin' ? 'admin-layout' : 'employee-layout';
-            document.getElementById(target).classList.add('active');
-            if (currentUser.role === 'admin') { adminNav('projects'); }
-            else { empNav('myprojects'); }
+            document.querySelectorAll('.auth-page,.app-layout').forEach(function(p) { p.classList.remove('active'); });
+
+            if (currentUser.role === 'admin') {
+                var page = localStorage.getItem('multitrade_admin_page') || 'projects';
+                document.getElementById('admin-layout').classList.add('active');
+                activateNav('admin-nav', page);
+                await adminNav(page);
+            } else {
+                var page = localStorage.getItem('multitrade_emp_page') || 'myprojects';
+                document.getElementById('employee-layout').classList.add('active');
+                activateNav('emp-nav', page);
+                await empNav(page);
+            }
+
             updateAvatars();
             return;
         } catch (e) {
             localStorage.removeItem('multitrade_session');
-            currentUser = null;
+            localStorage.removeItem('multitrade_admin_page');
+            localStorage.removeItem('multitrade_emp_page');
         }
     }
-    document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
-    document.getElementById('login-page').classList.add('active');
+
+    showLogin();
 })();
+
+
 
 
