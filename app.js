@@ -1548,7 +1548,7 @@ function renderAdminAttendance() {
               ${projOpts}
             </select>
           </div>
-          <div style="display:flex;gap:8px;margin-left:auto">
+          <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
             <button class="btn btn-green btn-sm" onclick="showAddAttendance()">+ Add Entry</button>
             <button class="btn btn-accent btn-sm" onclick="applyAttendanceFilter()">Search</button>
             <button class="btn btn-ghost btn-sm" onclick="resetAttendanceFilter()">Reset</button>
