@@ -1549,6 +1549,7 @@ function renderAdminAttendance() {
             </select>
           </div>
           <div style="display:flex;gap:8px;margin-left:auto">
+            <button class="btn btn-green btn-sm" onclick="showAddAttendance()">+ Add Entry</button>
             <button class="btn btn-accent btn-sm" onclick="applyAttendanceFilter()">Search</button>
             <button class="btn btn-ghost btn-sm" onclick="resetAttendanceFilter()">Reset</button>
             <button class="btn btn-blue btn-sm" onclick="exportAttendanceCSV()">Export CSV</button>
@@ -1809,6 +1810,61 @@ function changeAttPageSize(size) {
     attCurrentPage = 1;
     renderAttendancePage();
 }
+
+function showAddAttendance() {
+    var today = todayStr();
+    var memberOpts = DB.members.map(m => '<option value="' + m.id + '">' + esc(m.name) + '</option>').join('');
+    var projectOpts = '<option value="">-- Select Project --</option>' + DB.projects.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
+
+    showModal('<h3>Add Attendance</h3>' +
+        '<div class="field"><label>Employee</label><select class="input" id="add-att-member">' + memberOpts + '</select></div>' +
+        '<div class="field"><label>Date</label><input class="input" id="add-att-date" type="date" value="' + today + '"></div>' +
+        '<div class="field"><label>Project</label><select class="input" id="add-att-project">' + projectOpts + '</select></div>' +
+        '<div class="field"><label>Scope</label><select class="input" id="add-att-scope">' + scopeOpts(null) + '</select></div>' +
+        '<div class="field"><label>Sub Scope</label><select class="input" id="add-att-subscope">' + subScopeOpts(null) + '</select></div>' +
+        '<div class="field"><label>Detail</label><select class="input" id="add-att-detail">' + detailOpts(null) + '</select></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div class="field"><label>Start Time</label><input class="input" id="add-att-start" type="time" value="09:00"></div><div class="field"><label>End Time</label><input class="input" id="add-att-end" type="time" value="17:00"></div></div>' +
+        '<div class="field"><label>Description</label><textarea class="input" id="add-att-desc" rows="3" style="resize:vertical"></textarea></div>' +
+        '<p class="auth-error" id="add-att-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddAttendance()">Save</button></div>');
+}
+
+async function doAddAttendance() {
+    var errEl = document.getElementById('add-att-error');
+    var memberId = document.getElementById('add-att-member').value;
+    var date = document.getElementById('add-att-date').value;
+    var projectId = document.getElementById('add-att-project').value;
+    var scopeId = document.getElementById('add-att-scope').value;
+    var subScopeId = document.getElementById('add-att-subscope').value;
+    var detailId = document.getElementById('add-att-detail').value;
+    var start = document.getElementById('add-att-start').value;
+    var end = document.getElementById('add-att-end').value;
+    var desc = document.getElementById('add-att-desc').value.trim();
+    errEl.textContent = '';
+    if (!memberId) { errEl.textContent = 'Employee is required'; return; }
+    if (!date) { errEl.textContent = 'Date is required'; return; }
+    if (!start) { errEl.textContent = 'Start time is required'; return; }
+    if (!end) { errEl.textContent = 'End time is required'; return; }
+    if (start >= end) { errEl.textContent = 'End time must be after start time'; return; }
+    try {
+        await api('/attendance', {
+            method: 'POST',
+            body: {
+                memberId: parseInt(memberId),
+                date: date,
+                clockIn: date + 'T' + start + ':00',
+                clockOut: date + 'T' + end + ':00',
+                projectId: projectId ? parseInt(projectId) : null,
+                scopeId: scopeId ? parseInt(scopeId) : null,
+                subScopeId: subScopeId ? parseInt(subScopeId) : null,
+                detailId: detailId ? parseInt(detailId) : null,
+                description: desc
+            }
+        });
+        hideModal(); await loadDB(); applyAttendanceFilter();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
+}
+
 
 function showEditAttendance(recordId) {
     var record = DB.attendance.find(a => a.id === recordId);
@@ -2400,7 +2456,7 @@ function generateReport() {
             '<div style="position:relative;height:280px"><canvas id="chart-emp-hours"></canvas></div>' +
         '</div>';
 
-    // ===== TABLES =====
+    // ===== Chart 4 : TABLES =====
     // Project summary table
     var projSummaryRows = '';
     Object.entries(projCosts).sort(function(a, b) { return b[1] - a[1]; }).forEach(function(entry) {
@@ -2583,7 +2639,3 @@ function generateReport() {
 
     showLogin();
 })();
-
-
-
-
