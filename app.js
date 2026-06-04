@@ -432,6 +432,56 @@ document.addEventListener('touchmove', function(e) {
    SECTION 6: ADMIN — PROJECTS DASHBOARD
    ========================================================== */
 
+function getProjectCountdown(project) {
+    if (!project.endDate) return null;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const end = new Date(project.endDate); end.setHours(0, 0, 0, 0);
+    const diffMs = end - today;
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    return diffDays;
+}
+
+function getProjectDuration(project) {
+    if (!project.startDate || !project.endDate) return null;
+    const start = new Date(project.startDate); start.setHours(0, 0, 0, 0);
+    const end = new Date(project.endDate); end.setHours(0, 0, 0, 0);
+    return Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+}
+
+function getCountdownHtml(project) {
+    const cd = getProjectCountdown(project);
+    if (cd === null) return '';
+
+    if (cd > 0) {
+        const urgency = cd <= 7 ? 'color:var(--danger)' : cd <= 30 ? 'color:var(--warning)' : 'color:var(--ok)';
+        return `<div class="pc-countdown" style="${urgency}">
+            <span class="cd-icon">&#9200;</span>
+            <span class="cd-text">${cd} day${cd !== 1 ? 's' : ''} remaining</span>
+        </div>`;
+    } else if (cd === 0) {
+        return `<div class="pc-countdown" style="color:var(--warning)">
+            <span class="cd-icon">&#9888;</span>
+            <span class="cd-text">Due today!</span>
+        </div>`;
+    } else {
+        return `<div class="pc-countdown" style="color:var(--danger)">
+            <span class="cd-icon">&#10006;</span>
+            <span class="cd-text">${Math.abs(cd)} day${Math.abs(cd) !== 1 ? 's' : ''} overdue</span>
+        </div>`;
+    }
+}
+
+function getDateRangeHtml(project) {
+    if (!project.startDate && !project.endDate) return '';
+    const fmt = d => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const dur = getProjectDuration(project);
+    return `<div class="pc-dates">
+        <span class="cd-icon">&#128197;</span>
+        ${fmt(project.startDate)} — ${fmt(project.endDate)}
+        ${dur ? ' <span class="pc-duration">(' + dur + ' days)</span>' : ''}
+    </div>`;
+}
+
 function renderDashboard() {
     const totalProjects = DB.projects.length;
     const totalMembers = DB.members.length;
@@ -463,6 +513,8 @@ function renderDashboard() {
           <button class="btn-icon danger" onclick="confirmDeleteProject(${p.id})" title="Delete">&#10005;</button>
         </div>
       </div>
+      ${getDateRangeHtml(p)}
+      ${getCountdownHtml(p)}
       <div class="pc-meta">
         <div class="pc-meta-item">&#128101; <span class="val">${mc}</span> members</div>
         <div class="pc-meta-item">&#128176; <span class="val">${fmt(cost)}</span>/mo</div>
@@ -474,6 +526,10 @@ function renderDashboard() {
 function showAddProject() {
     showModal(`<h3>New Project</h3>
     <div class="field"><label>Project Name</label><input class="input" id="inp-proj-name" placeholder="e.g. Marketing Campaign"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="field"><label>Start Date</label><input class="input" id="inp-proj-start" type="date"></div>
+        <div class="field"><label>End Date</label><input class="input" id="inp-proj-end" type="date"></div>
+    </div>
     <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddProject()">Create</button></div>`);
     setTimeout(() => document.getElementById('inp-proj-name')?.focus(), 100);
 }
@@ -481,21 +537,31 @@ function showAddProject() {
 async function doAddProject() {
     const name = document.getElementById('inp-proj-name').value.trim();
     if (!name) return;
-    await api('/projects', { method: 'POST', body: { name } });
+    const startDate = document.getElementById('inp-proj-start').value || null;
+    const endDate = document.getElementById('inp-proj-end').value || null;
+    await api('/projects', { method: 'POST', body: { name, startDate, endDate } });
     hideModal(); await loadDB(); renderDashboard();
 }
 
 function showRenameProject(pid) {
     const proj = DB.projects.find(p => p.id === pid); if (!proj) return;
-    showModal(`<h3>Edit Project Name</h3>
+    const startVal = proj.startDate || '';
+    const endVal = proj.endDate || '';
+    showModal(`<h3>Edit Project</h3>
     <div class="field"><label>Project Name</label><input class="input" id="inp-rename" value="${esc(proj.name)}"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="field"><label>Start Date</label><input class="input" id="inp-edit-start" type="date" value="${startVal}"></div>
+        <div class="field"><label>End Date</label><input class="input" id="inp-edit-end" type="date" value="${endVal}"></div>
+    </div>
     <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doRenameProject(${pid})">Save</button></div>`);
     setTimeout(() => { const el = document.getElementById('inp-rename'); el.focus(); el.select(); }, 100);
 }
 
 async function doRenameProject(pid) {
     const name = document.getElementById('inp-rename').value.trim(); if (!name) return;
-    await api('/projects/' + pid, { method: 'PUT', body: { name } });
+    const startDate = document.getElementById('inp-edit-start').value || null;
+    const endDate = document.getElementById('inp-edit-end').value || null;
+    await api('/projects/' + pid, { method: 'PUT', body: { name, startDate, endDate } });
     hideModal(); await loadDB();
     if (document.getElementById('detail-layout').classList.contains('active')) renderProjectDetail();
     else renderDashboard();
@@ -513,6 +579,7 @@ async function doDeleteProject(pid) {
     await api('/projects/' + pid, { method: 'DELETE' });
     hideModal(); showPage('admin-layout');
 }
+
 
 
 /* ==========================================================
@@ -998,12 +1065,18 @@ function renderEmployeeProjects() {
 
     let projectRows = '';
     if (projs.length === 0) {
-        projectRows = '<tr><td colspan="3" style="text-align:center;color:var(--main-text3);padding:30px">Not assigned to any project</td></tr>';
+        projectRows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">Not assigned to any project</td></tr>';
     } else {
         projectRows = projs.map(p => {
             const mc = getProjectMembers(p.id).length;
+            const countdown = getCountdownHtml(p);
+            const dates = getDateRangeHtml(p);
             return `<tr>
-        <td style="font-family:var(--font-d);font-size:1rem">${esc(p.name)}</td>
+        <td>
+            <div style="font-family:var(--font-d);font-size:1rem">${esc(p.name)}</div>
+            ${dates}
+            ${countdown}
+        </td>
         <td>${mc} member(s)</td>
         <td><span class="badge badge-employee">Active</span></td>
       </tr>`;
@@ -1022,6 +1095,7 @@ function renderEmployeeProjects() {
       <div class="table-wrap"><table><thead><tr><th>Project Name</th><th>Team Size</th><th>Status</th></tr></thead><tbody>${projectRows}</tbody></table></div>
     </div>`;
 }
+
 
 
 /* ==========================================================

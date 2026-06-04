@@ -150,6 +150,46 @@ select.input option{background:var(--main-surface);color:var(--main-text)}
 .project-card .pc-meta{display:flex;gap:24px;align-items:center}
 .project-card .pc-meta-item{display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--main-text3)}
 .project-card .pc-meta-item .val{font-family:var(--font-m);color:var(--main-text);font-weight:500}
+.pc-dates {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .82rem;
+    color: var(--main-text3);
+    margin-top: 8px;
+}
+
+.pc-duration {
+    font-size: .78rem;
+    color: var(--main-text3);
+}
+
+.pc-countdown {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: .85rem;
+    font-weight: 600;
+    margin-top: 6px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(0,0,0,.03);
+}
+
+.cd-icon {
+    font-size: .9rem;
+}
+
+.cd-text {
+    font-size: .82rem;
+}
+
+:root {
+    --ok: #22c55e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+}
+
 
 /* ========== TABLES ========== */
 .table-wrap{overflow-x:auto;border:1px solid var(--main-border);border-radius:var(--radius);background:var(--main-surface);

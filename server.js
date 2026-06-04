@@ -89,32 +89,44 @@ app.post('/api/register', async (req, res) => {
 // ========================================
 // PROJECTS
 // ========================================
-
+// GET /api/projects
 app.get('/api/projects', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM projects ORDER BY id');
-        res.json(result.rows.map(r => ({ id: r.id, name: r.name })));
+        const projects = result.rows.map(r => ({
+            id: r.id,
+            name: r.name,
+            startDate: r.start_date,
+            endDate: r.end_date
+        }));
+        res.json(projects);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
+// POST /api/projects
 app.post('/api/projects', async (req, res) => {
-    const { name } = req.body;
+    const { name, startDate, endDate } = req.body;
     try {
         const result = await pool.query(
-            'INSERT INTO projects (name) VALUES ($1) RETURNING *', [name]
+            'INSERT INTO projects (name, start_date, end_date) VALUES ($1, $2, $3) RETURNING id',
+            [name, startDate || null, endDate || null]
         );
-        res.json({ id: result.rows[0].id, name: result.rows[0].name });
+        res.json({ id: result.rows[0].id });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
+// PUT /api/projects/:id
 app.put('/api/projects/:id', async (req, res) => {
-    const { name } = req.body;
+    const { name, startDate, endDate } = req.body;
     try {
-        await pool.query('UPDATE projects SET name = $1 WHERE id = $2', [name, req.params.id]);
+        await pool.query(
+            'UPDATE projects SET name = $1, start_date = $2, end_date = $3 WHERE id = $4',
+            [name, startDate || null, endDate || null, req.params.id]
+        );
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
