@@ -90,6 +90,14 @@ CREATE TABLE IF NOT EXISTS scopes (
     created_at  TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS web_access (
+    id          SERIAL PRIMARY KEY,
+    name        VARCHAR(200) NOT NULL,
+    description TEXT DEFAULT '',
+    flag        BOOLEAN DEFAULT FALSE,
+    created_at  TIMESTAMP DEFAULT NOW()
+);
+
 
 -- Add columns to attendance
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS sub_scope_id INT REFERENCES sub_scopes(id) ON DELETE SET NULL;

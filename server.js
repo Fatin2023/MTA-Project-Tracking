@@ -696,6 +696,15 @@ async function initDB() {
                 created_at TIMESTAMP DEFAULT NOW()
             );
 
+            CREATE TABLE IF NOT EXISTS web_access (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(200) NOT NULL,
+                description TEXT DEFAULT '',
+                flag BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+
+
             INSERT INTO users (username, password, role)
             VALUES ('admin', 'admin123', 'admin')
             ON CONFLICT (username) DO NOTHING;

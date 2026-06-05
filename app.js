@@ -1087,7 +1087,7 @@ async function doDeleteDepartment(id) {
 
 
 /* ==========================================================
-   SECTION 10: PROJECT DETAIL
+   SECTION 10: PROJECT DETAIL （Change to Main Scope now)
    ========================================================== */
 
 function renderProjectDetail() {
@@ -1120,10 +1120,11 @@ function renderProjectDetail() {
     const scope = catId ? DB.scopes.find(s => s.id === catId) : null;
     const catName = scope ? scope.name : 'Uncategorized';
 
-    document.getElementById('project-detail-content').innerHTML = `
+   document.getElementById('project-detail-content').innerHTML = `
     <div class="app-header">
       <button class="btn btn-ghost btn-sm" onclick="showPage('admin-layout')" style="margin-bottom:8px">&larr; Go Back</button>
     </div>
+
     <div class="app-body">
       <div class="stats-grid">
         <div class="stat-card"><div class="stat-label">Members</div><div class="stat-value">${members.length}</div></div>
@@ -1218,7 +1219,6 @@ async function doAssignMember(pid) {
 
     hideModal(); await loadDB(); renderProjectDetail();
 }
-
 
 
 function confirmRemoveFromProject(pid, memberId) {
