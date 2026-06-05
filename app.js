@@ -1122,10 +1122,7 @@ function renderProjectDetail() {
 
     document.getElementById('project-detail-content').innerHTML = `
     <div class="app-header">
-      <button class="btn btn-ghost btn-sm" onclick="openScopeDetail(${catId})" style="margin-bottom:8px">&larr; Back to ${esc(catName)}</button>
-      <h2>${esc(proj.name)}</h2>
-      ${getDateRangeHtml(proj)}
-      ${getCountdownHtml(proj)}
+      <button class="btn btn-ghost btn-sm" onclick="showPage('admin-layout')" style="margin-bottom:8px">&larr; Go Back</button>
     </div>
     <div class="app-body">
       <div class="stats-grid">
