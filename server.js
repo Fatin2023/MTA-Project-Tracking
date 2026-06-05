@@ -42,6 +42,7 @@ function formatMember(row) {
     };
 }
 
+
 // ========================================
 // AUTH
 // ========================================
@@ -92,10 +93,18 @@ app.post('/api/register', async (req, res) => {
 // GET /api/projects
 app.get('/api/projects', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM projects ORDER BY id');
+        const result = await pool.query(`
+            SELECT p.id, p.name, p.category_id, p.start_date, p.end_date,
+                   COALESCE(s.name, 'Uncategorized') as category_name
+            FROM projects p
+            LEFT JOIN scopes s ON p.category_id = s.id
+            ORDER BY p.id
+        `);
         const projects = result.rows.map(r => ({
             id: r.id,
             name: r.name,
+            categoryId: r.category_id,
+            categoryName: r.category_name,
             startDate: r.start_date,
             endDate: r.end_date
         }));
@@ -105,13 +114,14 @@ app.get('/api/projects', async (req, res) => {
     }
 });
 
+
 // POST /api/projects
 app.post('/api/projects', async (req, res) => {
-    const { name, startDate, endDate } = req.body;
+    const { name, categoryId, startDate, endDate } = req.body;
     try {
         const result = await pool.query(
-            'INSERT INTO projects (name, start_date, end_date) VALUES ($1, $2, $3) RETURNING id',
-            [name, startDate || null, endDate || null]
+            'INSERT INTO projects (name, category_id, start_date, end_date) VALUES ($1, $2, $3, $4) RETURNING id',
+            [name, categoryId || null, startDate || null, endDate || null]
         );
         res.json({ id: result.rows[0].id });
     } catch (err) {
@@ -121,17 +131,18 @@ app.post('/api/projects', async (req, res) => {
 
 // PUT /api/projects/:id
 app.put('/api/projects/:id', async (req, res) => {
-    const { name, startDate, endDate } = req.body;
+    const { name, categoryId, startDate, endDate } = req.body;
     try {
         await pool.query(
-            'UPDATE projects SET name = $1, start_date = $2, end_date = $3 WHERE id = $4',
-            [name, startDate || null, endDate || null, req.params.id]
+            'UPDATE projects SET name = $1, category_id = $2, start_date = $3, end_date = $4 WHERE id = $5',
+            [name, categoryId || null, startDate || null, endDate || null, req.params.id]
         );
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
+
 
 app.delete('/api/projects/:id', async (req, res) => {
     try {
@@ -581,6 +592,7 @@ app.delete('/api/details/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
 // ========================================
 // SCOPES
 // ========================================
@@ -696,6 +708,7 @@ async function initDB() {
 
             ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date DATE;
             ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE;
+            ALTER TABLE projects ADD COLUMN IF NOT EXISTS category_id INT REFERENCES scopes(id) ON DELETE SET NULL;
             
             CREATE INDEX IF NOT EXISTS idx_attendance_scope ON attendance(scope_id);
 

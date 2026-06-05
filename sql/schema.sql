@@ -54,14 +54,21 @@ CREATE TABLE IF NOT EXISTS project_assignments (
     UNIQUE(project_id, member_id)
 );
 
+
 CREATE TABLE IF NOT EXISTS attendance (
-    id          SERIAL PRIMARY KEY,
-    member_id   INT REFERENCES members(id) ON DELETE CASCADE,
-    date        DATE NOT NULL,
-    clock_in    TIMESTAMP,
-    clock_out   TIMESTAMP,
-    created_at  TIMESTAMP DEFAULT NOW()
+    id SERIAL PRIMARY KEY,
+    member_id INT REFERENCES members(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    clock_in TIMESTAMP,
+    clock_out TIMESTAMP,
+    project_id INT,
+    scope_id INT,
+    sub_scope_id INT,
+    detail_id INT,
+    description TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT NOW()
 );
+
 
 -- New tables
 CREATE TABLE IF NOT EXISTS sub_scopes (
@@ -91,6 +98,8 @@ ALTER TABLE attendance ADD COLUMN IF NOT EXISTS scope_id INT REFERENCES scopes(i
 -- Add columns to projects
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date DATE;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS category_id INT REFERENCES scopes(id) ON DELETE SET NULL;
+
 
 
 

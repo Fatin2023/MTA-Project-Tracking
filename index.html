@@ -58,22 +58,21 @@
       <h1>Multi<span>trade</span></h1>
       <div class="brand-sub">Management</div>
     </div>
-    <div class="sidebar-nav" id="admin-nav">
+      <div class="sidebar-nav" id="admin-nav">
       <div class="nav-section">Overview</div>
-      <div class="nav-item active" data-page="projects" onclick="adminNav('projects',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Projects</span></div>
+      <div class="nav-item active" data-page="projects" onclick="adminNav('projects',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Main Scope</span></div>
+      <div class="nav-item" data-page="subscopes" onclick="adminNav('subscopes',this)"><span class="nav-icon">&#9670;</span><span class="nav-label">Sub Scopes</span></div>
+      <div class="nav-item" data-page="details" onclick="adminNav('details',this)"><span class="nav-icon">&#9654;</span><span class="nav-label">Details</span></div>
       <div class="nav-section">HR</div>
       <div class="nav-item" data-page="users" onclick="adminNav('users',this)"><span class="nav-icon">&#128100;</span><span class="nav-label">Users</span></div>
       <div class="nav-item" data-page="departments" onclick="adminNav('departments',this)"><span class="nav-icon">&#9635;</span><span class="nav-label">Departments</span></div>
       <div class="nav-item" data-page="positions" onclick="adminNav('positions',this)"><span class="nav-icon">&#9733;</span><span class="nav-label">Positions</span></div>
-      <div class="nav-section">Reference</div>
-      <div class="nav-item" data-page="scopes" onclick="adminNav('scopes',this)"><span class="nav-icon">&#9673;</span><span class="nav-label">Scopes</span></div>
-      <div class="nav-item" data-page="subscopes" onclick="adminNav('subscopes',this)"><span class="nav-icon">&#9670;</span><span class="nav-label">Sub Scopes</span></div>
-      <div class="nav-item" data-page="details" onclick="adminNav('details',this)"><span class="nav-icon">&#9654;</span><span class="nav-label">Details</span></div>
       <div class="nav-section">Time</div>
       <div class="nav-item" data-page="attendance" onclick="adminNav('attendance',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span></div>
       <div class="nav-section">Summary</div>
-      <div class="nav-item" data-page="report" onclick="adminNav('report',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">report</span></div>
-    </div>
+      <div class="nav-item" data-page="report" onclick="adminNav('report',this)"><span class="nav-icon">&#128202;</span><span class="nav-label">Report</span></div>
+  </div>
+
     <div class="sidebar-footer">
       <div class="sidebar-user">
         <div class="avatar" id="admin-avatar">A</div>
@@ -98,15 +97,14 @@
   </div>
 </div>
 
-  <div class="mobile-header">
+<div class="mobile-header">
     <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
     <div class="brand">Multi<span>trade</span></div>
     <button class="mobile-logout-hdr" onclick="confirmLogout()">Sign Out</button>
-  </div>
-  <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+</div>
+<div class="mobile-overlay" onclick="closeMobileMenu()"></div>
 
-
-<!-- ===== PROJECT DETAIL LAYOUT ===== -->
+<!-- ===== DETAIL LAYOUT ===== -->
 <div id="detail-layout" class="app-layout">
   <div class="sidebar">
     <div class="sidebar-brand">
@@ -115,7 +113,7 @@
     </div>
     <div class="sidebar-nav">
       <div class="nav-section">Navigation</div>
-      <div class="nav-item" onclick="showPage('admin-layout')"><span class="nav-icon">&#8592;</span><span class="nav-label">Back to Projects</span></div>
+      <div class="nav-item" onclick="showPage('admin-layout');renderMainScope()"><span class="nav-icon">&#8592;</span><span class="nav-label">Back to Main Scope</span></div>
     </div>
     <div class="sidebar-footer">
       <div class="sidebar-user">
@@ -132,12 +130,13 @@
     <div id="project-detail-content"></div>
   </div>
 </div>
-  <div class="mobile-header">
+<div class="mobile-header">
     <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
     <div class="brand">Multi<span>trade</span></div>
     <button class="mobile-logout-hdr" onclick="confirmLogout()">Sign Out</button>
-  </div>
-  <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+</div>
+<div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+
 
 
 <!-- ===== EMPLOYEE LAYOUT ===== -->
