@@ -1235,7 +1235,7 @@ async function doRemoveFromProject(pid, memberId) {
 
 
 /* ==========================================================
-   SECTION 11: EMPLOYEE — MY ITEMS (grouped by Scope)
+   SECTION 11: EMPLOYEE — MY ITEMS (grouped by Scope + Item Summary)
    ========================================================== */
 
 function renderEmployeeProjects() {
@@ -1294,6 +1294,9 @@ function renderEmployeeProjects() {
         });
     }
 
+    // === Item Summary Table (from attendance data) ===
+    var itemSummaryHtml = buildEmpItemSummary(member.id);
+
     document.getElementById('emp-myprojects').innerHTML = `
     <div class="app-header"><h2>My Items</h2><div class="header-sub">Items you are involved in</div></div>
     <div class="app-body" style="max-width:none">
@@ -1302,14 +1305,48 @@ function renderEmployeeProjects() {
         <div class="emp-project">Position: ${esc(getPositionName(member.positionId))} &nbsp;|&nbsp; Department: ${esc(getDeptName(member.departmentId))}</div>
         <div class="emp-project" style="margin-bottom:8px">Assigned Items: <strong>${projs.length}</strong></div>
       </div>
+      ${itemSummaryHtml}
       ${content}
     </div>`;
+}
+
+function buildEmpItemSummary(memberId) {
+    var myEntries = DB.attendance.filter(a => a.memberId === memberId && a.clockIn && a.clockOut);
+    if (myEntries.length === 0) return '';
+
+    var itemGroups = {};
+    myEntries.forEach(function(r) {
+        var pid = r.projectId || 0;
+        if (!itemGroups[pid]) itemGroups[pid] = { ms: 0, cost: 0, entries: 0 };
+        var ms = new Date(r.clockOut) - new Date(r.clockIn);
+        itemGroups[pid].ms += ms;
+        itemGroups[pid].cost += (getEntryCost(r.memberId, ms) || 0);
+        itemGroups[pid].entries++;
+    });
+
+    var rows = Object.keys(itemGroups).map(function(pid) {
+        var data = itemGroups[pid];
+        var proj = pid === '0' ? null : DB.projects.find(p => p.id === parseInt(pid));
+        var scope = proj && proj.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
+        var label = proj
+            ? (scope ? scope.name + ' → ' + proj.name : proj.name)
+            : '<span style="color:var(--main-text3)">Unassigned</span>';
+        return '<tr><td>' + label +
+            '</td><td style="text-align:right;font-family:var(--font-m)">' + data.entries +
+            '</td><td style="text-align:right;font-family:var(--font-m)">' + formatDuration(data.ms) +
+            '</td><td style="text-align:right;font-family:var(--font-m)">' + fmtCost(data.cost) + '</td></tr>';
+    }).join('');
+
+    return '<div class="section-head" style="margin-top:4px"><h2>Item Summary</h2></div>' +
+        '<div class="table-wrap" style="margin-bottom:24px"><table>' +
+        '<thead><tr><th>Scope → Item</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table></div>';
 }
 
 
 
 /* ==========================================================
-   SECTION 12: EMPLOYEE — TIME ENTRIES (filter by scope → item + date + pagination)
+   SECTION 12: EMPLOYEE — ATTENDANCE TIME ENTRIES (filter by scope → item + date + pagination)
    ========================================================== */
 
 let empAttCurrentPage = 1;
@@ -1376,6 +1413,8 @@ function renderEmployeeAttendance() {
     document.getElementById('emp-attendance').innerHTML = `
     <div class="app-header"><h2>My Attendance</h2><div class="header-sub">Log and track your work hours</div></div>
     <div class="app-body" style="max-width:none">
+
+    <!--*********************************************
       <div class="emp-card" style="text-align:left;padding:28px 32px">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
           <div class="emp-name" style="margin-bottom:0;font-size:1.3rem">${esc(member.name)}</div>
@@ -1383,6 +1422,8 @@ function renderEmployeeAttendance() {
         </div>
         <div style="font-size:.85rem;color:var(--main-text2)">My Items: ${projectInfo}</div>
       </div>
+      
+
       <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
         <div class="stat-card"><div class="stat-label">Today</div><div class="stat-value" style="font-size:1.2rem">${formatDuration(todayMs)}</div></div>
         <div class="stat-card"><div class="stat-label">Today Cost</div><div class="stat-value" style="font-size:1.2rem">${fmtCost(todayCost)}</div></div>
@@ -1390,6 +1431,7 @@ function renderEmployeeAttendance() {
         <div class="stat-card"><div class="stat-label">Entries</div><div class="stat-value" style="font-size:1.2rem">${myEntries.length}</div></div>
         <div class="stat-card"><div class="stat-label">Hourly Rate</div><div class="stat-value" style="font-size:1.1rem">${fmtHourlyRate(member)}</div></div>
       </div>
+    *************************************************-->
 
       <!-- Filter bar -->
       <div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
@@ -1416,7 +1458,7 @@ function renderEmployeeAttendance() {
           <div style="display:flex;gap:8px;margin-left:auto">
             <button class="btn btn-accent btn-sm" onclick="applyEmpAttendanceFilter()">Search</button>
             <button class="btn btn-ghost btn-sm" onclick="resetEmpAttendanceFilter()">Reset</button>
-            <button class="btn btn-blue btn-sm" onclick="exportAttendanceCSV()">&#128196; Export CSV</button>
+            <button class="btn btn-blue btn-sm" onclick="exportEmpAttendanceCSV()">&#128196; Export CSV</button>
           </div>
         </div>
       </div>
@@ -1504,40 +1546,7 @@ function applyEmpAttendanceFilter() {
             '<div class="stat-card"><div class="stat-label">Filtered Cost</div><div class="stat-value" style="font-size:1.2rem">' + fmtCost(totalCost) + '</div></div>' +
         '</div>';
 
-    // Summary by scope → item
-    const itemGroups = {};
-    filtered.forEach(r => {
-        if (!r.clockIn || !r.clockOut) return;
-        const pid = r.projectId || 0;
-        if (!itemGroups[pid]) itemGroups[pid] = { ms: 0, cost: 0, entries: 0 };
-        const ms = new Date(r.clockOut) - new Date(r.clockIn);
-        itemGroups[pid].ms += ms;
-        itemGroups[pid].cost += (getEntryCost(r.memberId, ms) || 0);
-        itemGroups[pid].entries++;
-    });
-
-    const hasGroups = Object.keys(itemGroups).length > 0;
-    let summaryRows = '';
-    if (hasGroups) {
-        summaryRows = Object.entries(itemGroups).map(([pid, data]) => {
-            const proj = pid === '0' ? null : DB.projects.find(p => p.id === parseInt(pid));
-            const scope = proj && proj.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
-            const label = proj
-                ? (scope ? scope.name + ' → ' + proj.name : proj.name)
-                : '<span style="color:var(--main-text3)">Unassigned</span>';
-            return '<tr><td>' + label +
-                '</td><td style="text-align:right;font-family:var(--font-m)">' + data.entries +
-                '</td><td style="text-align:right;font-family:var(--font-m)">' + formatDuration(data.ms) +
-                '</td><td style="text-align:right;font-family:var(--font-m)">' + fmtCost(data.cost) + '</td></tr>';
-        }).join('');
-    }
-
-    document.getElementById('emp-att-project-summary').innerHTML = hasGroups
-        ? '<div class="section-head" style="margin-top:4px"><h2>Item Summary</h2></div>' +
-          '<div class="table-wrap" style="margin-bottom:24px"><table>' +
-          '<thead><tr><th>Scope → Item</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
-          '<tbody>' + summaryRows + '</tbody></table></div>'
-        : '';
+    
 
     // Clamp page
     const totalPages = Math.ceil(filtered.length / empAttPageSize) || 1;
@@ -1632,38 +1641,6 @@ function renderEmpAttendancePage() {
         paginationHtml;
 }
 
-function showAddTimeEntry() {
-    var myProjects = getEmployeeProjects(currentUser.memberId);
-    if (myProjects.length === 0) {
-        showModal('<h3>Add Time Entry</h3>' +
-            '<p style="color:var(--main-text3);line-height:1.6">You are not assigned to any item.<br>Please ask admin to assign you to an item first.</p>' +
-            '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>');
-        return;
-    }
-
-    var today = todayStr();
-    var myScopeIds = [...new Set(myProjects.map(p => p.categoryId).filter(Boolean))];
-    var myScopes = DB.scopes.filter(s => myScopeIds.includes(s.id));
-    var scopeOptions = '<option value="">-- Select Scope --</option>' +
-        myScopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
-
-    showModal(`
-    <h3>Add Time Entry</h3>
-    <div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="${today}"></div>
-    <div class="field"><label>Scope</label><select class="input" id="entry-scope-filter" onchange="entryScopeChanged()">${scopeOptions}</select></div>
-    <div class="field"><label>Item</label><select class="input" id="entry-project"><option value="">-- Select Item --</option></select></div>
-    <div class="field"><label>Sub Scope</label><select class="input" id="entry-subscope">${subScopeOpts(null)}</select></div>
-    <div class="field"><label>Detail</label><select class="input" id="entry-detail">${detailOpts(null)}</select></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="09:00"></div>
-        <div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="17:00"></div>
-    </div>
-    <div class="field"><label>Description</label><textarea class="input" id="entry-desc" rows="3" placeholder="What did you work on?" style="resize:vertical"></textarea></div>
-    <p class="auth-error" id="entry-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddTimeEntry()">Save</button></div>`);
-    setTimeout(function() { document.getElementById('entry-scope-filter').focus(); }, 100);
-}
-
 
 function goEmpAttPage(page) {
     const totalPages = Math.ceil(empAttFilteredData.length / empAttPageSize) || 1;
@@ -1678,115 +1655,6 @@ function changeEmpAttPageSize(size) {
     empAttCurrentPage = 1;
     renderEmpAttendancePage();
 }
-
-function showAddTimeEntry() {
-    var myProjects = getEmployeeProjects(currentUser.memberId);
-    if (myProjects.length === 0) {
-        showModal('<h3>Add Time Entry</h3>' +
-            '<p style="color:var(--main-text3);line-height:1.6">You are not assigned to any item.<br>Please ask admin to assign you to an item first.</p>' +
-            '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>');
-        return;
-    }
-
-    var today = todayStr();
-    var myScopeIds = [...new Set(myProjects.map(p => p.categoryId).filter(Boolean))];
-    var myScopes = DB.scopes.filter(s => myScopeIds.includes(s.id));
-    var scopeOptions = '<option value="">-- Select Scope --</option>' +
-        myScopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
-
-    showModal(`
-    <h3>Add Time Entry</h3>
-    <div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="${today}"></div>
-    <div class="field"><label>Scope</label><select class="input" id="entry-scope-filter" onchange="entryScopeChanged()">${scopeOptions}</select></div>
-    <div class="field"><label>Item</label><select class="input" id="entry-project"><option value="">-- Select Item --</option></select></div>
-    <div class="field"><label>Scope (ref)</label><select class="input" id="entry-scope">${scopeOpts(null)}</select></div>
-    <div class="field"><label>Sub Scope</label><select class="input" id="entry-subscope">${subScopeOpts(null)}</select></div>
-    <div class="field"><label>Detail</label><select class="input" id="entry-detail">${detailOpts(null)}</select></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="09:00"></div>
-        <div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="17:00"></div>
-    </div>
-    <div class="field"><label>Description</label><textarea class="input" id="entry-desc" rows="3" placeholder="What did you work on?" style="resize:vertical"></textarea></div>
-    <p class="auth-error" id="entry-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddTimeEntry()">Save</button></div>`);
-    setTimeout(function() { document.getElementById('entry-scope-filter').focus(); }, 100);
-}
-
-// Scope changed in Add/Edit modal → filter items
-function entryScopeChanged() {
-    var scopeId = document.getElementById('entry-scope-filter').value;
-    var projSelect = document.getElementById('entry-project');
-    var myProjects = getEmployeeProjects(currentUser.memberId);
-
-    var filtered = scopeId
-        ? myProjects.filter(p => p.categoryId === parseInt(scopeId))
-        : myProjects;
-
-    projSelect.innerHTML = '<option value="">-- Select Item --</option>' +
-        filtered.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
-}
-
-async function doAddTimeEntry() {
-    var errEl = document.getElementById('entry-error');
-    var date = document.getElementById('entry-date').value;
-    var projectId = document.getElementById('entry-project').value;
-    var scopeId = document.getElementById('entry-scope').value;
-    var subScopeId = document.getElementById('entry-subscope').value;
-    var detailId = document.getElementById('entry-detail').value;
-    var start = document.getElementById('entry-start').value;
-    var end = document.getElementById('entry-end').value;
-    var desc = document.getElementById('entry-desc').value.trim();
-
-    errEl.textContent = '';
-    if (!date) { errEl.textContent = 'Date is required'; return; }
-    if (!projectId) { errEl.textContent = 'Please select an item'; return; }
-    if (!start) { errEl.textContent = 'Start time is required'; return; }
-    if (!end) { errEl.textContent = 'End time is required'; return; }
-    if (start >= end) { errEl.textContent = 'End time must be after start time'; return; }
-
-    var newStart = date + 'T' + start + ':00';
-    var newEnd = date + 'T' + end + ':00';
-
-    var myEntries = DB.attendance.filter(function(a) {
-        return a.memberId === currentUser.memberId && a.date === date && a.clockIn && a.clockOut;
-    });
-    var overlap = null;
-    for (var i = 0; i < myEntries.length; i++) {
-        if (newStart < myEntries[i].clockOut && newEnd > myEntries[i].clockIn) {
-            overlap = myEntries[i]; break;
-        }
-    }
-    if (overlap) {
-        var oStart = overlap.clockIn.split('T')[1].substring(0, 5);
-        var oEnd = overlap.clockOut.split('T')[1].substring(0, 5);
-        var oProj = overlap.projectId ? DB.projects.find(function(p) { return p.id === overlap.projectId; }) : null;
-        var oScope = oProj && oProj.categoryId ? DB.scopes.find(function(s) { return s.id === oProj.categoryId; }) : null;
-        var oLabel = oScope ? oScope.name + ' → ' + oProj.name : (oProj ? oProj.name : '');
-        errEl.textContent = 'Overlaps with ' + oStart + '-' + oEnd + (oLabel ? ' (' + oLabel + ')' : '');
-        return;
-    }
-
-    try {
-        await api('/attendance', {
-            method: 'POST',
-            body: {
-                memberId: currentUser.memberId,
-                date: date,
-                clockIn: newStart,
-                clockOut: newEnd,
-                projectId: parseInt(projectId),
-                scopeId: scopeId ? parseInt(scopeId) : null,
-                subScopeId: subScopeId ? parseInt(subScopeId) : null,
-                detailId: detailId ? parseInt(detailId) : null,
-                description: desc
-            }
-        });
-        hideModal(); await loadDB(); renderEmployeeAttendance();
-    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
-}
-
-
-
 
 function showAddTimeEntry() {
     var myProjects = getEmployeeProjects(currentUser.memberId);
@@ -1999,15 +1867,77 @@ async function doEditTimeEntry(entryId) {
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
+function confirmDeleteTimeEntry(entryId) {
+    var entry = DB.attendance.find(a => a.id === entryId);
+    if (!entry) return;
+    var proj = entry.projectId ? DB.projects.find(p => p.id === entry.projectId) : null;
+    var scope = proj && proj.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
+    var label = proj ? (scope ? scope.name + ' → ' + proj.name : proj.name) : '—';
 
+    showModal('<h3>Delete Time Entry</h3>' +
+        '<p style="color:var(--main-text2);line-height:1.6">Delete this entry?<br>' +
+        'Date: <strong style="color:var(--main-text)">' + entry.date + '</strong><br>' +
+        'Item: <strong style="color:var(--main-text)">' + esc(label) + '</strong></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button>' +
+        '<button class="btn btn-danger" onclick="doDeleteTimeEntry(' + entryId + ')">Delete</button></div>');
+}
 
 async function doDeleteTimeEntry(entryId) {
     try {
         await api('/attendance/' + entryId, { method: 'DELETE' });
-        hideModal(); await loadDB(); renderEmployeeAttendance();
+        hideModal();
+        await loadDB();
+        renderEmployeeAttendance();
+        showToast('Time entry deleted successfully');
     } catch (e) { alert('Failed: ' + e.message); }
 }
 
+function exportEmpAttendanceCSV() {
+    var data = empAttFilteredData;
+    if (data.length === 0) { alert('No data to export'); return; }
+
+    var headers = ['Date', 'Scope', 'Item', 'Sub Scope', 'Detail', 'Start', 'End', 'Duration', 'Description'];
+    var rows = data.map(function(r) {
+        var proj = r.projectId ? DB.projects.find(function(p) { return p.id === r.projectId; }) : null;
+        var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
+        var dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '';
+        var startParts = r.clockIn ? r.clockIn.split('T') : [];
+        var endParts = r.clockOut ? r.clockOut.split('T') : [];
+        var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
+        var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
+
+        return [r.date, scope ? scope.name : '', proj ? proj.name : '', r.subScopeId ? getSubScopeName(r.subScopeId) : '', r.detailId ? getDetailName(r.detailId) : '', startTime, endTime, dur, r.description || ''];
+    });
+
+    var csv = headers.join(',') + '\n';
+    rows.forEach(function(row) {
+        csv += row.map(function(cell) { return '"' + String(cell).replace(/"/g, '""') + '"'; }).join(',') + '\n';
+    });
+
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'my_attendance_' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function showToast(message) {
+    var existing = document.querySelector('.toast');
+    if (existing) existing.remove();
+
+    var toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    setTimeout(function() { toast.classList.add('show'); }, 10);
+    setTimeout(function() {
+        toast.classList.remove('show');
+        setTimeout(function() { toast.remove(); }, 300);
+    }, 2500);
+}
 
 
 
