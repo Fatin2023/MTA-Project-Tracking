@@ -1752,6 +1752,20 @@ function entryScopeChangedEdit() {
         filtered.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
 }
 
+function entryScopeChanged() {
+    var scopeId = document.getElementById('entry-scope-filter').value;
+    var projSelect = document.getElementById('entry-project');
+    var myProjects = getEmployeeProjects(currentUser.memberId);
+
+    var filtered = scopeId
+        ? myProjects.filter(p => p.categoryId === parseInt(scopeId))
+        : myProjects;
+
+    projSelect.innerHTML = '<option value="">-- Select Item --</option>' +
+        filtered.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
+}
+
+
 async function doAddTimeEntry() {
     var errEl = document.getElementById('entry-error');
     var date = document.getElementById('entry-date').value;
