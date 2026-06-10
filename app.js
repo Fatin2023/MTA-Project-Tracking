@@ -2889,10 +2889,9 @@ async function doDeleteDetail(id) {
 function renderAdminReport() {
     var view = document.getElementById('admin-report');
     var today = todayStr();
-    var defaultMonth = today.substring(0, 7);
-    var sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
-    var defaultFrom = sixMonthsAgo.toISOString().slice(0, 7);
+    var thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    var defaultFrom = thirtyDaysAgo.toISOString().slice(0, 10);
 
     var scopeFilterOpts = DB.scopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
 
@@ -2905,8 +2904,8 @@ function renderAdminReport() {
             '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
                 '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>' +
                 '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
-                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="month" class="input" id="rpt-from" value="' + defaultFrom + '" style="width:160px;padding:8px 10px;font-size:.82rem"></div>' +
-                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="month" class="input" id="rpt-to" value="' + defaultMonth + '" style="width:160px;padding:8px 10px;font-size:.82rem"></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="date" class="input" id="rpt-from" value="' + defaultFrom + '" style="width:155px;padding:8px 10px;font-size:.82rem"></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="rpt-to" value="' + today + '" style="width:155px;padding:8px 10px;font-size:.82rem"></div>' +
                     '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Scope</label><select class="input" id="rpt-scope" onchange="rptScopeChanged()" style="width:140px;padding:8px 10px;font-size:.82rem"><option value="">All Scopes</option>' + scopeFilterOpts + '</select></div>' +
                     '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Item</label><select class="input" id="rpt-item" style="width:160px;padding:8px 10px;font-size:.82rem"><option value="">All Items</option></select></div>' +
                     '<div style="display:flex;gap:8px;margin-left:auto">' +
@@ -2924,6 +2923,7 @@ function renderAdminReport() {
     generateReport();
 }
 
+
 function rptScopeChanged() {
     var scopeId = document.getElementById('rpt-scope').value;
     var itemSelect = document.getElementById('rpt-item');
@@ -2936,27 +2936,29 @@ function rptScopeChanged() {
 
 function resetReport() {
     var today = todayStr();
-    var sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
-    document.getElementById('rpt-from').value = sixMonthsAgo.toISOString().slice(0, 7);
-    document.getElementById('rpt-to').value = today.substring(0, 7);
+    var thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    document.getElementById('rpt-from').value = thirtyDaysAgo.toISOString().slice(0, 10);
+    document.getElementById('rpt-to').value = today;
     document.getElementById('rpt-scope').value = '';
     document.getElementById('rpt-item').innerHTML = '<option value="">All Items</option>';
     generateReport();
 }
 
+
 function generateReport() {
-    var fromMonth = document.getElementById('rpt-from').value;
-    var toMonth = document.getElementById('rpt-to').value;
+    var fromDate = document.getElementById('rpt-from').value;
+    var toDate = document.getElementById('rpt-to').value;
     var scopeId = document.getElementById('rpt-scope') ? document.getElementById('rpt-scope').value : '';
     var itemId = document.getElementById('rpt-item') ? document.getElementById('rpt-item').value : '';
-    if (!fromMonth || !toMonth) return;
+    if (!fromDate || !toDate) return;
 
-    // Filter attendance by month range
+    // Filter attendance by date range
     var filtered = DB.attendance.filter(function(a) {
-        var m = a.date ? a.date.substring(0, 7) : '';
-        return m >= fromMonth && m <= toMonth;
+        if (!a.date) return false;
+        return a.date >= fromDate && a.date <= toDate;
     });
+
 
     // Filter by scope
     if (scopeId) {
@@ -3056,13 +3058,14 @@ function generateReport() {
     DB.attendance.forEach(function(r) {
         if (!r.clockIn || !r.clockOut || !r.date) return;
         var m = r.date.substring(0, 7);
-        if (m < fromMonth || m > toMonth) return;
+        if (r.date < fromDate || r.date > toDate) return;
         var ms = new Date(r.clockOut) - new Date(r.clockIn);
         var cost = getEntryCost(r.memberId, ms) || 0;
         if (!monthlyHours[m]) { monthlyHours[m] = 0; monthlyCost[m] = 0; }
         monthlyHours[m] += ms;
         monthlyCost[m] += cost;
     });
+
     var monthLabels = Object.keys(monthlyHours).sort();
     var monthHoursData = monthLabels.map(function(m) { return Math.round(monthlyHours[m] / (1000 * 60 * 60) * 10) / 10; });
     var monthCostData = monthLabels.map(function(m) { return Math.round(monthlyCost[m] * 100) / 100; });
