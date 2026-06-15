@@ -2908,6 +2908,7 @@ function renderAdminReport() {
                     '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="rpt-to" value="' + today + '" style="width:155px;padding:8px 10px;font-size:.82rem"></div>' +
                     '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Scope</label><select class="input" id="rpt-scope" onchange="rptScopeChanged()" style="width:140px;padding:8px 10px;font-size:.82rem"><option value="">All Scopes</option>' + scopeFilterOpts + '</select></div>' +
                     '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Item</label><select class="input" id="rpt-item" style="width:160px;padding:8px 10px;font-size:.82rem"><option value="">All Items</option></select></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label><select class="input" id="rpt-emp" style="width:160px;padding:8px 10px;font-size:.82rem"><option value="">All Employees</option>' + DB.members.map(m => '<option value="' + m.id + '">' + esc(m.name) + '</option>').join('') + '</select></div>' +
                     '<div style="display:flex;gap:8px;margin-left:auto">' +
                         '<button class="btn btn-accent btn-sm" onclick="generateReport()">Generate</button>' +
                         '<button class="btn btn-ghost btn-sm" onclick="resetReport()">Reset</button>' +
@@ -2942,6 +2943,7 @@ function resetReport() {
     document.getElementById('rpt-to').value = today;
     document.getElementById('rpt-scope').value = '';
     document.getElementById('rpt-item').innerHTML = '<option value="">All Items</option>';
+    document.getElementById('rpt-emp').value = '';
     generateReport();
 }
 
@@ -2970,6 +2972,13 @@ function generateReport() {
     if (itemId) {
         filtered = filtered.filter(a => a.projectId === parseInt(itemId));
     }
+
+    // Filter by employee
+    var empId = document.getElementById('rpt-emp') ? document.getElementById('rpt-emp').value : '';
+    if (empId) {
+        filtered = filtered.filter(a => a.memberId === parseInt(empId));
+    }
+
 
     // ===== STATS =====
     var totalHours = 0, totalCost = 0;
