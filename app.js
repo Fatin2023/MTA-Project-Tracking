@@ -41,7 +41,7 @@ let DB = {
     subScopes: [],
     details: [],
     projectAssignments: [],
-    attendance: []
+    attendance: [],
 };
 
 async function loadDB() {
@@ -69,7 +69,15 @@ async function loadDB() {
         DB.projectAssignments = assignments;
         DB.attendance = attendance;
     } catch (e) {
-        console.error('Failed to load data:', e);
+        console.error('Failed to load core data:', e);
+    }
+
+    // worklist 单独加载，失败不影响其他页面
+    try {
+        DB.worklist = await api('/worklist');
+    } catch (e) {
+        console.error('Worklist failed:', e);
+        DB.worklist = [];
     }
 }
 
@@ -315,6 +323,7 @@ async function adminNav(tab, el) {
         case 'subscopes': renderAdminSubScopes(); break;
         case 'details': renderAdminDetails(); break;
         case 'report': renderAdminReport(); break;
+        case 'worklist': renderWorkList(); break;
     }
 }
 
@@ -429,14 +438,17 @@ document.addEventListener('touchmove', function(e) {
 
 
 /* ==========================================================
-   SECTION 6: MAIN SCOPE — Categories + Items
+   SECTION 6: MAIN SCOPE (tabs = category, table = items)
    ========================================================== */
+
+var activeCategoryId = null;
+var itemSearchQuery = '';
+
 function getProjectCountdown(project) {
     if (!project.endDate) return null;
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const end = new Date(project.endDate); end.setHours(0, 0, 0, 0);
-    const diffMs = end - today;
-    return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    return Math.ceil((end - today) / (1000 * 60 * 60 * 24));
 }
 
 function getProjectDuration(project) {
@@ -446,137 +458,162 @@ function getProjectDuration(project) {
     return Math.ceil((end - start) / (1000 * 60 * 60 * 24));
 }
 
-function getCountdownHtml(project) {
-    const cd = getProjectCountdown(project);
-    if (cd === null) return '';
-    if (cd > 0) {
-        const urgency = cd <= 7 ? 'color:var(--danger)' : cd <= 30 ? 'color:var(--warning)' : 'color:var(--ok)';
-        return `<div class="pc-countdown" style="${urgency}">
-            <span class="cd-icon">&#9200;</span>
-            <span class="cd-text">${cd} day${cd !== 1 ? 's' : ''} remaining</span>
-        </div>`;
-    } else if (cd === 0) {
-        return `<div class="pc-countdown" style="color:var(--warning)">
-            <span class="cd-icon">&#9888;</span>
-            <span class="cd-text">Due today!</span>
-        </div>`;
-    } else {
-        return `<div class="pc-countdown" style="color:var(--danger)">
-            <span class="cd-icon">&#10006;</span>
-            <span class="cd-text">${Math.abs(cd)} day${Math.abs(cd) !== 1 ? 's' : ''} overdue</span>
-        </div>`;
+//toggle edit delete on category
+function toggleCatMenu() {
+    var dd = document.getElementById('cat-dropdown');
+    if (!dd) return;
+    var isOpen = dd.style.display === 'flex';
+    dd.style.display = isOpen ? 'none' : 'flex';
+}
+
+function closeCatMenu() {
+    var dd = document.getElementById('cat-dropdown');
+    if (dd) dd.style.display = 'none';
+}
+
+document.addEventListener('mousedown', function(e) {
+    if (!e.target.closest('.cat-dropdown') && !e.target.closest('.tab-more-btn')) {
+        closeCatMenu();
     }
-}
-
-function getDateRangeHtml(project) {
-    if (!project.startDate && !project.endDate) return '';
-    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-    const dur = getProjectDuration(project);
-    return `<div class="pc-dates">
-        <span class="cd-icon">&#128197;</span>
-        ${fmtDate(project.startDate)} — ${fmtDate(project.endDate)}
-        ${dur ? ' <span class="pc-duration">(' + dur + ' days)</span>' : ''}
-    </div>`;
-}
-
-
+});
 function renderMainScope() {
     const view = document.getElementById('admin-projects');
-    const totalScopes = DB.scopes.length;
-    const totalItems = DB.projects.length;
 
-    // Group projects by scope
-    const groups = {};
-    DB.scopes.forEach(s => { groups[s.id] = { scope: s, items: [] }; });
-    groups[0] = { scope: { id: 0, name: 'Uncategorized' }, items: [] };
+    // All tab
+    const allCount = DB.projects.length;
+    const allTab = '<div class="tab-item' + (!activeCategoryId ? ' active' : '') + '" onclick="switchScopeTab(null)">All <span class="tab-count">' + allCount + '</span></div>';
 
-    DB.projects.forEach(p => {
-        const sid = p.categoryId || 0;
-        if (groups[sid]) groups[sid].items.push(p);
-    });
+    // Category tabs
+    const tabs = DB.scopes.map(function(s) {
+        const count = DB.projects.filter(function(p) { return p.categoryId === s.id; }).length;
+        return '<div class="tab-item' + (activeCategoryId === s.id ? ' active' : '') + '" onclick="switchScopeTab(' + s.id + ')">' + esc(s.name) + ' <span class="tab-count">' + count + '</span></div>';
+    }).join('');
 
-    if (groups[0].items.length === 0) delete groups[0];
+    // 三点按钮
+    const activeScope = activeCategoryId ? DB.scopes.find(function(s) { return s.id === activeCategoryId; }) : null;
+    var dotsHtml = activeScope
+        ? '<div style="position:relative;display:inline-flex;align-items:center">' +
+            '<button class="tab-more-btn" onclick="event.stopPropagation();toggleCatMenu()">&#8942;</button>' +
+            '<div id="cat-dropdown" class="cat-dropdown">' +
+              '<div class="cat-dropdown-item" onclick="closeCatMenu();showEditCategory(' + activeScope.id + ')">&#9998; Edit</div>' +
+              '<div class="cat-dropdown-item danger" onclick="closeCatMenu();confirmDeleteCategory(' + activeScope.id + ')">&#10005; Delete</div>' +
+            '</div>' +
+          '</div>'
+        : '';
 
     view.innerHTML = `
-    <div class="app-header"><h2>Main Scope</h2><div class="header-sub">Manage scopes and items</div></div>
-    <div class="app-body">
-      <div class="stats-grid">
-        <div class="stat-card"><div class="stat-label">Scopes</div><div class="stat-value">${totalScopes}</div></div>
-        <div class="stat-card"><div class="stat-label">Total Items</div><div class="stat-value">${totalItems}</div></div>
-      </div>
-      <div class="section-head">
-        <h2>All Scopes</h2>
-        <div style="display:flex;gap:8px">
-            <button class="btn btn-green" onclick="showAddCategory()">+ New Scope</button>
+        <div class="app-header">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+                <div><h2>Work Category</h2><div class="header-sub">Manage work categories and items</div></div>
+            </div>
         </div>
-      </div>
-      <div id="scope-groups"></div>
-    </div>`;
+        <div class="app-body">
+            <div class="tabs-wrapper">
+                <div class="tabs-bar">
+                    ${allTab}${tabs}${dotsHtml}
+                    <button class="btn btn-accent" onclick="showAddCategory()">+ Add Category</button>
+                </div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+                <input class="input" id="item-search" placeholder="Search ID/Name..." value="${esc(itemSearchQuery)}" oninput="itemSearchChanged()" style="max-width:320px;padding:8px 12px;font-size:.85rem">
+                <span id="item-count" style="font-size:.82rem;color:var(--main-text3)"></span>
+                <div style="margin-left:auto">
+                    <button class="btn btn-green" onclick="showAddItem()">+ Add Item</button>
+                </div>
+            </div>
+            <div id="items-table-area"></div>
+        </div>`;
 
-    const container = document.getElementById('scope-groups');
+    renderItemsTable();
+}
 
-    if (Object.keys(groups).length === 0) {
-        container.innerHTML = '<div class="empty"><div class="icon">&#128193;</div><p>No scopes yet.</p></div>';
-        return;
+function switchScopeTab(catId) {
+    activeCategoryId = catId;
+    itemSearchQuery = '';
+    renderMainScope();
+}
+
+function itemSearchChanged() {
+    itemSearchQuery = document.getElementById('item-search').value.trim().toLowerCase();
+    renderItemsTable();
+}
+
+function renderItemsTable() {
+    let allItems = activeCategoryId
+        ? DB.projects.filter(p => p.categoryId === activeCategoryId)
+        : DB.projects;
+
+    if (itemSearchQuery) {
+        allItems = allItems.filter(p => p.name.toLowerCase().indexOf(itemSearchQuery) !== -1);
     }
 
-    let html = '';
+    const countEl = document.getElementById('item-count');
+    if (countEl) countEl.textContent = allItems.length + ' item' + (allItems.length !== 1 ? 's' : '');
 
-    Object.values(groups).forEach(g => {
-        const itemCount = g.items.length;
-        const totalCost = g.items.reduce((s, p) => s + getProjectCost(p.id), 0);
+    let rows = '';
+    if (allItems.length === 0) {
+        rows = '<tr><td colspan="7" style="text-align:center;color:var(--main-text3);padding:30px">No items found</td></tr>';
+    } else {
+        rows = allItems.map((p, idx) => {
+            const cat = p.categoryId ? DB.scopes.find(s => s.id === p.categoryId) : null;
+            const members = getProjectMembers(p.id);
+            const mc = members.length;
+            const cost = getProjectCost(p.id);
+            const cd = getProjectCountdown(p);
 
-        html += `
-        <div style="margin-bottom:32px">
-          <!-- Scope Header -->
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--main-border)">
-            <div style="display:flex;align-items:center;gap:10px">
-              <span style="font-size:1.15rem;font-family:var(--font-d);font-weight:700;color:var(--main-text)">${esc(g.scope.name)}</span>
-              <span style="font-size:.82rem;color:var(--main-text3)">${itemCount} item${itemCount !== 1 ? 's' : ''} · ${fmt(totalCost)}/mo</span>
-            </div>
-            <div style="display:flex;gap:8px" onclick="event.stopPropagation()">
-              ${g.scope.id !== 0 ? `
-                <button class="btn-icon" onclick="showEditCategory(${g.scope.id})" title="Edit Scope">&#9998;</button>
-                <button class="btn-icon danger" onclick="confirmDeleteCategory(${g.scope.id})" title="Delete Scope">&#10005;</button>
-              ` : ''}
-              <button class="btn btn-green btn-sm" onclick="showAddItem(${g.scope.id})">+ Item</button>
-            </div>
-          </div>
+            let cdHtml = '—';
+            if (cd !== null) {
+                if (cd > 30) cdHtml = `<span style="color:var(--ok);font-weight:600">${cd}d left</span>`;
+                else if (cd > 7) cdHtml = `<span style="color:var(--warning);font-weight:600">${cd}d left</span>`;
+                else if (cd > 0) cdHtml = `<span style="color:var(--danger);font-weight:600">${cd}d left</span>`;
+                else if (cd === 0) cdHtml = '<span style="color:var(--warning);font-weight:600">Today!</span>';
+                else cdHtml = `<span style="color:var(--danger);font-weight:600">${Math.abs(cd)}d overdue</span>`;
+            }
 
-          <!-- Items Grid -->
-          <div class="project-grid">
-            ${itemCount === 0 ? '<div style="color:var(--main-text3);font-size:.85rem;padding:12px">No items in this scope</div>' : ''}
-            ${g.items.map(p => {
-                const mc = getProjectMembers(p.id).length;
-                const cost = getProjectCost(p.id);
-                return `<div class="card project-card" onclick="openProject(${p.id})">
-                  <div class="pc-top">
-                    <div class="pc-name">${esc(p.name)}</div>
-                    <div class="pc-actions" onclick="event.stopPropagation()">
-                      <button class="btn-icon" onclick="showEditItem(${p.id})" title="Edit">&#9998;</button>
-                      <button class="btn-icon danger" onclick="confirmDeleteItem(${p.id})" title="Delete">&#10005;</button>
-                    </div>
-                  </div>
-                  ${getDateRangeHtml(p)}
-                  ${getCountdownHtml(p)}
-                  <div class="pc-meta">
-                    <div class="pc-meta-item">&#128101; <span class="val">${mc}</span> members</div>
-                    <div class="pc-meta-item">&#128176; <span class="val">${fmt(cost)}</span>/mo</div>
-                  </div>
-                </div>`;
-            }).join('')}
-          </div>
-        </div>`;
-    });
+            let memberAvatars = '';
+            if (mc > 0) {
+                const show = members.slice(0, 4);
+                memberAvatars = show.map(m => `<span class="badge badge-employee" style="font-size:.72rem;padding:2px 6px">${esc(m.name.split(' ')[0])}</span>`).join(' ');
+                if (mc > 4) memberAvatars += ` <span style="font-size:.75rem;color:var(--main-text3)">+${mc - 4}</span>`;
+            } else {
+                memberAvatars = '<span style="font-size:.8rem;color:var(--main-text3)">None</span>';
+            }
 
-    container.innerHTML = html;
+            return `<tr>
+                <td style="font-family:var(--font-m);color:var(--main-text3);width:50px">${idx + 1}</td>
+                <td><div style="font-weight:600;cursor:pointer" onclick="showEditItem(${p.id})">${esc(p.name)}</div></td>
+                <td>${cat ? '<span class="badge badge-scope">' + esc(cat.name) + '</span>' : '<span style="color:var(--main-text3)">—</span>'}</td>
+                <td>${cdHtml}</td>
+                <td>${memberAvatars}</td>
+                <td style="text-align:right;font-family:var(--font-m)">${fmtCost(cost)}</td>
+                <td><div class="actions-cell">
+                    <button class="btn-icon" onclick="showEditItem(${p.id})" title="Edit">&#9998;</button>
+                    <button class="btn-icon danger" onclick="confirmDeleteItem(${p.id})" title="Delete">&#10005;</button>
+                </div></td>
+            </tr>`;
+        }).join('');
+    }
+
+    document.getElementById('items-table-area').innerHTML =
+        '<div class="table-wrap"><table>' +
+            '<thead><tr>' +
+                '<th style="width:50px">No</th>' +
+                '<th>ID / Name</th>' +
+                '<th style="width:130px">Category</th>' +
+                '<th style="width:100px">Countdown</th>' +
+                '<th>Members</th>' +
+                '<th style="width:100px;text-align:right">Cost</th>' +
+                '<th style="width:90px">Actions</th>' +
+            '</tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+        '</table></div>';
 }
 
 // ---- Category CRUD ----
 
 function showAddCategory() {
     showModal(`<h3>New Category</h3>
-    <div class="field"><label>Category Name</label><input class="input" id="inp-cat-name" placeholder="e.g. Project, Training, Support"></div>
+    <div class="field"><label>Category Name</label><input class="input" id="inp-cat-name" placeholder="e.g. Electrical, Mechanical"></div>
     <p class="auth-error" id="cat-error"></p>
     <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddCategory()">Create</button></div>`);
     setTimeout(() => document.getElementById('inp-cat-name')?.focus(), 100);
@@ -626,118 +663,181 @@ async function doDeleteCategory(sid) {
     hideModal(); await loadDB(); renderMainScope();
 }
 
-// ---- Scope Detail (show items in category) ----
+// ---- Item CRUD ----
 
-function openScopeDetail(scopeId) {
-    const scope = scopeId === 0 ? { id: 0, name: 'Uncategorized' } : DB.scopes.find(s => s.id === scopeId);
-    if (!scope) return;
-
-    const items = DB.projects.filter(p => (p.categoryId || 0) === scopeId);
-    const totalCost = items.reduce((s, p) => s + getProjectCost(p.id), 0);
-
-    document.getElementById('admin-projects').innerHTML = `
-    <div class="app-header">
-      <button class="btn btn-ghost btn-sm" onclick="renderMainScope()" style="margin-bottom:8px">&larr; Back</button>
-      <h2>${esc(scope.name)}</h2>
-      <div class="header-sub">${items.length} items · ${fmt(totalCost)}/mo</div>
-    </div>
-    <div class="app-body">
-      <div class="section-head">
-        <h2>Items</h2>
-        <button class="btn btn-green" onclick="showAddItem(${scopeId})">+ New Item</button>
-      </div>
-      <div id="items-grid" class="project-grid"></div>
-    </div>`;
-
-    const grid = document.getElementById('items-grid');
-    if (items.length === 0) {
-        grid.innerHTML = '<div class="empty"><div class="icon">&#128193;</div><p>No items in this category.</p></div>';
-        return;
-    }
-
-    grid.innerHTML = items.map(p => {
-        const mc = getProjectMembers(p.id).length;
-        const cost = getProjectCost(p.id);
-        return `<div class="card project-card" onclick="openProject(${p.id})">
-      <div class="pc-top">
-        <div class="pc-name">${esc(p.name)}</div>
-        <div class="pc-actions" onclick="event.stopPropagation()">
-          <button class="btn-icon" onclick="showEditItem(${p.id})" title="Edit">&#9998;</button>
-          <button class="btn-icon danger" onclick="confirmDeleteItem(${p.id})" title="Delete">&#10005;</button>
-        </div>
-      </div>
-      ${getDateRangeHtml(p)}
-      ${getCountdownHtml(p)}
-      <div class="pc-meta">
-        <div class="pc-meta-item">&#128101; <span class="val">${mc}</span> members</div>
-        <div class="pc-meta-item">&#128176; <span class="val">${fmt(cost)}</span>/mo</div>
-      </div>
-    </div>`;
-    }).join('');
-}
-
-// ---- Item CRUD (inside category) ----
-
-function showAddItem(categoryId) {
+function showAddItem() {
     const catOpts = DB.scopes.map(s => {
-        const sel = s.id === categoryId ? 'selected' : '';
+        const sel = activeCategoryId === s.id ? 'selected' : '';
         return `<option value="${s.id}" ${sel}>${esc(s.name)}</option>`;
     }).join('');
 
-    showModal(`<h3>New Item</h3>
-    <div class="field"><label>Item Name</label><input class="input" id="inp-item-name" placeholder="e.g. Marketing Campaign"></div>
-    <div class="field"><label>Category</label><select class="input" id="inp-item-cat">${catOpts}</select></div>
+    showModal(`<h3>Add Item</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="field"><label>ID / Name</label><input class="input" id="inp-item-name" placeholder="e.g. PLC-001 Panel"></div>
+        <div class="field"><label>Category</label><select class="input" id="inp-item-cat"><option value="">-- None --</option>${catOpts}</select></div>
         <div class="field"><label>Start Date</label><input class="input" id="inp-item-start" type="date"></div>
         <div class="field"><label>End Date</label><input class="input" id="inp-item-end" type="date"></div>
     </div>
     <p class="auth-error" id="item-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddItem(${categoryId})">Create</button></div>`);
+    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddItem()">Create</button></div>`);
     setTimeout(() => document.getElementById('inp-item-name')?.focus(), 100);
 }
 
-async function doAddItem(categoryId) {
+async function doAddItem() {
     const errEl = document.getElementById('item-error');
     const name = document.getElementById('inp-item-name').value.trim();
     const catId = document.getElementById('inp-item-cat').value;
     const startDate = document.getElementById('inp-item-start').value || null;
     const endDate = document.getElementById('inp-item-end').value || null;
-    if (!name) { errEl.textContent = 'Name is required'; return; }
+    if (!name) { errEl.textContent = 'ID / Name is required'; return; }
     try {
         await api('/projects', { method: 'POST', body: { name, categoryId: catId ? parseInt(catId) : null, startDate, endDate } });
         hideModal(); await loadDB(); renderMainScope();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
+// ---- Edit Item + Assign Members ----
+
 function showEditItem(pid) {
     const proj = DB.projects.find(p => p.id === pid);
     if (!proj) return;
+
     const catOpts = DB.scopes.map(s => {
         const sel = (proj.categoryId || 0) === s.id ? 'selected' : '';
         return `<option value="${s.id}" ${sel}>${esc(s.name)}</option>`;
     }).join('');
 
-    showModal(`<h3>Edit Item</h3>
-    <div class="field"><label>Item Name</label><input class="input" id="inp-item-edit" value="${esc(proj.name)}"></div>
-    <div class="field"><label>Category</label><select class="input" id="inp-item-cat-edit">${catOpts}</select></div>
+    // Assigned members
+    const assignedMembers = getProjectMembers(pid);
+    const assignedIds = assignedMembers.map(m => m.id);
+
+    // Available members
+    const seen = new Set();
+    const available = DB.members.filter(m => {
+        if (assignedIds.includes(m.id)) return false;
+        if (seen.has(m.id)) return false;
+        seen.add(m.id);
+        return true;
+    });
+
+    // Assigned list
+    let assignedHtml = '';
+    if (assignedMembers.length === 0) {
+        assignedHtml = '<div style="color:var(--main-text3);font-size:.85rem;padding:16px;text-align:center">No members assigned</div>';
+    } else {
+        assignedHtml = assignedMembers.map(m => {
+            const sal = latestSalary(m);
+            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid var(--main-border)">
+                <div>
+                    <span style="font-weight:500;font-size:.88rem">${esc(m.name)}</span>
+                    <span style="font-size:.75rem;color:var(--main-text3);margin-left:6px">${esc(getPositionName(m.positionId))}</span>
+                    ${sal != null ? `<span style="font-size:.75rem;color:var(--main-text3);margin-left:6px">${fmt(sal)}</span>` : ''}
+                </div>
+                <button class="btn-icon danger" onclick="doRemoveFromEdit(${pid},${m.id})" title="Remove" style="font-size:.8rem">&#10005;</button>
+            </div>`;
+        }).join('');
+    }
+
+    // Available checkboxes
+    let availableHtml = '';
+    if (available.length === 0) {
+        availableHtml = '<div style="color:var(--main-text3);font-size:.85rem;padding:16px;text-align:center">All members assigned</div>';
+    } else {
+        availableHtml = `<div style="max-height:220px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:6px">
+            <div style="display:flex;gap:8px;margin-bottom:6px">
+                <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#assign-new-list input[type=checkbox]').forEach(c=>c.checked=true)">All</button>
+                <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#assign-new-list input[type=checkbox]').forEach(c=>c.checked=false)">Clear</button>
+            </div>
+            <div id="assign-new-list">
+                ${available.map(m => {
+                    const sal = latestSalary(m);
+                    const salLabel = sal != null ? ' — ' + fmt(sal) : '';
+                    return `<label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;font-size:.84rem;border-bottom:1px solid var(--main-border)">
+                        <input type="checkbox" value="${m.id}" style="accent-color:var(--accent);width:15px;height:15px">
+                        ${esc(m.name)} <span style="color:var(--main-text3);font-size:.76rem">(${esc(getPositionName(m.positionId))}${salLabel})</span>
+                    </label>`;
+                }).join('')}
+            </div>
+        </div>`;
+    }
+
+    // Countdown
+    const cd = getProjectCountdown(proj);
+    let cdHtml = '—';
+    if (cd !== null) {
+        if (cd > 30) cdHtml = `<span style="color:var(--ok)">${cd} days left</span>`;
+        else if (cd > 7) cdHtml = `<span style="color:var(--warning)">${cd} days left</span>`;
+        else if (cd > 0) cdHtml = `<span style="color:var(--danger)">${cd} days left</span>`;
+        else if (cd === 0) cdHtml = '<span style="color:var(--warning)">Due today</span>';
+        else cdHtml = `<span style="color:var(--danger)">${Math.abs(cd)} days overdue</span>`;
+    }
+
+    const cost = getProjectCost(pid);
+
+    showModal(`
+    <h3 style="margin-bottom:16px">${esc(proj.name)}</h3>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="field"><label>ID / Name</label><input class="input" id="inp-item-edit" value="${esc(proj.name)}"></div>
+        <div class="field"><label>Category</label><select class="input" id="inp-item-cat-edit"><option value="">-- None --</option>${catOpts}</select></div>
         <div class="field"><label>Start Date</label><input class="input" id="inp-item-start-edit" type="date" value="${proj.startDate || ''}"></div>
         <div class="field"><label>End Date</label><input class="input" id="inp-item-end-edit" type="date" value="${proj.endDate || ''}"></div>
     </div>
+
+    <div style="display:flex;gap:24px;margin:14px 0 8px;padding:10px 0;border-top:1px solid var(--main-border);border-bottom:1px solid var(--main-border)">
+        <div><span style="font-size:.72rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Countdown</span><div style="font-size:.92rem;margin-top:2px">${cdHtml}</div></div>
+        <div><span style="font-size:.72rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Members</span><div style="font-size:.92rem;margin-top:2px">${assignedMembers.length}</div></div>
+        <div><span style="font-size:.72rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Monthly Cost</span><div style="font-size:.92rem;margin-top:2px">${fmt(cost)}</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:12px">
+        <div>
+            <div style="font-size:.85rem;font-weight:600;color:var(--main-text);margin-bottom:8px">Assigned Members</div>
+            <div style="border:1px solid var(--main-border);border-radius:var(--radius-sm);max-height:220px;overflow-y:auto" id="edit-assigned-area">${assignedHtml}</div>
+        </div>
+        <div>
+            <div style="font-size:.85rem;font-weight:600;color:var(--main-text);margin-bottom:8px">Add Members</div>
+            ${availableHtml}
+        </div>
+    </div>
+
     <p class="auth-error" id="item-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditItem(${pid})">Save</button></div>`);
+    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditItemFull(${pid})">Save</button></div>
+    `);
+
     setTimeout(() => { const el = document.getElementById('inp-item-edit'); el.focus(); el.select(); }, 100);
 }
 
-async function doEditItem(pid) {
+async function doRemoveFromEdit(pid, memberId) {
+    await api('/assignments', { method: 'DELETE', body: { projectId: pid, memberId: memberId } });
+    await loadDB();
+    showEditItem(pid);
+}
+
+async function doEditItemFull(pid) {
     const errEl = document.getElementById('item-error');
     const name = document.getElementById('inp-item-edit').value.trim();
     const catId = document.getElementById('inp-item-cat-edit').value;
     const startDate = document.getElementById('inp-item-start-edit').value || null;
     const endDate = document.getElementById('inp-item-end-edit').value || null;
-    if (!name) { errEl.textContent = 'Name is required'; return; }
+
+    if (!name) { errEl.textContent = 'ID / Name is required'; return; }
+
     try {
-        await api('/projects/' + pid, { method: 'PUT', body: { name, categoryId: catId ? parseInt(catId) : null, startDate, endDate } });
+        await api('/projects/' + pid, {
+            method: 'PUT',
+            body: { name, categoryId: catId ? parseInt(catId) : null, startDate, endDate }
+        });
+
+        const checkboxes = document.querySelectorAll('#assign-new-list input[type=checkbox]:checked');
+        for (let i = 0; i < checkboxes.length; i++) {
+            const memberId = parseInt(checkboxes[i].value);
+            const already = DB.projectAssignments.find(pa => pa.projectId === pid && pa.memberId === memberId);
+            if (!already) {
+                await api('/assignments', { method: 'POST', body: { projectId: pid, memberId } });
+            }
+        }
+
         hideModal(); await loadDB(); renderMainScope();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
@@ -756,6 +856,67 @@ async function doDeleteItem(pid) {
     hideModal(); await loadDB(); renderMainScope();
 }
 
+/* ==========================================================
+   SECTION 10: PROJECT DETAIL (keep for backward compat)
+   ========================================================== */
+
+function renderProjectDetail() {
+    const pid = activeProjectId;
+    const proj = DB.projects.find(p => p.id === pid);
+    if (!proj) { showPage('admin-layout'); return; }
+
+    const members = getProjectMembers(pid);
+    const cost = getProjectCost(pid);
+    const avg = members.length ? Math.round(cost / members.length) : 0;
+
+    let memberRows = '';
+    if (members.length === 0) {
+        memberRows = '<tr><td colspan="5" style="text-align:center;color:var(--main-text3);padding:30px">No members assigned</td></tr>';
+    } else {
+        memberRows = members.map(m => {
+            const sal = latestSalary(m);
+            const salDisplay = sal != null ? `<span class="salary-val">${fmt(sal)}</span>` : '<span class="salary-na">Not set</span>';
+            return `<tr>
+        <td>${esc(m.name)}</td><td>${esc(getPositionName(m.positionId))}</td><td>${esc(getDeptName(m.departmentId))}</td>
+        <td>${salDisplay}</td>
+        <td><div class="actions-cell">
+          <button class="btn-icon" onclick="showEditItem(${pid})" title="Edit">&#9998;</button>
+          <button class="btn-icon danger" onclick="confirmRemoveFromProject(${pid},${m.id})" title="Remove">&#10005;</button>
+        </div></td></tr>`;
+        }).join('');
+    }
+
+    document.getElementById('project-detail-content').innerHTML = `
+    <div class="app-header">
+      <button class="btn btn-ghost btn-sm" onclick="showPage('admin-layout')" style="margin-bottom:8px">&larr; Go Back</button>
+    </div>
+    <div class="app-body">
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Members</div><div class="stat-value">${members.length}</div></div>
+        <div class="stat-card"><div class="stat-label">Monthly Cost</div><div class="stat-value">${fmt(cost)}</div></div>
+        <div class="stat-card"><div class="stat-label">Avg Salary</div><div class="stat-value">${fmt(avg)}</div></div>
+      </div>
+      <div class="section-head"><h2>Assigned Members</h2><button class="btn btn-accent" onclick="showEditItem(${pid})">+ Manage Members</button></div>
+      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Position</th><th>Department</th><th>Cost</th><th style="width:100px">Actions</th></tr></thead><tbody>${memberRows}</tbody></table></div>
+    </div>`;
+}
+
+function showEditUser_byMember(memberId) {
+    const user = DB.users.find(u => u.memberId === memberId);
+    if (user) showEditUser(user.id);
+}
+
+function confirmRemoveFromProject(pid, memberId) {
+    const m = DB.members.find(x => x.id === memberId); if (!m) return;
+    showModal(`<h3>Remove from Project</h3>
+    <p style="color:var(--main-text2);line-height:1.6">Remove <strong style="color:var(--main-text)">${esc(m.name)}</strong>? Account and salary kept.</p>
+    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doRemoveFromProject(${pid},${memberId})">Remove</button></div>`);
+}
+
+async function doRemoveFromProject(pid, memberId) {
+    await api('/assignments', { method: 'DELETE', body: { projectId: pid, memberId } });
+    hideModal(); await loadDB(); renderProjectDetail();
+}
 
 
 
@@ -1087,154 +1248,6 @@ async function doDeleteDepartment(id) {
 
 
 /* ==========================================================
-   SECTION 10: PROJECT DETAIL （Change to Main Scope now)
-   ========================================================== */
-
-function renderProjectDetail() {
-    const pid = activeProjectId;
-    const proj = DB.projects.find(p => p.id === pid);
-    if (!proj) { showPage('admin-layout'); return; }
-
-    const members = getProjectMembers(pid);
-    const cost = getProjectCost(pid);
-    const avg = members.length ? Math.round(cost / members.length) : 0;
-
-    let memberRows = '';
-    if (members.length === 0) {
-        memberRows = '<tr><td colspan="5" style="text-align:center;color:var(--main-text3);padding:30px">No members assigned</td></tr>';
-    } else {
-        memberRows = members.map(m => {
-            const sal = latestSalary(m);
-            const salDisplay = sal != null ? `<span class="salary-val">${fmt(sal)}</span>` : '<span class="salary-na">Not set</span>';
-            return `<tr>
-        <td>${esc(m.name)}</td><td>${esc(getPositionName(m.positionId))}</td><td>${esc(getDeptName(m.departmentId))}</td>
-        <td>${salDisplay}</td>
-        <td><div class="actions-cell">
-          <button class="btn-icon" onclick="showEditUser_byMember(${m.id})" title="Edit user">&#9998;</button>
-          <button class="btn-icon danger" onclick="confirmRemoveFromProject(${pid},${m.id})" title="Remove">&#10005;</button>
-        </div></td></tr>`;
-        }).join('');
-    }
-
-    const catId = proj.categoryId || 0;
-    const scope = catId ? DB.scopes.find(s => s.id === catId) : null;
-    const catName = scope ? scope.name : 'Uncategorized';
-
-   document.getElementById('project-detail-content').innerHTML = `
-    <div class="app-header">
-      <button class="btn btn-ghost btn-sm" onclick="showPage('admin-layout')" style="margin-bottom:8px">&larr; Go Back</button>
-    </div>
-
-    <div class="app-body">
-      <div class="stats-grid">
-        <div class="stat-card"><div class="stat-label">Members</div><div class="stat-value">${members.length}</div></div>
-        <div class="stat-card"><div class="stat-label">Monthly Cost</div><div class="stat-value">${fmt(cost)}</div></div>
-        <div class="stat-card"><div class="stat-label">Avg Salary</div><div class="stat-value">${fmt(avg)}</div></div>
-      </div>
-      <div class="section-head"><h2>Assigned Members</h2><button class="btn btn-accent" onclick="showAssignMember(${pid})">+ Assign Member</button></div>
-      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Position</th><th>Department</th><th>Cost</th><th style="width:100px">Actions</th></tr></thead><tbody>${memberRows}</tbody></table></div>
-    </div>`;
-}
-
-
-function showEditUser_byMember(memberId) {
-    const user = DB.users.find(u => u.memberId === memberId);
-    if (user) showEditUser(user.id);
-}
-
-function showAssignMember(pid) {
-    const assignedIds = getProjectMembers(pid).map(m => m.id);
-    const seen = new Set();
-    const available = DB.members.filter(m => {
-        if (assignedIds.includes(m.id)) return false;
-        if (seen.has(m.id)) return false;
-        seen.add(m.id);
-        return true;
-    });
-
-    if (available.length === 0) {
-        showModal(`<h3>Assign Members</h3>
-            <p style="color:var(--main-text3);margin-bottom:16px">All members already assigned. Add new users in User Management first.</p>
-            <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>`);
-        return;
-    }
-
-    const memberItems = available.map(m => {
-        const sal = latestSalary(m);
-        const salLabel = sal != null ? ' — ' + fmt(sal) : '';
-        return `<label class="multi-select-item" style="padding:8px 10px">
-            <input type="checkbox" value="${m.id}" style="accent-color:var(--accent);width:15px;height:15px;cursor:pointer">
-            ${esc(m.name)} <span style="color:var(--main-text3);font-size:.82rem">(${esc(getPositionName(m.positionId))}${salLabel})</span>
-        </label>`;
-    }).join('');
-
-    showModal(`<h3>Assign Members to Project</h3>
-        <div style="margin-bottom:8px;display:flex;gap:10px">
-            <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#assign-member-list input[type=checkbox]').forEach(c=>c.checked=true)">Select All</button>
-            <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#assign-member-list input[type=checkbox]').forEach(c=>c.checked=false)">Clear All</button>
-            <span id="assign-count" style="font-size:.82rem;color:var(--main-text3);display:flex;align-items:center;margin-left:auto">0 selected</span>
-        </div>
-        <div id="assign-member-list" style="max-height:300px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:6px">
-            ${memberItems}
-        </div>
-        <p class="auth-error" id="assign-error"></p>
-        <div class="btns" style="margin-top:16px">
-            <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
-            <button class="btn btn-accent" onclick="doAssignMember(${pid})">Assign Selected</button>
-        </div>`);
-
-    // Live counter
-    setTimeout(() => {
-        document.querySelectorAll('#assign-member-list input[type=checkbox]').forEach(cb => {
-            cb.addEventListener('change', updateAssignCount);
-        });
-    }, 50);
-}
-
-function updateAssignCount() {
-    const checked = document.querySelectorAll('#assign-member-list input[type=checkbox]:checked').length;
-    const el = document.getElementById('assign-count');
-    if (el) el.textContent = checked + ' selected';
-}
-
-
-
-async function doAssignMember(pid) {
-    const checkboxes = document.querySelectorAll('#assign-member-list input[type=checkbox]:checked');
-    const errEl = document.getElementById('assign-error');
-
-    if (checkboxes.length === 0) {
-        if (errEl) errEl.textContent = 'Please select at least one member';
-        return;
-    }
-
-    const memberIds = Array.from(checkboxes).map(c => parseInt(c.value));
-
-    for (const memberId of memberIds) {
-        const already = DB.projectAssignments.find(pa => pa.projectId === pid && pa.memberId === memberId);
-        if (!already) {
-            await api('/assignments', { method: 'POST', body: { projectId: pid, memberId } });
-        }
-    }
-
-    hideModal(); await loadDB(); renderProjectDetail();
-}
-
-
-function confirmRemoveFromProject(pid, memberId) {
-    const m = DB.members.find(x => x.id === memberId); if (!m) return;
-    showModal(`<h3>Remove from Project</h3>
-    <p style="color:var(--main-text2);line-height:1.6">Remove <strong style="color:var(--main-text)">${esc(m.name)}</strong>? Account and salary kept.</p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doRemoveFromProject(${pid},${memberId})">Remove</button></div>`);
-}
-
-async function doRemoveFromProject(pid, memberId) {
-    await api('/assignments', { method: 'DELETE', body: { projectId: pid, memberId } });
-    hideModal(); await loadDB(); renderProjectDetail();
-}
-
-
-/* ==========================================================
    SECTION 11: EMPLOYEE — MY ITEMS (grouped by Scope + Item Summary)
    ========================================================== */
 
@@ -1256,7 +1269,7 @@ function renderEmployeeProjects() {
 
     let content = '';
     if (projs.length === 0) {
-        content = '<div class="empty"><div class="icon">&#128193;</div><p>Not assigned to any item</p></div>';
+        content = '<div class="empty"><div class="icon">&#128193;</div><p>Not assigned to any</p></div>';
     } else {
         Object.values(groups).forEach(g => {
             if (g.items.length === 0) return;
@@ -1267,7 +1280,7 @@ function renderEmployeeProjects() {
                 <span style="font-size:.82rem;color:var(--main-text3)">${g.items.length} item${g.items.length !== 1 ? 's' : ''}</span>
               </div>
               <div class="table-wrap"><table>
-                <thead><tr><th>Item Name</th><th>Timeline</th><th>Team Size</th><th>Countdown</th></tr></thead>
+                <thead><tr><th>Work Category Id/Name</th><th>Timeline</th><th>Team Size</th><th>Countdown</th></tr></thead>
                 <tbody>
                   ${g.items.map(p => {
                     const mc = getProjectMembers(p.id).length;
@@ -1298,12 +1311,12 @@ function renderEmployeeProjects() {
     var itemSummaryHtml = buildEmpItemSummary(member.id);
 
     document.getElementById('emp-myprojects').innerHTML = `
-    <div class="app-header"><h2>My Items</h2><div class="header-sub">Items you are involved in</div></div>
+    <div class="app-header"><h2>My Work Category Details</h2><div class="header-sub">Items you are involved in</div></div>
     <div class="app-body" style="max-width:none">
       <div class="emp-card">
         <div class="emp-name">${esc(member.name)}</div>
         <div class="emp-project">Position: ${esc(getPositionName(member.positionId))} &nbsp;|&nbsp; Department: ${esc(getDeptName(member.departmentId))}</div>
-        <div class="emp-project" style="margin-bottom:8px">Assigned Items: <strong>${projs.length}</strong></div>
+        <div class="emp-project" style="margin-bottom:8px">Work Assigned: <strong>${projs.length}</strong></div>
       </div>
       ${itemSummaryHtml}
       ${content}
@@ -1337,7 +1350,7 @@ function buildEmpItemSummary(memberId) {
             '</td><td style="text-align:right;font-family:var(--font-m)">' + fmtCost(data.cost) + '</td></tr>';
     }).join('');
 
-    return '<div class="section-head" style="margin-top:4px"><h2>Item Summary</h2></div>' +
+    return '<div class="section-head" style="margin-top:4px"><h2>Summary Table</h2></div>' +
         '<div class="table-wrap" style="margin-bottom:24px"><table>' +
         '<thead><tr><th>Scope → Item</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
         '<tbody>' + rows + '</tbody></table></div>';
@@ -1448,12 +1461,12 @@ function renderEmployeeAttendance() {
             <input type="date" class="input" id="emp-att-to" value="${today}" style="width:145px;padding:8px 10px;font-size:.82rem">
           </div>
           <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Scope</label>
-            <div style="min-width:140px">${msGenerate('emp-ms-scope', scopeMsOpts, 'All Scopes')}</div>
+            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Category</label>
+            <div style="min-width:140px">${msGenerate('emp-ms-scope', scopeMsOpts, 'All Categories')}</div>
           </div>
           <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Item</label>
-            <div style="min-width:160px">${msGenerate('emp-ms-item', projMsOpts, 'All Items')}</div>
+            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">ID/Name</label>
+            <div style="min-width:160px">${msGenerate('emp-ms-item', projMsOpts, 'All ID/Name')}</div>
           </div>
           <div style="display:flex;gap:8px;margin-left:auto">
             <button class="btn btn-accent btn-sm" onclick="applyEmpAttendanceFilter()">Search</button>
@@ -1566,7 +1579,7 @@ function renderEmpAttendancePage() {
 
     let rows = '';
     if (filtered.length === 0) {
-        rows = '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No time entries found</td></tr>';
+        rows = '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No time entries found</td></tr>';
     } else {
         rows = pageData.map(r => {
             var proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
@@ -1577,18 +1590,18 @@ function renderEmpAttendancePage() {
             var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '—';
             var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '—';
             var subScopeName = r.subScopeId ? getSubScopeName(r.subScopeId) : '';
-            var detailName = r.detailId ? getDetailName(r.detailId) : '';
-
             var itemDisplay = '—';
             if (proj) {
                 itemDisplay = scope ? esc(scope.name) + ' &rarr; ' + esc(proj.name) : esc(proj.name);
             }
+            var wp = r.work_plan_id ? DB.worklist.find(function(w) { return w.id === r.work_plan_id; }) : null;
+            var wd = r.work_done_id ? DB.worklist.find(function(w) { return w.id === r.work_done_id; }) : null;
 
             return '<tr>' +
                 '<td style="font-family:var(--font-m)">' + r.date + '</td>' +
                 '<td>' + itemDisplay + '</td>' +
-                '<td>' + (subScopeName ? esc(subScopeName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
-                '<td>' + (detailName ? esc(detailName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td>' + (wp ? esc(wp.title) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td>' + (wd ? esc(wd.title) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.description || '') + '">' + (r.description ? esc(r.description) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td style="font-family:var(--font-m)">' + startTime + '</td>' +
                 '<td style="font-family:var(--font-m)">' + endTime + '</td>' +
@@ -1635,7 +1648,7 @@ function renderEmpAttendancePage() {
     tableArea.innerHTML =
         '<div class="table-wrap">' +
             '<table><thead><tr>' +
-                '<th>Date</th><th>Scope &rarr; Item</th><th>Sub Scope</th><th>Detail</th><th>Description</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th>' +
+                '<th>Date</th><th>Category &rarr; ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th>' +
             '</tr></thead><tbody>' + rows + '</tbody></table>' +
         '</div>' +
         paginationHtml;
@@ -1657,62 +1670,50 @@ function changeEmpAttPageSize(size) {
 }
 
 function showAddTimeEntry() {
-    var myProjects = getEmployeeProjects(currentUser.memberId);
-    if (myProjects.length === 0) {
-        showModal('<h3>Add Time Entry</h3>' +
-            '<p style="color:var(--main-text3);line-height:1.6">You are not assigned to any item.<br>Please ask admin to assign you to an item first.</p>' +
-            '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>');
-        return;
-    }
-
     var today = todayStr();
-    var myScopeIds = [...new Set(myProjects.map(p => p.categoryId).filter(Boolean))];
-    var myScopes = DB.scopes.filter(s => myScopeIds.includes(s.id));
-    var scopeOptions = '<option value="">-- Select Scope --</option>' +
-        myScopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
+    // 显示所有 scope
+    var scopeOptions = '<option value="">-- Select Category --</option>' +
+        DB.scopes.map(function(s) {
+            return '<option value="' + s.id + '">' + esc(s.name) + '</option>';
+        }).join('');
 
     showModal(`
     <h3>Add Time Entry</h3>
-    <div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="${today}"></div>
-    <div class="field"><label>Scope</label><select class="input" id="entry-scope-filter" onchange="entryScopeChanged()">${scopeOptions}</select></div>
-    <div class="field"><label>Item</label><select class="input" id="entry-project"><option value="">-- Select Item --</option></select></div>
-    <div class="field"><label>Sub Scope</label><select class="input" id="entry-subscope">${subScopeOpts(null)}</select></div>
-    <div class="field"><label>Detail</label><select class="input" id="entry-detail">${detailOpts(null)}</select></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="${today}"></div><br>
+        <div class="field"><label>Category</label><select class="input" id="entry-scope-filter" onchange="entryScopeChanged()">${scopeOptions}</select></div>
+        <div class="field"><label>ID/Name</label><select class="input" id="entry-project"><option value="">-- Select Category First --</option></select></div>
+        <div style="display:none"><select class="input" id="entry-detail">${detailOpts(null)}</select></div>
+        <div class="field"><label>Work Plan</label><select class="input" id="entry-workplan"><option value="">-- Select Category First --</option></select></div>
+        <div class="field"><label>Work Done</label><select class="input" id="entry-workdone"><option value="">-- Select Category First --</option></select></div>
         <div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="09:00"></div>
         <div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="17:00"></div>
     </div>
-    <div class="field"><label>Description</label><textarea class="input" id="entry-desc" rows="3" placeholder="What did you work on?" style="resize:vertical"></textarea></div>
+    <div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="entry-desc" rows="2" placeholder="For Other Selected" style="resize:vertical"></textarea></div>
     <p class="auth-error" id="entry-error"></p>
     <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddTimeEntry()">Save</button></div>`);
     setTimeout(function() { document.getElementById('entry-scope-filter').focus(); }, 100);
 }
 
 function showEditTimeEntry(entryId) {
-    var entry = DB.attendance.find(a => a.id === entryId);
+    var entry = DB.attendance.find(function(a) { return a.id === entryId; });
     if (!entry) return;
-    var myProjects = getEmployeeProjects(currentUser.memberId);
-    var allProjects = myProjects;
-    if (entry.projectId && !allProjects.find(p => p.id === entry.projectId)) {
-        var curProj = DB.projects.find(p => p.id === entry.projectId);
-        if (curProj) allProjects = [curProj].concat(allProjects);
-    }
 
-    var currentProj = entry.projectId ? DB.projects.find(p => p.id === entry.projectId) : null;
+    var currentProj = entry.projectId ? DB.projects.find(function(p) { return p.id === entry.projectId; }) : null;
     var currentScopeId = currentProj && currentProj.categoryId ? currentProj.categoryId : '';
 
-    var myScopeIds = [...new Set(allProjects.map(p => p.categoryId).filter(Boolean))];
-    var myScopes = DB.scopes.filter(s => myScopeIds.includes(s.id));
-    var scopeOptions = '<option value="">-- Select Scope --</option>' +
-        myScopes.map(s => {
+    // 显示所有 scope
+    var scopeOptions = '<option value="">-- Select Category --</option>' +
+        DB.scopes.map(function(s) {
             var sel = currentScopeId === s.id ? 'selected' : '';
             return '<option value="' + s.id + '" ' + sel + '>' + esc(s.name) + '</option>';
         }).join('');
 
+    // 显示该 scope 下所有 project
     var scopeItems = currentScopeId
-        ? allProjects.filter(p => p.categoryId === currentScopeId)
-        : allProjects;
-    var projectOpts = scopeItems.map(p => {
+        ? DB.projects.filter(function(p) { return p.categoryId === currentScopeId; })
+        : DB.projects;
+    var projectOpts = scopeItems.map(function(p) {
         var sel = entry.projectId === p.id ? 'selected' : '';
         return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>';
     }).join('');
@@ -1724,45 +1725,83 @@ function showEditTimeEntry(entryId) {
 
     showModal(`
     <h3>Edit Time Entry</h3>
-    <div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="${entry.date}"></div>
-    <div class="field"><label>Scope</label><select class="input" id="entry-scope-filter" onchange="entryScopeChangedEdit()">${scopeOptions}</select></div>
-    <div class="field"><label>Item</label><select class="input" id="entry-project"><option value="">-- Select Item --</option>${projectOpts}</select></div>
-    <div class="field"><label>Sub Scope</label><select class="input" id="entry-subscope">${subScopeOpts(entry.subScopeId)}</select></div>
-    <div class="field"><label>Detail</label><select class="input" id="entry-detail">${detailOpts(entry.detailId)}</select></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="${entry.date}"></div><br>
+        <div class="field"><label>Category</label><select class="input" id="entry-scope-filter" onchange="entryScopeChangedEdit()">${scopeOptions}</select></div>
+        <div class="field"><label>ID/Name</label><select class="input" id="entry-project"><option value="">-- Select ID/Name --</option>${projectOpts}</select></div>
+        <div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="entry-subscope"><option value="">-- Select Category First --</option></select></div>
+        <div style="display:none"><select class="input" id="entry-detail">${detailOpts(entry.detailId)}</select></div>
+        <div class="field"><label>Work Plan</label><select class="input" id="entry-workplan"><option value="">-- Select Category First --</option></select></div>
+        <div class="field"><label>Work Done</label><select class="input" id="entry-workdone"><option value="">-- Select Category First --</option></select></div>
         <div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="${startTime}"></div>
         <div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="${endTime}"></div>
     </div>
-    <div class="field"><label>Description</label><textarea class="input" id="entry-desc" rows="3" style="resize:vertical">${esc(entry.description || '')}</textarea></div>
+    <div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="entry-desc" rows="2" style="resize:vertical">${esc(entry.description || '')}</textarea></div>
     <p class="auth-error" id="entry-error"></p>
     <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditTimeEntry(${entryId})">Save</button></div>`);
-}
 
-function entryScopeChangedEdit() {
-    var scopeId = document.getElementById('entry-scope-filter').value;
-    var projSelect = document.getElementById('entry-project');
-    var myProjects = getEmployeeProjects(currentUser.memberId);
-    var allProjects = myProjects;
-
-    var filtered = scopeId
-        ? allProjects.filter(p => p.categoryId === parseInt(scopeId))
-        : allProjects;
-
-    projSelect.innerHTML = '<option value="">-- Select Item --</option>' +
-        filtered.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
+    setTimeout(function() {
+        entryFilterWorklist();
+        if (entry.work_plan_id) {
+            var wpEl = document.getElementById('entry-workplan');
+            if (wpEl) wpEl.value = entry.work_plan_id;
+        }
+        if (entry.work_done_id) {
+            var wdEl = document.getElementById('entry-workdone');
+            if (wdEl) wdEl.value = entry.work_done_id;
+        }
+    }, 50);
 }
 
 function entryScopeChanged() {
     var scopeId = document.getElementById('entry-scope-filter').value;
     var projSelect = document.getElementById('entry-project');
-    var myProjects = getEmployeeProjects(currentUser.memberId);
 
     var filtered = scopeId
-        ? myProjects.filter(p => p.categoryId === parseInt(scopeId))
-        : myProjects;
+        ? DB.projects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
+        : DB.projects;
 
-    projSelect.innerHTML = '<option value="">-- Select Item --</option>' +
-        filtered.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
+    projSelect.innerHTML = '<option value="">-- Select ID/Name --</option>' +
+        filtered.map(function(p) {
+            return '<option value="' + p.id + '">' + esc(p.name) + '</option>';
+        }).join('');
+
+    entryFilterWorklist();
+}
+
+function entryScopeChangedEdit() {
+    var scopeId = document.getElementById('entry-scope-filter').value;
+    var projSelect = document.getElementById('entry-project');
+
+    var filtered = scopeId
+        ? DB.projects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
+        : DB.projects;
+
+    projSelect.innerHTML = '<option value="">-- Select ID/Name --</option>' +
+        filtered.map(function(p) {
+            return '<option value="' + p.id + '">' + esc(p.name) + '</option>';
+        }).join('');
+
+    entryFilterWorklist();
+}
+
+function entryFilterWorklist() {
+    var scopeId = document.getElementById('entry-scope-filter').value;
+    var wpSelect = document.getElementById('entry-workplan');
+    var wdSelect = document.getElementById('entry-workdone');
+    if (!wpSelect || !wdSelect) return;
+    if (!scopeId) {
+        wpSelect.innerHTML = '<option value="">-- Select Category First --</option>';
+        wdSelect.innerHTML = '<option value="">-- Select Category First --</option>';
+        return;
+    }
+    var filtered = DB.worklist.filter(function(w) { return w.scopeId === parseInt(scopeId); });
+    var opts = '<option value="">-- None --</option>' +
+        filtered.map(function(w) {
+            return '<option value="' + w.id + '">' + esc(w.title) + '</option>';
+        }).join('');
+    wpSelect.innerHTML = opts;
+    wdSelect.innerHTML = opts;
 }
 
 
@@ -1772,6 +1811,8 @@ async function doAddTimeEntry() {
     var projectId = document.getElementById('entry-project').value;
     var subScopeId = document.getElementById('entry-subscope').value;
     var detailId = document.getElementById('entry-detail').value;
+    var workPlanId = document.getElementById('entry-workplan').value;
+    var workDoneId = document.getElementById('entry-workdone').value;
     var start = document.getElementById('entry-start').value;
     var end = document.getElementById('entry-end').value;
     var desc = document.getElementById('entry-desc').value.trim();
@@ -1817,6 +1858,8 @@ async function doAddTimeEntry() {
                 scopeId: null,
                 subScopeId: subScopeId ? parseInt(subScopeId) : null,
                 detailId: detailId ? parseInt(detailId) : null,
+                work_plan_id: workPlanId ? parseInt(workPlanId) : null,
+                work_done_id: workDoneId ? parseInt(workDoneId) : null,
                 description: desc
             }
         });
@@ -1830,6 +1873,8 @@ async function doEditTimeEntry(entryId) {
     var projectId = document.getElementById('entry-project').value;
     var subScopeId = document.getElementById('entry-subscope').value;
     var detailId = document.getElementById('entry-detail').value;
+    var workPlanId = document.getElementById('entry-workplan').value;
+    var workDoneId = document.getElementById('entry-workdone').value;
     var start = document.getElementById('entry-start').value;
     var end = document.getElementById('entry-end').value;
     var desc = document.getElementById('entry-desc').value.trim();
@@ -1874,13 +1919,14 @@ async function doEditTimeEntry(entryId) {
                 scopeId: null,
                 subScopeId: subScopeId ? parseInt(subScopeId) : null,
                 detailId: detailId ? parseInt(detailId) : null,
+                work_plan_id: workPlanId ? parseInt(workPlanId) : null,
+                work_done_id: workDoneId ? parseInt(workDoneId) : null,
                 description: desc
             }
         });
         hideModal(); await loadDB(); renderEmployeeAttendance();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
-
 function confirmDeleteTimeEntry(entryId) {
     var entry = DB.attendance.find(a => a.id === entryId);
     if (!entry) return;
@@ -1910,7 +1956,7 @@ function exportEmpAttendanceCSV() {
     var data = empAttFilteredData;
     if (data.length === 0) { alert('No data to export'); return; }
 
-    var headers = ['Date', 'Scope', 'Item', 'Sub Scope', 'Detail', 'Start', 'End', 'Duration', 'Description'];
+    var headers = ['Date', 'Category', 'ID/Name', 'Work Plan', 'Work Done', 'Start', 'End', 'Duration', 'Remark'];
     var rows = data.map(function(r) {
         var proj = r.projectId ? DB.projects.find(function(p) { return p.id === r.projectId; }) : null;
         var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
@@ -1919,8 +1965,10 @@ function exportEmpAttendanceCSV() {
         var endParts = r.clockOut ? r.clockOut.split('T') : [];
         var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
         var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
+        var wp = r.work_plan_id ? DB.worklist.find(function(w) { return w.id === r.work_plan_id; }) : null;
+        var wd = r.work_done_id ? DB.worklist.find(function(w) { return w.id === r.work_done_id; }) : null;
 
-        return [r.date, scope ? scope.name : '', proj ? proj.name : '', r.subScopeId ? getSubScopeName(r.subScopeId) : '', r.detailId ? getDetailName(r.detailId) : '', startTime, endTime, dur, r.description || ''];
+        return [r.date, scope ? scope.name : '', proj ? proj.name : '', wp ? wp.title : '', wd ? wd.title : '', startTime, endTime, dur, r.description || ''];
     });
 
     var csv = headers.join(',') + '\n';
@@ -2106,7 +2154,7 @@ document.addEventListener('click', function(e) {
 
 
 /* ==========================================================
-   SECTION 10: ADMIN — ATTENDANCE (scope → item)
+   SECTION 10: ADMIN — ATTENDANCE (work list(scope) → id/name(item))
    ========================================================== */
 
 var adminAttCurrentPage = 1;
@@ -2123,6 +2171,7 @@ function renderAdminAttendance() {
 
     var scopeOpts = DB.scopes.map(function(s) { return { value: s.id, label: s.name }; });
     var empOpts = DB.members.map(function(m) { return { value: m.id, label: m.name }; });
+    var deptOpts = DB.departments.map(function(d) { return { value: d.id, label: d.name }; });
 
     var view = document.getElementById('admin-attendance');
     view.innerHTML =
@@ -2144,12 +2193,16 @@ function renderAdminAttendance() {
             '<input type="date" class="input" id="att-to" value="' + today + '" style="width:145px;padding:8px 10px;font-size:.82rem">' +
           '</div>' +
           '<div style="display:flex;align-items:center;gap:6px">' +
-            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Scope</label>' +
-            '<div style="min-width:140px">' + msGenerate('att-ms-scope', scopeOpts, 'All Scopes') + '</div>' +
+            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Department</label>' +
+            '<div style="min-width:140px">' + msGenerate('att-ms-dept', deptOpts, 'All Departments') + '</div>' +
           '</div>' +
           '<div style="display:flex;align-items:center;gap:6px">' +
-            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Item</label>' +
-            '<div style="min-width:160px">' + msGenerate('att-ms-item', [], 'All Items') + '</div>' +
+            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Category</label>' +
+            '<div style="min-width:140px">' + msGenerate('att-ms-scope', scopeOpts, 'All Categories') + '</div>' +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:6px">' +
+            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">ID/Name</label>' +
+            '<div style="min-width:160px">' + msGenerate('att-ms-item', [], 'All ID/Names') + '</div>' +
           '</div>' +
           '<div style="display:flex;align-items:center;gap:6px">' +
             '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label>' +
@@ -2193,11 +2246,10 @@ function resetAdminAttendanceFilter() {
     document.getElementById('att-from').value = thirtyDaysAgo.toISOString().slice(0, 10);
     document.getElementById('att-to').value = today;
 
-    /* Clear all multi-selects */
     msClear('att-ms-scope');
+    msClear('att-ms-dept');    // ← 加这行
     msClear('att-ms-emp');
 
-    /* Reset Item to show all projects */
     var allItemOpts = DB.projects.map(function(p) { return { value: p.id, label: p.name }; });
     msRebuild('att-ms-item', allItemOpts, false);
 
@@ -2210,6 +2262,7 @@ function applyAdminAttendanceFilter() {
     var toDate = document.getElementById('att-to').value;
     var scopeIds = msGetValues('att-ms-scope');
     var itemIds = msGetValues('att-ms-item');
+    var deptIds = msGetValues('att-ms-dept');    // ← 加这行
     var empIds = msGetValues('att-ms-emp');
     if (!fromDate || !toDate) return;
 
@@ -2224,6 +2277,12 @@ function applyAdminAttendanceFilter() {
     /* Filter by selected item(s) */
     if (itemIds.length > 0) {
         filtered = filtered.filter(function(a) { return itemIds.indexOf(a.projectId) !== -1; });
+    }
+
+    /* Filter by selected department(s) */    // ← 加这块
+    if (deptIds.length > 0) {
+        var deptMemberIds = DB.members.filter(function(m) { return deptIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
+        filtered = filtered.filter(function(a) { return deptMemberIds.indexOf(a.memberId) !== -1; });
     }
 
     /* Filter by selected employee(s) */
@@ -2262,8 +2321,6 @@ function applyAdminAttendanceFilter() {
     renderAdminAttPage();
 }
 
-/* ── Everything below is UNCHANGED from your original ── */
-
 function renderAdminAttPage() {
     var filtered = adminAttFilteredData;
     var totalPages = Math.ceil(filtered.length / adminAttPageSize) || 1;
@@ -2273,10 +2330,11 @@ function renderAdminAttPage() {
 
     var rows = '';
     if (filtered.length === 0) {
-        rows = '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No attendance records found</td></tr>';
+        rows = '<tr><td colspan="11" style="text-align:center;color:var(--main-text3);padding:30px">No attendance records found</td></tr>';
     } else {
         rows = pageData.map(function(r) {
             var emp = DB.members.find(function(m) { return m.id === r.memberId; });
+            var dept = emp && emp.departmentId ? getDeptName(emp.departmentId) : '';
             var proj = r.projectId ? DB.projects.find(function(p) { return p.id === r.projectId; }) : null;
             var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
             var dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '—';
@@ -2284,18 +2342,19 @@ function renderAdminAttPage() {
             var endParts = r.clockOut ? r.clockOut.split('T') : [];
             var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '—';
             var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '—';
-            var subScopeName = r.subScopeId ? getSubScopeName(r.subScopeId) : '';
-            var detailName = r.detailId ? getDetailName(r.detailId) : '';
             var itemDisplay = '—';
             if (proj) {
                 itemDisplay = scope ? esc(scope.name) + ' &rarr; ' + esc(proj.name) : esc(proj.name);
             }
+            var wp = r.work_plan_id ? DB.worklist.find(function(w) { return w.id === r.work_plan_id; }) : null;
+            var wd = r.work_done_id ? DB.worklist.find(function(w) { return w.id === r.work_done_id; }) : null;
             return '<tr>' +
                 '<td style="font-family:var(--font-m)">' + r.date + '</td>' +
+                '<td>' + (dept ? esc(dept) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td>' + (emp ? esc(emp.name) : '?') + '</td>' +
                 '<td>' + itemDisplay + '</td>' +
-                '<td>' + (subScopeName ? esc(subScopeName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
-                '<td>' + (detailName ? esc(detailName) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td>' + (wp ? esc(wp.title) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td>' + (wd ? esc(wd.title) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.description || '') + '">' + (r.description ? esc(r.description) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td style="font-family:var(--font-m)">' + startTime + '</td>' +
                 '<td style="font-family:var(--font-m)">' + endTime + '</td>' +
@@ -2339,7 +2398,7 @@ function renderAdminAttPage() {
 
     document.getElementById('admin-att-table-area').innerHTML =
         '<div class="table-wrap"><table>' +
-            '<thead><tr><th>Date</th><th>Employee</th><th>Scope &rarr; Item</th><th>Sub Scope</th><th>Detail</th><th>Description</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th></tr></thead>' +
+            '<thead><tr><th>Date</th><th>Department</th><th>Employee</th><th>Category &rarr; ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th></tr></thead>' +
             '<tbody>' + rows + '</tbody></table></div>' +
         paginationHtml;
 }
@@ -2359,26 +2418,29 @@ function changeAdminAttPageSize(size) {
 }
 
 function showAdminAddAttendance() {
-    var scopeOptions = '<option value="">-- Select Scope --</option>' +
+    var scopeOptions = '<option value="">-- Select Category --</option>' +
         DB.scopes.map(function(s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('');
     var memberOpts = '<option value="">-- Select Employee --</option>' +
         DB.members.map(function(m) { return '<option value="' + m.id + '">' + esc(m.name) + '</option>'; }).join('');
 
     showModal(
     '<h3>Add Attendance</h3>' +
-    '<div class="field"><label>Employee</label><select class="input" id="att-member">' + memberOpts + '</select></div>' +
-    '<div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="' + todayStr() + '"></div>' +
-    '<div class="field"><label>Scope</label><select class="input" id="att-scope-filter" onchange="adminAttItemChanged()">' + scopeOptions + '</select></div>' +
-    '<div class="field"><label>Item</label><select class="input" id="att-item"><option value="">-- Select Item --</option></select></div>' +
-    '<div class="field"><label>Sub Scope</label><select class="input" id="att-subscope">' + subScopeOpts(null) + '</select></div>' +
-    '<div class="field"><label>Detail</label><select class="input" id="att-detail">' + detailOpts(null) + '</select></div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+        '<div class="field"><label>Employee</label><select class="input" id="att-member">' + memberOpts + '</select></div>' +
+        '<div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="' + todayStr() + '"></div>' +
+        '<div class="field"><label>Categories</label><select class="input" id="att-scope-filter" onchange="adminAttScopeChanged()">' + scopeOptions + '</select></div>' +
+        '<div class="field"><label>ID/Name</label><select class="input" id="att-item"><option value="">-- Select Category First --</option></select></div>' +
+        '<div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- Select Category First --</option></select></div>' +
+        '<div class="field" style="display:none"><label>Detail</label><select class="input" id="att-detail">' + detailOpts(null) + '</select></div>' +
+        '<div class="field"><label>Work Plan</label><select class="input" id="att-workplan"><option value="">-- Select Category First --</option></select></div>' +
+        '<div class="field"><label>Work Done</label><select class="input" id="att-workdone"><option value="">-- Select Category First --</option></select></div>' +
         '<div class="field"><label>Start Time</label><input class="input" id="att-start" type="time" value="09:00"></div>' +
         '<div class="field"><label>End Time</label><input class="input" id="att-end" type="time" value="17:00"></div>' +
     '</div>' +
-    '<div class="field"><label>Description</label><textarea class="input" id="att-desc" rows="3" placeholder="Description" style="resize:vertical"></textarea></div>' +
+    '<div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="att-desc" rows="2" placeholder="For Other Selected" style="resize:vertical"></textarea></div>' +
     '<p class="auth-error" id="att-error"></p>' +
-    '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAdminAddAttendance()">Save</button></div>');
+    '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAdminAddAttendance()">Save</button></div>'
+    );
     setTimeout(function() { var el = document.getElementById('att-member'); if (el) el.focus(); }, 100);
 }
 
@@ -2388,7 +2450,7 @@ function adminAttItemChanged() {
     var filtered = scopeId
         ? DB.projects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
         : DB.projects;
-    itemSelect.innerHTML = '<option value="">-- Select Item --</option>' +
+    itemSelect.innerHTML = '<option value="">-- Select ID/Name --</option>' +
         filtered.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
 }
 
@@ -2399,6 +2461,8 @@ async function doAdminAddAttendance() {
     var itemId = document.getElementById('att-item').value;
     var subScopeId = document.getElementById('att-subscope').value;
     var detailId = document.getElementById('att-detail').value;
+    var workPlanId = document.getElementById('att-workplan').value;
+    var workDoneId = document.getElementById('att-workdone').value;
     var start = document.getElementById('att-start').value;
     var end = document.getElementById('att-end').value;
     var desc = document.getElementById('att-desc').value.trim();
@@ -2424,6 +2488,8 @@ async function doAdminAddAttendance() {
                 scopeId: null,
                 subScopeId: subScopeId ? parseInt(subScopeId) : null,
                 detailId: detailId ? parseInt(detailId) : null,
+                work_plan_id: workPlanId ? parseInt(workPlanId) : null,
+                work_done_id: workDoneId ? parseInt(workDoneId) : null,
                 description: desc
             }
         });
@@ -2438,7 +2504,7 @@ function showAdminEditAttendance(id) {
     var proj = entry.projectId ? DB.projects.find(function(p) { return p.id === entry.projectId; }) : null;
     var currentScopeId = proj && proj.categoryId ? proj.categoryId : '';
 
-    var scopeOptions = '<option value="">-- Select Scope --</option>' +
+    var scopeOptions = '<option value="">-- Select Category --</option>' +
         DB.scopes.map(function(s) {
             var sel = currentScopeId === s.id ? 'selected' : '';
             return '<option value="' + s.id + '" ' + sel + '>' + esc(s.name) + '</option>';
@@ -2457,20 +2523,40 @@ function showAdminEditAttendance(id) {
     var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
     var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
 
-    showModal(
+        showModal(
     '<h3>Edit Attendance</h3>' +
-    '<div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="' + entry.date + '"></div>' +
-    '<div class="field"><label>Scope</label><select class="input" id="att-scope-filter" onchange="adminAttItemChangedEdit()">' + scopeOptions + '</select></div>' +
-    '<div class="field"><label>Item</label><select class="input" id="att-item"><option value="">-- Select Item --</option>' + itemOpts + '</select></div>' +
-    '<div class="field"><label>Sub Scope</label><select class="input" id="att-subscope">' + subScopeOpts(entry.subScopeId) + '</select></div>' +
-    '<div class="field"><label>Detail</label><select class="input" id="att-detail">' + detailOpts(entry.detailId) + '</select></div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+        '<div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="' + entry.date + '"></div><br>' +
+        '<div class="field"><label>Category</label><select class="input" id="att-scope-filter" onchange="adminAttScopeChangedEdit()">' + scopeOptions + '</select></div>' +
+        '<div class="field"><label>ID/Names</label><select class="input" id="att-item"><option value="">-- Select ID/Name --</option>' + itemOpts + '</select></div>' +
+        '<div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- Select Category First --</option></select></div>' +
+        '<div class="field" style="display:none"><label>Detail</label><select class="input" id="att-detail">' + detailOpts(entry.detailId) + '</select></div>' +
+        '<div class="field"><label>Work Plan</label><select class="input" id="att-workplan"><option value="">-- Select Category First --</option></select></div>' +
+        '<div class="field"><label>Work Done</label><select class="input" id="att-workdone"><option value="">-- Select Category First --</option></select></div>' +
         '<div class="field"><label>Start Time</label><input class="input" id="att-start" type="time" value="' + startTime + '"></div>' +
         '<div class="field"><label>End Time</label><input class="input" id="att-end" type="time" value="' + endTime + '"></div>' +
     '</div>' +
-    '<div class="field"><label>Description</label><textarea class="input" id="att-desc" rows="3" style="resize:vertical">' + esc(entry.description || '') + '</textarea></div>' +
+    '<div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="att-desc" rows="2" style="resize:vertical">' + esc(entry.description || '') + '</textarea></div>' +
     '<p class="auth-error" id="att-error"></p>' +
     '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAdminEditAttendance(' + id + ')">Save</button></div>');
+
+    // ← 加在这里，showModal 括号结束后面
+    setTimeout(function() {
+        adminAttFilterSubScopes();
+        adminAttFilterWorklist();
+        if (entry.subScopeId) {
+            var ssEl = document.getElementById('att-subscope');
+            if (ssEl) ssEl.value = entry.subScopeId;
+        }
+        if (entry.work_plan_id) {
+            var wpEl = document.getElementById('att-workplan');
+            if (wpEl) wpEl.value = entry.work_plan_id;
+        }
+        if (entry.work_done_id) {
+            var wdEl = document.getElementById('att-workdone');
+            if (wdEl) wdEl.value = entry.work_done_id;
+        }
+    }, 50);
 }
 
 function adminAttItemChangedEdit() {
@@ -2479,8 +2565,51 @@ function adminAttItemChangedEdit() {
     var filtered = scopeId
         ? DB.projects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
         : DB.projects;
-    itemSelect.innerHTML = '<option value="">-- Select Item --</option>' +
+    itemSelect.innerHTML = '<option value="">-- Select ID/Name --</option>' +
         filtered.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
+}
+
+// ===== Scope → Worklist 联动 =====
+
+function adminAttScopeChanged() {
+    adminAttItemChanged();
+    adminAttFilterSubScopes();
+    adminAttFilterWorklist();
+}
+
+function adminAttScopeChangedEdit() {
+    adminAttItemChangedEdit();
+    adminAttFilterSubScopes();
+    adminAttFilterWorklist();
+}
+
+function adminAttFilterSubScopes() {
+    var scopeId = document.getElementById('att-scope-filter').value;
+    var ssSelect = document.getElementById('att-subscope');
+    if (!ssSelect) return;
+    var filtered = scopeId
+        ? DB.subScopes.filter(function(s) { return s.scopeId === parseInt(scopeId); })
+        : DB.subScopes;
+    ssSelect.innerHTML = '<option value="">-- None --</option>' +
+        filtered.map(function(s) {
+            return '<option value="' + s.id + '">' + esc(s.name) + '</option>';
+        }).join('');
+}
+
+function adminAttFilterWorklist() {
+    var scopeId = document.getElementById('att-scope-filter').value;
+    var wpSelect = document.getElementById('att-workplan');
+    var wdSelect = document.getElementById('att-workdone');
+    if (!wpSelect || !wdSelect) return;
+    var filtered = scopeId
+        ? DB.worklist.filter(function(w) { return w.scopeId === parseInt(scopeId); })
+        : DB.worklist;
+    var opts = '<option value="">-- None --</option>' +
+        filtered.map(function(w) {
+            return '<option value="' + w.id + '">' + esc(w.title) + '</option>';
+        }).join('');
+    wpSelect.innerHTML = opts;
+    wdSelect.innerHTML = opts;
 }
 
 async function doAdminEditAttendance(id) {
@@ -2489,6 +2618,8 @@ async function doAdminEditAttendance(id) {
     var itemId = document.getElementById('att-item').value;
     var subScopeId = document.getElementById('att-subscope').value;
     var detailId = document.getElementById('att-detail').value;
+    var workPlanId = document.getElementById('att-workplan').value;
+    var workDoneId = document.getElementById('att-workdone').value;
     var start = document.getElementById('att-start').value;
     var end = document.getElementById('att-end').value;
     var desc = document.getElementById('att-desc').value.trim();
@@ -2512,6 +2643,8 @@ async function doAdminEditAttendance(id) {
                 scopeId: null,
                 subScopeId: subScopeId ? parseInt(subScopeId) : null,
                 detailId: detailId ? parseInt(detailId) : null,
+                work_plan_id: workPlanId ? parseInt(workPlanId) : null,
+                work_done_id: workDoneId ? parseInt(workDoneId) : null,
                 description: desc
             }
         });
@@ -2543,9 +2676,10 @@ function exportAttendanceCSV() {
     var data = adminAttFilteredData;
     if (data.length === 0) { alert('No data to export'); return; }
 
-    var headers = ['Date', 'Employee', 'Scope', 'Item', 'Sub Scope', 'Detail', 'Start', 'End', 'Duration', 'Description'];
+    var headers = ['Date', 'Department', 'Employee', 'Category', 'ID/Name', 'Work Plan', 'Work Done', 'Start', 'End', 'Duration', 'Remark'];
     var rows = data.map(function(r) {
         var emp = DB.members.find(function(m) { return m.id === r.memberId; });
+        var dept = emp && emp.departmentId ? getDeptName(emp.departmentId) : '';
         var proj = r.projectId ? DB.projects.find(function(p) { return p.id === r.projectId; }) : null;
         var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
         var dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '';
@@ -2553,13 +2687,12 @@ function exportAttendanceCSV() {
         var endParts = r.clockOut ? r.clockOut.split('T') : [];
         var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
         var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
-        var scopeName = scope ? scope.name : '';
-        var itemName = proj ? proj.name : '';
-        var subScopeName = r.subScopeId ? getSubScopeName(r.subScopeId) : '';
-        var detailName = r.detailId ? getDetailName(r.detailId) : '';
+        var wp = r.work_plan_id ? DB.worklist.find(function(w) { return w.id === r.work_plan_id; }) : null;
+        var wd = r.work_done_id ? DB.worklist.find(function(w) { return w.id === r.work_done_id; }) : null;
 
-        return [r.date, emp ? emp.name : '', scopeName, itemName, subScopeName, detailName, startTime, endTime, dur, r.description || ''];
+        return [r.date, dept, emp ? emp.name : '', scope ? scope.name : '', proj ? proj.name : '', wp ? wp.title : '', wd ? wd.title : '', startTime, endTime, dur, r.description || ''];
     });
+
 
     var csv = headers.join(',') + '\n';
     rows.forEach(function(row) {
@@ -2577,55 +2710,75 @@ function exportAttendanceCSV() {
 
 
 
-
 /* ==========================================================
    SECTION 14: ADMIN — SUB SCOPES
    ========================================================== */
-
 function renderAdminSubScopes() {
     const view = document.getElementById('admin-subscopes');
-    let rows = '';
-    if (DB.subScopes.length === 0) {
-        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No sub scopes yet</td></tr>';
+    var scopeFilterOpts = '<option value="">All Categories</option>' +
+        DB.scopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
+
+    view.innerHTML =
+        '<div class="app-header">' +
+            '<h2>Sub Scopes</h2>' +
+            '<div class="header-sub">Manage sub scopes</div>' +
+        '</div>' +
+        '<div class="app-body">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
+                '<div style="display:flex;align-items:center;gap:10px">' +
+                    '<label style="font-size:.82rem;color:var(--main-text3)">Filter by Category:</label>' +
+                    '<select class="input" id="subscope-filter" onchange="renderSubScopeTable()" style="width:180px;padding:8px 10px;font-size:.82rem">' + scopeFilterOpts + '</select>' +
+                '</div>' +
+                '<button class="btn btn-green" onclick="showAddSubScope()">+ Add Sub Scope</button>' +
+            '</div>' +
+            '<div id="subscope-table-area"></div>' +
+        '</div>';
+    renderSubScopeTable();
+}
+
+function renderSubScopeTable() {
+    var filterScopeId = document.getElementById('subscope-filter') ? document.getElementById('subscope-filter').value : '';
+    var filtered = filterScopeId
+        ? DB.subScopes.filter(s => s.scopeId === parseInt(filterScopeId))
+        : DB.subScopes;
+
+    var rows = '';
+    if (filtered.length === 0) {
+        rows = '<tr><td colspan="5" style="text-align:center;color:var(--main-text3);padding:30px">No sub scopes found</td></tr>';
     } else {
-        rows = DB.subScopes.map((s, index) =>
-            '<tr>' +
+        rows = filtered.map((s, index) => {
+            var scope = s.scopeId ? DB.scopes.find(sc => sc.id === s.scopeId) : null;
+            return '<tr>' +
                 '<td style="font-family:var(--font-m);width:60px">' + (index + 1) + '</td>' +
+                '<td>' + (scope ? '<span class="badge badge-scope">' + esc(scope.name) + '</span>' : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td>' + esc(s.name) + '</td>' +
                 '<td style="color:var(--main-text3);font-size:.82rem">' + (s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '—') + '</td>' +
                 '<td><div class="actions-cell">' +
                     '<button class="btn-icon" onclick="showEditSubScope(' + s.id + ')" title="Edit">&#9998;</button>' +
                     '<button class="btn-icon danger" onclick="confirmDeleteSubScope(' + s.id + ')" title="Delete">&#10005;</button>' +
                 '</div></td>' +
-            '</tr>'
-        ).join('');
+            '</tr>';
+        }).join('');
     }
 
-
-    view.innerHTML =
-        '<div class="app-header">' +
-            '<h2>Sub Scopes</h2>' +
-            '<div class="header-sub">Manage sub scope categories</div>' +
-        '</div>' +
-        '<div class="app-body">' +
-            '<div class="section-head">' +
-                '<h2>All Sub Scopes <span style="color:var(--main-text3);font-weight:400;font-size:.85rem">(' + DB.subScopes.length + ')</span></h2>' +
-                '<button class="btn btn-green" onclick="showAddSubScope()">+ Add Sub Scope</button>' +
-            '</div>' +
-            '<div class="table-wrap"><table>' +
-                '<thead><tr>' +
-                    '<th style="width:60px">No</th>' +
-                    '<th>Name</th>' +
-                    '<th style="width:140px">Created</th>' +
-                    '<th style="width:90px">Actions</th>' +
-                '</tr></thead>' +
-                '<tbody>' + rows + '</tbody>' +
-            '</table></div>' +
-        '</div>';
+    document.getElementById('subscope-table-area').innerHTML =
+        '<div class="table-wrap"><table>' +
+            '<thead><tr>' +
+                '<th style="width:60px">No</th>' +
+                '<th style="width:160px">Category</th>' +
+                '<th>Name</th>' +
+                '<th style="width:140px">Created</th>' +
+                '<th style="width:90px">Actions</th>' +
+            '</tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+        '</table></div>';
 }
 
 function showAddSubScope() {
+    var scopeOpts = '<option value="">-- None --</option>' +
+        DB.scopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
     showModal('<h3>Add Sub Scope</h3>' +
+        '<div class="field"><label>Category</label><select class="input" id="subscope-scope">' + scopeOpts + '</select></div>' +
         '<div class="field"><label>Name</label><input class="input" id="subscope-name" placeholder="Enter sub scope name"></div>' +
         '<p class="auth-error" id="subscope-error"></p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddSubScope()">Save</button></div>');
@@ -2635,10 +2788,11 @@ function showAddSubScope() {
 async function doAddSubScope() {
     var errEl = document.getElementById('subscope-error');
     var name = document.getElementById('subscope-name').value.trim();
+    var scopeId = document.getElementById('subscope-scope').value;
     errEl.textContent = '';
     if (!name) { errEl.textContent = 'Name is required'; return; }
     try {
-        await api('/subscopes', { method: 'POST', body: { name: name } });
+        await api('/subscopes', { method: 'POST', body: { name: name, scopeId: scopeId ? parseInt(scopeId) : null } });
         hideModal(); await loadDB(); renderAdminSubScopes();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
@@ -2646,7 +2800,12 @@ async function doAddSubScope() {
 function showEditSubScope(id) {
     var item = DB.subScopes.find(s => s.id === id);
     if (!item) return;
+    var scopeOpts = '<option value="">-- None --</option>' +
+        DB.scopes.map(s => {
+            return '<option value="' + s.id + '"' + (item.scopeId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>';
+        }).join('');
     showModal('<h3>Edit Sub Scope</h3>' +
+        '<div class="field"><label>Category</label><select class="input" id="subscope-scope">' + scopeOpts + '</select></div>' +
         '<div class="field"><label>Name</label><input class="input" id="subscope-name" value="' + esc(item.name) + '"></div>' +
         '<p class="auth-error" id="subscope-error"></p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditSubScope(' + id + ')">Save</button></div>');
@@ -2656,10 +2815,11 @@ function showEditSubScope(id) {
 async function doEditSubScope(id) {
     var errEl = document.getElementById('subscope-error');
     var name = document.getElementById('subscope-name').value.trim();
+    var scopeId = document.getElementById('subscope-scope').value;
     errEl.textContent = '';
     if (!name) { errEl.textContent = 'Name is required'; return; }
     try {
-        await api('/subscopes/' + id, { method: 'PUT', body: { name: name } });
+        await api('/subscopes/' + id, { method: 'PUT', body: { name: name, scopeId: scopeId ? parseInt(scopeId) : null } });
         hideModal(); await loadDB(); renderAdminSubScopes();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
@@ -2678,6 +2838,124 @@ async function doDeleteSubScope(id) {
         hideModal(); await loadDB(); renderAdminSubScopes();
     } catch (e) { alert('Failed: ' + e.message); }
 }
+
+/* ==========================================================
+   SECTION 19: Work List
+   ========================================================== */
+function renderWorkList() {
+    const view = document.getElementById('admin-worklist');
+    var scopeFilterOpts = '<option value="">All Categories</option>' +
+        DB.scopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
+
+    view.innerHTML =
+        '<div class="app-header">' +
+            '<h2>Work List</h2>' +
+            '<div class="header-sub">Manage work items for attendance tracking</div>' +
+        '</div>' +
+        '<div class="app-body">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
+                '<div style="display:flex;align-items:center;gap:10px">' +
+                    '<label style="font-size:.82rem;color:var(--main-text3)">Filter by Category:</label>' +
+                    '<select class="input" id="worklist-filter" onchange="renderWorklistTable()" style="width:180px;padding:8px 10px;font-size:.82rem">' + scopeFilterOpts + '</select>' +
+                '</div>' +
+                '<button class="btn btn-green" onclick="showAddWorklist()">+ Add Work List</button>' +
+            '</div>' +
+            '<div id="worklist-table-area"></div>' +
+        '</div>';
+    renderWorklistTable();
+}
+
+function renderWorklistTable() {
+    var filterScopeId = document.getElementById('worklist-filter') ? document.getElementById('worklist-filter').value : '';
+    var filtered = filterScopeId
+        ? DB.worklist.filter(w => w.scopeId === parseInt(filterScopeId))
+        : DB.worklist;
+
+    var rows = '';
+    if (filtered.length === 0) {
+        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No work items found</td></tr>';
+    } else {
+        rows = filtered.map(w => {
+            var scope = w.scopeId ? DB.scopes.find(s => s.id === w.scopeId) : null;
+            return '<tr>' +
+                '<td style="font-family:var(--font-m)">' + w.id + '</td>' +
+                '<td>' + (scope ? '<span class="badge badge-scope">' + esc(scope.name) + '</span>' : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td>' + esc(w.title) + '</td>' +
+                '<td><div class="actions-cell">' +
+                    '<button class="btn-icon" onclick="showEditWorklist(' + w.id + ')" title="Edit">&#9998;</button>' +
+                    '<button class="btn-icon danger" onclick="confirmDeleteWorklist(' + w.id + ')" title="Delete">&#10005;</button>' +
+                '</div></td>' +
+            '</tr>';
+        }).join('');
+    }
+
+    document.getElementById('worklist-table-area').innerHTML =
+        '<div class="table-wrap"><table><thead><tr>' +
+            '<th style="width:60px">ID</th>' +
+            '<th style="width:160px">Category</th>' +
+            '<th>Title</th>' +
+            '<th style="width:90px">Actions</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function showAddWorklist() {
+    var scopeOpts = '<option value="">-- None --</option>' +
+        DB.scopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
+    showModal('<h3>Add Work List</h3>' +
+        '<div class="field"><label>Category</label><select class="input" id="wl-scope">' + scopeOpts + '</select></div>' +
+        '<div class="field"><label>Work List</label><input class="input" id="wl-title" placeholder="e.g. Wiring Installation"></div>' +
+        '<p class="auth-error" id="wl-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-green" onclick="doAddWorklist()">Create</button></div>');
+    setTimeout(function() { document.getElementById('wl-title').focus(); }, 100);
+}
+
+async function doAddWorklist() {
+    var title = document.getElementById('wl-title').value.trim();
+    var scopeId = document.getElementById('wl-scope').value;
+    var errEl = document.getElementById('wl-error'); errEl.textContent = '';
+    if (!title) { errEl.textContent = 'Title is required'; return; }
+    try {
+        await api('/worklist', { method: 'POST', body: { title: title, scopeId: scopeId ? parseInt(scopeId) : null } });
+    } catch (ex) { errEl.textContent = ex.message; return; }
+    hideModal(); await loadDB(); renderWorkList();
+}
+
+function showEditWorklist(id) {
+    var w = DB.worklist.find(x => x.id === id); if (!w) return;
+    var scopeOpts = '<option value="">-- None --</option>' +
+        DB.scopes.map(s => {
+            return '<option value="' + s.id + '"' + (w.scopeId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>';
+        }).join('');
+    showModal('<h3>Edit — ' + esc(w.title) + '</h3>' +
+        '<div class="field"><label>Category</label><select class="input" id="wl-scope">' + scopeOpts + '</select></div>' +
+        '<div class="field"><label>Work List</label><input class="input" id="wl-title" value="' + esc(w.title) + '"></div>' +
+        '<p class="auth-error" id="wl-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-green" onclick="doEditWorklist(' + id + ')">Save</button></div>');
+}
+
+async function doEditWorklist(id) {
+    var title = document.getElementById('wl-title').value.trim();
+    var scopeId = document.getElementById('wl-scope').value;
+    var errEl = document.getElementById('wl-error'); errEl.textContent = '';
+    if (!title) { errEl.textContent = 'Title is required'; return; }
+    try {
+        await api('/worklist/' + id, { method: 'PUT', body: { title: title, scopeId: scopeId ? parseInt(scopeId) : null } });
+    } catch (ex) { errEl.textContent = ex.message; return; }
+    hideModal(); await loadDB(); renderWorkList();
+}
+
+function confirmDeleteWorklist(id) {
+    var w = DB.worklist.find(x => x.id === id); if (!w) return;
+    showModal('<h3>Delete Work Item</h3>' +
+        '<p style="color:var(--main-text2);line-height:1.6">Delete <strong style="color:var(--main-text)">' + esc(w.title) + '</strong>?<br>Attendance records using this will be set to empty.</p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteWorklist(' + id + ')">Delete</button></div>');
+}
+
+async function doDeleteWorklist(id) {
+    await api('/worklist/' + id, { method: 'DELETE' });
+    hideModal(); await loadDB(); renderWorkList();
+}
+
 
 
 /* ==========================================================
@@ -2893,7 +3171,10 @@ function renderAdminReport() {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     var defaultFrom = thirtyDaysAgo.toISOString().slice(0, 10);
 
-    var scopeFilterOpts = DB.scopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
+    var scopeOpts = DB.scopes.map(function(s) { return { value: s.id, label: s.name }; });
+    var deptOpts = DB.departments.map(function(d) { return { value: d.id, label: d.name }; });
+    var empOpts = DB.members.map(function(m) { return { value: m.id, label: m.name }; });
+    var itemOpts = DB.projects.map(function(p) { return { value: p.id, label: p.name }; });
 
     view.innerHTML =
         '<div class="app-header">' +
@@ -2903,12 +3184,13 @@ function renderAdminReport() {
         '<div class="app-body">' +
             '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
                 '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>' +
-                '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+                '<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">' +
                     '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="date" class="input" id="rpt-from" value="' + defaultFrom + '" style="width:155px;padding:8px 10px;font-size:.82rem"></div>' +
                     '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="rpt-to" value="' + today + '" style="width:155px;padding:8px 10px;font-size:.82rem"></div>' +
-                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Scope</label><select class="input" id="rpt-scope" onchange="rptScopeChanged()" style="width:140px;padding:8px 10px;font-size:.82rem"><option value="">All Scopes</option>' + scopeFilterOpts + '</select></div>' +
-                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Item</label><select class="input" id="rpt-item" style="width:160px;padding:8px 10px;font-size:.82rem"><option value="">All Items</option></select></div>' +
-                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label><select class="input" id="rpt-emp" style="width:160px;padding:8px 10px;font-size:.82rem"><option value="">All Employees</option>' + DB.members.map(m => '<option value="' + m.id + '">' + esc(m.name) + '</option>').join('') + '</select></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Department</label><div style="min-width:140px">' + msGenerate('rpt-ms-dept', deptOpts, 'All Departments') + '</div></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Category</label><div style="min-width:140px">' + msGenerate('rpt-ms-scope', scopeOpts, 'All Categories') + '</div></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">ID/Name</label><div style="min-width:160px">' + msGenerate('rpt-ms-item', itemOpts, 'All ID/Names') + '</div></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label><div style="min-width:160px">' + msGenerate('rpt-ms-emp', empOpts, 'All Employees') + '</div></div>' +
                     '<div style="display:flex;gap:8px;margin-left:auto">' +
                         '<button class="btn btn-accent btn-sm" onclick="generateReport()">Generate</button>' +
                         '<button class="btn btn-ghost btn-sm" onclick="resetReport()">Reset</button>' +
@@ -2921,9 +3203,34 @@ function renderAdminReport() {
             '<div id="rpt-tables"></div>' +
         '</div>';
 
+    // Category → Item 联动
+    msOnChange('rpt-ms-scope', function(selectedScopeIds) {
+        var filtered = selectedScopeIds.length > 0
+            ? DB.projects.filter(function(p) { return selectedScopeIds.indexOf(p.categoryId) !== -1; })
+            : DB.projects;
+        msRebuild('rpt-ms-item', filtered.map(function(p) { return { value: p.id, label: p.name }; }), true);
+    });
+
+    // Department → Employee 联动
+    msOnChange('rpt-ms-dept', function(selectedDeptIds) {
+        var filtered = selectedDeptIds.length > 0
+            ? DB.members.filter(function(m) { return selectedDeptIds.indexOf(m.departmentId) !== -1; })
+            : DB.members;
+        msRebuild('rpt-ms-emp', filtered.map(function(m) { return { value: m.id, label: m.name }; }), true);
+    });
+
     generateReport();
 }
 
+function rptDeptChanged() {
+    var deptId = document.getElementById('rpt-dept').value;
+    var empSelect = document.getElementById('rpt-emp');
+    var filtered = deptId
+        ? DB.members.filter(function(m) { return m.departmentId === parseInt(deptId); })
+        : DB.members;
+    empSelect.innerHTML = '<option value="">All Employees</option>' +
+        filtered.map(function(m) { return '<option value="' + m.id + '">' + esc(m.name) + '</option>'; }).join('');
+}
 
 function rptScopeChanged() {
     var scopeId = document.getElementById('rpt-scope').value;
@@ -2941,9 +3248,14 @@ function resetReport() {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     document.getElementById('rpt-from').value = thirtyDaysAgo.toISOString().slice(0, 10);
     document.getElementById('rpt-to').value = today;
-    document.getElementById('rpt-scope').value = '';
-    document.getElementById('rpt-item').innerHTML = '<option value="">All Items</option>';
-    document.getElementById('rpt-emp').value = '';
+
+    msClear('rpt-ms-scope');
+    msClear('rpt-ms-dept');
+    msClear('rpt-ms-emp');
+
+    var allItemOpts = DB.projects.map(function(p) { return { value: p.id, label: p.name }; });
+    msRebuild('rpt-ms-item', allItemOpts, false);
+
     generateReport();
 }
 
@@ -2951,8 +3263,10 @@ function resetReport() {
 function generateReport() {
     var fromDate = document.getElementById('rpt-from').value;
     var toDate = document.getElementById('rpt-to').value;
-    var scopeId = document.getElementById('rpt-scope') ? document.getElementById('rpt-scope').value : '';
-    var itemId = document.getElementById('rpt-item') ? document.getElementById('rpt-item').value : '';
+    var scopeIds = msGetValues('rpt-ms-scope');
+    var itemIds = msGetValues('rpt-ms-item');
+    var deptIds = msGetValues('rpt-ms-dept');
+    var empIds = msGetValues('rpt-ms-emp');
     if (!fromDate || !toDate) return;
 
     // Filter attendance by date range
@@ -2961,23 +3275,28 @@ function generateReport() {
         return a.date >= fromDate && a.date <= toDate;
     });
 
-
-    // Filter by scope
-    if (scopeId) {
-        var scopeItemIds = DB.projects.filter(p => p.categoryId === parseInt(scopeId)).map(p => p.id);
-        filtered = filtered.filter(a => scopeItemIds.includes(a.projectId));
+    // Filter by scope(s)
+    if (scopeIds.length > 0) {
+        var scopeItemIds = DB.projects.filter(function(p) { return scopeIds.indexOf(p.categoryId) !== -1; }).map(function(p) { return p.id; });
+        filtered = filtered.filter(function(a) { return scopeItemIds.indexOf(a.projectId) !== -1; });
     }
 
-    // Filter by item
-    if (itemId) {
-        filtered = filtered.filter(a => a.projectId === parseInt(itemId));
+    // Filter by item(s)
+    if (itemIds.length > 0) {
+        filtered = filtered.filter(function(a) { return itemIds.indexOf(a.projectId) !== -1; });
     }
 
-    // Filter by employee
-    var empId = document.getElementById('rpt-emp') ? document.getElementById('rpt-emp').value : '';
-    if (empId) {
-        filtered = filtered.filter(a => a.memberId === parseInt(empId));
+    // Filter by department(s)
+    if (deptIds.length > 0) {
+        var deptMemberIds = DB.members.filter(function(m) { return deptIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
+        filtered = filtered.filter(function(a) { return deptMemberIds.indexOf(a.memberId) !== -1; });
     }
+
+    // Filter by employee(s)
+    if (empIds.length > 0) {
+        filtered = filtered.filter(function(a) { return empIds.indexOf(a.memberId) !== -1; });
+    }
+
 
 
     // ===== STATS =====
@@ -3002,8 +3321,8 @@ function generateReport() {
             '<div class="stat-card"><div class="stat-label">Total Hours</div><div class="stat-value">' + formatDuration(totalHours) + '</div></div>' +
             '<div class="stat-card"><div class="stat-label">Total Cost</div><div class="stat-value">' + fmtCost(totalCost) + '</div></div>' +
             '<div class="stat-card"><div class="stat-label">Active Employees</div><div class="stat-value">' + uniqueEmployees + '</div></div>' +
-            '<div class="stat-card"><div class="stat-label">Active Scopes</div><div class="stat-value">' + uniqueScopes + '</div></div>' +
-            '<div class="stat-card"><div class="stat-label">Active Items</div><div class="stat-value">' + uniqueItems + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Active Categories</div><div class="stat-value">' + uniqueScopes + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Active ID/Name</div><div class="stat-value">' + uniqueItems + '</div></div>' +
         '</div>';
 
     // ===== CHART 1: Cost by Scope → Item (Bar) =====
@@ -3053,21 +3372,20 @@ function generateReport() {
 
     document.getElementById('rpt-charts-row1').innerHTML =
         '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">' +
-            '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Cost by Scope &rarr; Item</h3>' +
+            '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Cost by Category &rarr; ID/Name</h3>' +
             '<div style="position:relative;height:280px"><canvas id="chart-item-cost"></canvas></div>' +
         '</div>' +
         '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">' +
-            '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Cost by Scope</h3>' +
+            '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Cost by Category</h3>' +
             '<div style="position:relative;height:280px"><canvas id="chart-scope-cost"></canvas></div>' +
         '</div>';
 
-    // ===== CHART 3: Monthly Hours Trend (Bar) =====
+    // ===== CHART 3: Monthly Hours Trend =====
     var monthlyHours = {};
     var monthlyCost = {};
-    DB.attendance.forEach(function(r) {
+    filtered.forEach(function(r) {    // ← DB.attendance 改成 filtered
         if (!r.clockIn || !r.clockOut || !r.date) return;
         var m = r.date.substring(0, 7);
-        if (r.date < fromDate || r.date > toDate) return;
         var ms = new Date(r.clockOut) - new Date(r.clockIn);
         var cost = getEntryCost(r.memberId, ms) || 0;
         if (!monthlyHours[m]) { monthlyHours[m] = 0; monthlyCost[m] = 0; }
@@ -3249,6 +3567,7 @@ function generateReport() {
         }
     });
 }
+
 
 
 

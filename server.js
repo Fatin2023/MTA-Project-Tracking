@@ -484,36 +484,37 @@ app.get('/api/attendance', async (req, res) => {
             scopeId: r.scope_id || null,
             subScopeId: r.sub_scope_id || null,
             detailId: r.detail_id || null,
-            description: r.description || ''
+            description: r.description || '',
+            work_plan_id: r.work_plan_id || null,
+            work_done_id: r.work_done_id || null
         })));
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/attendance', async (req, res) => {
-    const { memberId, date, clockIn, clockOut, projectId, scopeId, subScopeId, detailId, description } = req.body;
+    console.log('POST body:', JSON.stringify(req.body));
+    const { memberId, date, clockIn, clockOut, projectId, scopeId, subScopeId, detailId, description, work_plan_id, work_done_id } = req.body;
     try {
         const result = await pool.query(
-            `INSERT INTO attendance (member_id, date, clock_in, clock_out, project_id, scope_id, sub_scope_id, detail_id, description)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-            [memberId, date, clockIn, clockOut, projectId || null, scopeId || null, subScopeId || null, detailId || null, description || '']
+            `INSERT INTO attendance (member_id, date, clock_in, clock_out, project_id, scope_id, sub_scope_id, detail_id, description, work_plan_id, work_done_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+            [memberId, date, clockIn, clockOut, projectId || null, scopeId || null, subScopeId || null, detailId || null, description || '', work_plan_id || null, work_done_id || null]
         );
         res.json({ id: result.rows[0].id });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.put('/api/attendance/:id', async (req, res) => {
-    const { date, clockIn, clockOut, projectId, scopeId, subScopeId, detailId, description } = req.body;
+    const { date, clockIn, clockOut, projectId, scopeId, subScopeId, detailId, description, work_plan_id, work_done_id } = req.body;
     try {
         await pool.query(
             `UPDATE attendance SET date=$1, clock_in=$2, clock_out=$3, project_id=$4,
-             scope_id=$5, sub_scope_id=$6, detail_id=$7, description=$8 WHERE id=$9`,
-            [date, clockIn, clockOut, projectId || null, scopeId || null, subScopeId || null, detailId || null, description || '', req.params.id]
+             scope_id=$5, sub_scope_id=$6, detail_id=$7, description=$8, work_plan_id=$9, work_done_id=$10 WHERE id=$11`,
+            [date, clockIn, clockOut, projectId || null, scopeId || null, subScopeId || null, detailId || null, description || '', work_plan_id || null, work_done_id || null, req.params.id]
         );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
-
 
 app.delete('/api/attendance/:id', async (req, res) => {
     try {
@@ -527,30 +528,41 @@ app.delete('/api/attendance/:id', async (req, res) => {
 // ========================================
 // SUB SCOPES
 // ========================================
-
+// GET
 app.get('/api/subscopes', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM sub_scopes ORDER BY id');
-        res.json(result.rows.map(r => ({ id: r.id, name: r.name, createdAt: r.created_at })));
+        res.json(result.rows.map(r => ({
+            id: r.id,
+            name: r.name,
+            scopeId: r.scope_id || null,
+            createdAt: r.created_at
+        })));
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST
 app.post('/api/subscopes', async (req, res) => {
-    const { name } = req.body;
+    const { name, scopeId } = req.body;
     try {
-        const result = await pool.query('INSERT INTO sub_scopes (name) VALUES ($1) RETURNING id', [name]);
-        res.json({ id: result.rows[0].id });
+        const result = await pool.query(
+            'INSERT INTO sub_scopes (name, scope_id) VALUES ($1, $2) RETURNING *',
+            [name, scopeId || null]
+        );
+        res.json({ id: result.rows[0].id, name: result.rows[0].name, scopeId: result.rows[0].scope_id });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// PUT
 app.put('/api/subscopes/:id', async (req, res) => {
-    const { name } = req.body;
+    const { name, scopeId } = req.body;
     try {
-        await pool.query('UPDATE sub_scopes SET name = $1 WHERE id = $2', [name, req.params.id]);
+        await pool.query('UPDATE sub_scopes SET name=$1, scope_id=$2 WHERE id=$3', [name, scopeId || null, req.params.id]);
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// DELETE
 app.delete('/api/subscopes/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM sub_scopes WHERE id = $1', [req.params.id]);
@@ -625,6 +637,48 @@ app.delete('/api/scopes/:id', async (req, res) => {
         await pool.query('DELETE FROM scopes WHERE id=$1', [req.params.id]);
         res.json({ ok: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+// ========================================
+// ===== WORKLIST =====
+app.get('/api/worklist', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM worklist ORDER BY id');
+        res.json(result.rows.map(r => ({
+            id: r.id,
+            title: r.title,
+            scopeId: r.scope_id || null
+        })));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/worklist', async (req, res) => {
+    const { title, scopeId } = req.body;
+    try {
+        const result = await pool.query(
+            'INSERT INTO worklist (title, scope_id) VALUES ($1, $2) RETURNING *',
+            [title, scopeId || null]
+        );
+        res.json({ id: result.rows[0].id, title: result.rows[0].title, scopeId: result.rows[0].scope_id });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/worklist/:id', async (req, res) => {
+    const { title, scopeId } = req.body;
+    try {
+        await pool.query('UPDATE worklist SET title=$1, scope_id=$2 WHERE id=$3', [title, scopeId || null, req.params.id]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/worklist/:id', async (req, res) => {
+    try {
+        await pool.query('UPDATE attendance SET work_plan_id = NULL WHERE work_plan_id = $1', [req.params.id]);
+        await pool.query('UPDATE attendance SET work_done_id = NULL WHERE work_done_id = $1', [req.params.id]);
+        await pool.query('DELETE FROM worklist WHERE id = $1', [req.params.id]);
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 
@@ -704,6 +758,12 @@ async function initDB() {
                 created_at TIMESTAMP DEFAULT NOW()
             );
 
+            CREATE TABLE worklist (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(255) NOT NULL
+            );
+
+            
 
             INSERT INTO users (username, password, role)
             VALUES ('admin', 'admin123', 'admin')
@@ -714,10 +774,15 @@ async function initDB() {
             ALTER TABLE attendance ADD COLUMN IF NOT EXISTS sub_scope_id INT REFERENCES sub_scopes(id) ON DELETE SET NULL;
             ALTER TABLE attendance ADD COLUMN IF NOT EXISTS detail_id INT REFERENCES details(id) ON DELETE SET NULL;
             ALTER TABLE attendance ADD COLUMN IF NOT EXISTS scope_id INT REFERENCES scopes(id) ON DELETE SET NULL;
+            ALTER TABLE attendance ADD COLUMN work_plan_id INTEGER REFERENCES worklist(id) ON DELETE SET NULL;
+            ALTER TABLE attendance ADD COLUMN work_done_id INTEGER REFERENCES worklist(id) ON DELETE SET NULL;
 
             ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date DATE;
             ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE;
             ALTER TABLE projects ADD COLUMN IF NOT EXISTS category_id INT REFERENCES scopes(id) ON DELETE SET NULL;
+
+            ALTER TABLE subscopes ADD COLUMN scope_id INTEGER REFERENCES scopes(id) ON DELETE SET NULL;
+            ALTER TABLE worklist ADD COLUMN scope_id INTEGER REFERENCES scopes(id) ON DELETE SET NULL;
             
             CREATE INDEX IF NOT EXISTS idx_attendance_scope ON attendance(scope_id);
 

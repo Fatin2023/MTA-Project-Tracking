@@ -98,6 +98,14 @@ CREATE TABLE IF NOT EXISTS web_access (
     created_at  TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE worklist (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL
+);
+
+ALTER TABLE attendance ADD COLUMN work_plan_id INTEGER REFERENCES worklist(id) ON DELETE SET NULL;
+ALTER TABLE attendance ADD COLUMN work_done_id INTEGER REFERENCES worklist(id) ON DELETE SET NULL;
+
 
 -- Add columns to attendance
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS sub_scope_id INT REFERENCES sub_scopes(id) ON DELETE SET NULL;
@@ -107,6 +115,9 @@ ALTER TABLE attendance ADD COLUMN IF NOT EXISTS scope_id INT REFERENCES scopes(i
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date DATE;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS category_id INT REFERENCES scopes(id) ON DELETE SET NULL;
+
+ALTER TABLE subscopes ADD COLUMN scope_id INTEGER REFERENCES scopes(id) ON DELETE SET NULL;
+ALTER TABLE worklist ADD COLUMN scope_id INTEGER REFERENCES scopes(id) ON DELETE SET NULL;
 
 
 
