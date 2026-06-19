@@ -693,6 +693,7 @@ app.get('*', (req, res) => {
 // Auto-create tables + start server
 async function initDB() {
     try {
+        // 1. CREATE TABLES
         await pool.query(`
             CREATE TABLE IF NOT EXISTS positions (
                 id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
@@ -726,6 +727,22 @@ async function initDB() {
                 member_id INT REFERENCES members(id) ON DELETE CASCADE,
                 UNIQUE(project_id, member_id)
             );
+            CREATE TABLE IF NOT EXISTS scopes (
+                id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS sub_scopes (
+                id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS details (
+                id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS web_access (
+                id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL,
+                description TEXT DEFAULT '', flag BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS worklist (
+                id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS attendance (
                 id SERIAL PRIMARY KEY,
                 member_id INT REFERENCES members(id) ON DELETE CASCADE,
@@ -736,59 +753,55 @@ async function initDB() {
                 description TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT NOW()
             );
+        `);
+        console.log('Tables created');
 
-            CREATE TABLE IF NOT EXISTS sub_scopes (
-                id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
-            );
-            CREATE TABLE IF NOT EXISTS details (
-                id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
-            );
+        // 2. ADD COLUMNS (each one separate, with error catching)
+        const alterStatements = [
+            "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS project_id INT REFERENCES projects(id) ON DELETE SET NULL",
+            "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''",
+            "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS sub_scope_id INT REFERENCES sub_scopes(id) ON DELETE SET NULL",
+            "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS detail_id INT REFERENCES details(id) ON DELETE SET NULL",
+            "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS scope_id INT REFERENCES scopes(id) ON DELETE SET NULL",
+            "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS work_plan_id INTEGER REFERENCES worklist(id) ON DELETE SET NULL",
+            "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS work_done_id INTEGER REFERENCES worklist(id) ON DELETE SET NULL",
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date DATE",
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE",
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS category_id INT REFERENCES scopes(id) ON DELETE SET NULL",
+            "ALTER TABLE sub_scopes ADD COLUMN IF NOT EXISTS scope_id INTEGER REFERENCES scopes(id) ON DELETE SET NULL",
+            "ALTER TABLE worklist ADD COLUMN IF NOT EXISTS scope_id INTEGER REFERENCES scopes(id) ON DELETE SET NULL",
+        ];
 
-            CREATE TABLE IF NOT EXISTS scopes (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(200) NOT NULL,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
+        for (const sql of alterStatements) {
+            try {
+                await pool.query(sql);
+            } catch (e) {
+                // Column might already exist, that's ok
+                console.log('ALTER skip:', e.message.substring(0, 80));
+            }
+        }
+        console.log('Columns added');
 
-            CREATE TABLE IF NOT EXISTS web_access (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(200) NOT NULL,
-                description TEXT DEFAULT '',
-                flag BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
+        // 3. INDEXES
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_salaries_member ON salaries(member_id);
+            CREATE INDEX IF NOT EXISTS idx_salaries_month ON salaries(month);
+            CREATE INDEX IF NOT EXISTS idx_assignments_project ON project_assignments(project_id);
+            CREATE INDEX IF NOT EXISTS idx_assignments_member ON project_assignments(member_id);
+            CREATE INDEX IF NOT EXISTS idx_attendance_member ON attendance(member_id);
+            CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
+        `);
+        console.log('Indexes created');
 
-            CREATE TABLE worklist (
-                id SERIAL PRIMARY KEY,
-                title VARCHAR(255) NOT NULL
-            );
-
-            
-
+        // 4. DEFAULT ADMIN
+        await pool.query(`
             INSERT INTO users (username, password, role)
             VALUES ('admin', 'admin123', 'admin')
-            ON CONFLICT (username) DO NOTHING;
-
-            ALTER TABLE attendance ADD COLUMN IF NOT EXISTS project_id INT REFERENCES projects(id) ON DELETE SET NULL;
-            ALTER TABLE attendance ADD COLUMN IF NOT EXISTS description TEXT DEFAULT '';
-            ALTER TABLE attendance ADD COLUMN IF NOT EXISTS sub_scope_id INT REFERENCES sub_scopes(id) ON DELETE SET NULL;
-            ALTER TABLE attendance ADD COLUMN IF NOT EXISTS detail_id INT REFERENCES details(id) ON DELETE SET NULL;
-            ALTER TABLE attendance ADD COLUMN IF NOT EXISTS scope_id INT REFERENCES scopes(id) ON DELETE SET NULL;
-            ALTER TABLE attendance ADD COLUMN work_plan_id INTEGER REFERENCES worklist(id) ON DELETE SET NULL;
-            ALTER TABLE attendance ADD COLUMN work_done_id INTEGER REFERENCES worklist(id) ON DELETE SET NULL;
-
-            ALTER TABLE projects ADD COLUMN IF NOT EXISTS start_date DATE;
-            ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE;
-            ALTER TABLE projects ADD COLUMN IF NOT EXISTS category_id INT REFERENCES scopes(id) ON DELETE SET NULL;
-
-            ALTER TABLE subscopes ADD COLUMN scope_id INTEGER REFERENCES scopes(id) ON DELETE SET NULL;
-            ALTER TABLE worklist ADD COLUMN scope_id INTEGER REFERENCES scopes(id) ON DELETE SET NULL;
-            
-            CREATE INDEX IF NOT EXISTS idx_attendance_scope ON attendance(scope_id);
-
-
+            ON CONFLICT (username) DO NOTHING
         `);
-        console.log('Database tables ready');
+        console.log('Admin user ready');
+
+        console.log('Database fully initialized');
     } catch (err) {
         console.error('DB init error:', err.message);
     }
