@@ -288,6 +288,19 @@ app.put('/api/users/:id', async (req, res) => {
     }
 });
 
+app.put('/api/users/:id/password', async (req, res) => {
+    const { newPassword } = req.body;
+    try {
+        if (!newPassword || newPassword.length < 4) {
+            return res.status(400).json({ error: 'Password must be at least 4 characters' });
+        }
+        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [newPassword, req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.delete('/api/users/:id', async (req, res) => {
     try {
         const user = await pool.query('SELECT member_id FROM users WHERE id = $1', [req.params.id]);

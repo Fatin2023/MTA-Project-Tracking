@@ -340,6 +340,7 @@ async function empNav(tab, el) {
     switch (tab) {
         case 'myprojects': renderEmployeeProjects(); break;
         case 'attendance': renderEmployeeAttendance(); break;
+        case 'settings': renderEmpSettings(); break;
     }
 }
 
@@ -2464,6 +2465,130 @@ function showToast(message) {
         toast.classList.remove('show');
         setTimeout(function() { toast.remove(); }, 300);
     }, 2500);
+}
+
+
+/* ==========================================================
+   SECTION: EMPLOYEE — SETTINGS
+   ========================================================== */
+
+function renderEmpSettings() {
+    if (!currentUser || !currentUser.memberId) return;
+    var member = DB.members.find(function(m) { return m.id === currentUser.memberId; });
+    if (!member) return;
+
+    var posName = getPositionName(member.positionId);
+    var deptName = getDeptName(member.departmentId);
+
+    document.getElementById('emp-settings').innerHTML =
+        '<div class="app-header"><h2>Settings</h2><div class="header-sub">Your profile and preferences</div></div>' +
+        '<div class="app-body" style="max-width:640px">' +
+
+            // Profile Card
+            '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px">' +
+                '<div style="padding:12px 20px;border-bottom:1px solid var(--main-border)">' +
+                    '<h2 style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text);margin:0">Profile Information</h2>' +
+                '</div>' +
+                '<div style="padding:20px">' +
+                    '<div style="display:grid;grid-template-columns:140px 1fr;gap:12px 16px;align-items:center">' +
+                        '<span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Username</span>' +
+                        '<span style="font-weight:500;color:var(--main-text)">' + esc(currentUser.username || '—') + '</span>' +
+
+                        '<span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Name</span>' +
+                        '<span style="font-weight:500;color:var(--main-text)">' + esc(member.name) + '</span>' +
+
+                        '<span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Position</span>' +
+                        '<span style="font-weight:500;color:var(--main-text)">' + esc(posName) + '</span>' +
+
+                        '<span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Department</span>' +
+                        '<span style="font-weight:500;color:var(--main-text)">' + esc(deptName) + '</span>' +
+                    '</div>' +
+                    '<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--main-border)">' +
+                        '<button class="btn btn-accent" onclick="togglePasswordSection()" id="pw-toggle-btn">Change Password</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+
+            // Change Password Card (hidden by default)
+            '<div id="password-section" style="display:none;background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px">' +
+                '<div style="padding:12px 20px;border-bottom:1px solid var(--main-border)">' +
+                    '<h2 style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text);margin:0">Change Password</h2>' +
+                '</div>' +
+                '<div style="padding:20px">' +
+                    '<div style="display:flex;flex-direction:column;gap:14px;max-width:380px">' +
+                        '<div class="field">' +
+                            '<label>New Password</label>' +
+                            '<input class="input" id="settings-new-pw" type="password" placeholder="Enter new password">' +
+                        '</div>' +
+                        '<div class="field">' +
+                            '<label>Confirm New Password</label>' +
+                            '<input class="input" id="settings-confirm-pw" type="password" placeholder="Re-enter new password">' +
+                        '</div>' +
+                        '<div style="display:flex;gap:8px">' +
+                            '<button class="btn btn-accent" onclick="doChangePassword()" style="min-width:140px">Update Password</button>' +
+                            '<button class="btn btn-ghost" onclick="cancelChangePassword()">Cancel</button>' +
+                        '</div>' +
+                        '<p class="auth-error" id="settings-error" style="margin:0"></p>' +
+                        '<p id="settings-success" style="margin:0;font-size:.85rem;color:var(--ok);display:none"></p>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+
+        '</div>';
+}
+
+function togglePasswordSection() {
+    var section = document.getElementById('password-section');
+    var btn = document.getElementById('pw-toggle-btn');
+    if (section.style.display === 'none') {
+        section.style.display = '';
+        btn.textContent = 'Change Password ▲';
+    } else {
+        section.style.display = 'none';
+        btn.textContent = 'Change Password';
+        // 清空输入框和提示
+        document.getElementById('settings-new-pw').value = '';
+        document.getElementById('settings-confirm-pw').value = '';
+        document.getElementById('settings-error').textContent = '';
+        document.getElementById('settings-success').style.display = 'none';
+    }
+}
+
+function cancelChangePassword() {
+    document.getElementById('password-section').style.display = 'none';
+    document.getElementById('pw-toggle-btn').textContent = 'Change Password';
+    document.getElementById('settings-new-pw').value = '';
+    document.getElementById('settings-confirm-pw').value = '';
+    document.getElementById('settings-error').textContent = '';
+    document.getElementById('settings-success').style.display = 'none';
+}
+
+async function doChangePassword() {
+    var errEl = document.getElementById('settings-error');
+    var sucEl = document.getElementById('settings-success');
+    var newPw = document.getElementById('settings-new-pw').value;
+    var confirmPw = document.getElementById('settings-confirm-pw').value;
+
+    errEl.textContent = '';
+    sucEl.style.display = 'none';
+    sucEl.textContent = '';
+
+    if (!newPw) { errEl.textContent = 'New password is required'; return; }
+    if (newPw.length < 4) { errEl.textContent = 'New password must be at least 4 characters'; return; }
+    if (newPw !== confirmPw) { errEl.textContent = 'New passwords do not match'; return; }
+
+    try {
+        await api('/users/' + currentUser.id + '/password', {
+            method: 'PUT',
+            body: { newPassword: newPw }
+        });
+        document.getElementById('settings-new-pw').value = '';
+        document.getElementById('settings-confirm-pw').value = '';
+        sucEl.textContent = 'Password updated successfully';
+        sucEl.style.display = 'block';
+    } catch (e) {
+        errEl.textContent = 'Failed: ' + e.message;
+    }
 }
 
 
