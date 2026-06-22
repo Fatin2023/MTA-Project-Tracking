@@ -433,7 +433,7 @@ document.addEventListener('touchmove', function(e) {
 
 
 /* ==========================================================
-   SECTION 6: Main Category/MAIN SCOPE (tabs = category, table = items)
+   SECTION 6: Work Category/MAIN SCOPE (tabs = category, table = items)
    ========================================================== */
 
 var activeCategoryId = null;
@@ -525,13 +525,18 @@ function renderMainScope() {
 function switchScopeTab(catId) {
     activeCategoryId = catId;
     itemSearchQuery = '';
+    itemCurrentPage = 1;    // ← 加
     renderMainScope();
 }
 
 function itemSearchChanged() {
     itemSearchQuery = document.getElementById('item-search').value.trim().toLowerCase();
+    itemCurrentPage = 1;    // ← 加
     renderItemsTable();
 }
+
+var itemCurrentPage = 1;
+var itemPageSize = 10;
 
 function renderItemsTable() {
     let allItems = activeCategoryId
@@ -545,11 +550,19 @@ function renderItemsTable() {
     const countEl = document.getElementById('item-count');
     if (countEl) countEl.textContent = allItems.length + ' item' + (allItems.length !== 1 ? 's' : '');
 
+    // Pagination
+    const totalPages = Math.ceil(allItems.length / itemPageSize) || 1;
+    if (itemCurrentPage > totalPages) itemCurrentPage = totalPages;
+    if (itemCurrentPage < 1) itemCurrentPage = 1;
+    const startIdx = (itemCurrentPage - 1) * itemPageSize;
+    const endIdx = startIdx + itemPageSize;
+    const pageData = allItems.slice(startIdx, endIdx);
+
     let rows = '';
     if (allItems.length === 0) {
         rows = '<tr><td colspan="7" style="text-align:center;color:var(--main-text3);padding:30px">No items found</td></tr>';
     } else {
-        rows = allItems.map((p, idx) => {
+        rows = pageData.map((p, idx) => {
             const cat = p.categoryId ? DB.scopes.find(s => s.id === p.categoryId) : null;
             const members = getProjectMembers(p.id);
             const mc = members.length;
@@ -575,7 +588,7 @@ function renderItemsTable() {
             }
 
             return `<tr>
-                <td style="font-family:var(--font-m);color:var(--main-text3);width:50px">${idx + 1}</td>
+                <td style="font-family:var(--font-m);color:var(--main-text3);width:50px">${startIdx + idx + 1}</td>
                 <td><div style="font-weight:600;cursor:pointer" onclick="showEditItem(${p.id})">${esc(p.name)}</div></td>
                 <td>${cat ? '<span class="badge badge-scope">' + esc(cat.name) + '</span>' : '<span style="color:var(--main-text3)">—</span>'}</td>
                 <td>${cdHtml}</td>
@@ -587,6 +600,38 @@ function renderItemsTable() {
                 </div></td>
             </tr>`;
         }).join('');
+    }
+
+    // Pagination HTML
+    let paginationHtml = '';
+    if (allItems.length > 0) {
+        const showFrom = startIdx + 1;
+        const showTo = Math.min(endIdx, allItems.length);
+        let pageButtons = '';
+        const maxVisible = 5;
+        let startPage = Math.max(1, itemCurrentPage - Math.floor(maxVisible / 2));
+        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+        if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
+        pageButtons += '<button onclick="goItemPage(1)" ' + (itemCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
+        pageButtons += '<button onclick="goItemPage(' + (itemCurrentPage - 1) + ')" ' + (itemCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
+        for (let p = startPage; p <= endPage; p++) {
+            pageButtons += '<button onclick="goItemPage(' + p + ')" class="' + (p === itemCurrentPage ? 'active' : '') + '">' + p + '</button>';
+        }
+        pageButtons += '<button onclick="goItemPage(' + (itemCurrentPage + 1) + ')" ' + (itemCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
+        pageButtons += '<button onclick="goItemPage(' + totalPages + ')" ' + (itemCurrentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
+        paginationHtml = '<div class="pagination">' +
+            '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + allItems.length + ' items</div>' +
+            '<div style="display:flex;align-items:center;gap:20px">' +
+                '<div class="pagination-size"><label>Show</label>' +
+                    '<select onchange="changeItemPageSize(this.value)">' +
+                        '<option value="5"' + (itemPageSize === 5 ? ' selected' : '') + '>5</option>' +
+                        '<option value="10"' + (itemPageSize === 10 ? ' selected' : '') + '>10</option>' +
+                        '<option value="25"' + (itemPageSize === 25 ? ' selected' : '') + '>25</option>' +
+                        '<option value="50"' + (itemPageSize === 50 ? ' selected' : '') + '>50</option>' +
+                        '<option value="100"' + (itemPageSize === 100 ? ' selected' : '') + '>100</option>' +
+                    '</select></div>' +
+                '<div class="pagination-controls">' + pageButtons + '</div>' +
+            '</div></div>';
     }
 
     document.getElementById('items-table-area').innerHTML =
@@ -601,7 +646,32 @@ function renderItemsTable() {
                 '<th style="width:90px">Actions</th>' +
             '</tr></thead>' +
             '<tbody>' + rows + '</tbody>' +
-        '</table></div>';
+        '</table></div>' +
+        paginationHtml;
+}
+
+function goItemPage(page) {
+    const totalPages = Math.ceil(getFilteredItems().length / itemPageSize) || 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    itemCurrentPage = page;
+    renderItemsTable();
+}
+
+function changeItemPageSize(size) {
+    itemPageSize = parseInt(size);
+    itemCurrentPage = 1;
+    renderItemsTable();
+}
+
+function getFilteredItems() {
+    let allItems = activeCategoryId
+        ? DB.projects.filter(p => p.categoryId === activeCategoryId)
+        : DB.projects;
+    if (itemSearchQuery) {
+        allItems = allItems.filter(p => p.name.toLowerCase().indexOf(itemSearchQuery) !== -1);
+    }
+    return allItems;
 }
 
 // ---- Category CRUD ----
@@ -852,7 +922,7 @@ async function doDeleteItem(pid) {
 }
 
 /* ==========================================================
-   SECTION 10: PROJECT DETAIL (keep for backward compat)
+   SECTION 10: Work Category DETAIL /Project  DETAIL
    ========================================================== */
 
 function renderProjectDetail() {
@@ -919,13 +989,36 @@ async function doRemoveFromProject(pid, memberId) {
    SECTION 7: ADMIN — USERS
    ========================================================== */
 
+var usrCurrentPage = 1;
+var usrPageSize = 10;
+
 function renderUsersList() {
     const view = document.getElementById('admin-users');
+
+    view.innerHTML = `
+    <div class="app-header"><h2>Users</h2><div class="header-sub">Manage accounts, salaries, positions and departments</div></div>
+    <div class="app-body">
+      <div class="section-head"><h2>All Users</h2><button class="btn btn-green" onclick="showAddUser()">+ Add User</button></div>
+      <div id="users-table-area"></div>
+    </div>`;
+
+    usrCurrentPage = 1;
+    renderUsersTable();
+}
+
+function renderUsersTable() {
+    const totalPages = Math.ceil(DB.users.length / usrPageSize) || 1;
+    if (usrCurrentPage > totalPages) usrCurrentPage = totalPages;
+    if (usrCurrentPage < 1) usrCurrentPage = 1;
+    const startIdx = (usrCurrentPage - 1) * usrPageSize;
+    const endIdx = startIdx + usrPageSize;
+    const pageData = DB.users.slice(startIdx, endIdx);
+
     let rows = '';
     if (DB.users.length === 0) {
         rows = '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No users</td></tr>';
     } else {
-        rows = DB.users.map(u => {
+        rows = pageData.map(u => {
             const member = u.memberId ? DB.members.find(m => m.id === u.memberId) : null;
             const mName = member ? member.name : '—';
             const pos = member && member.positionId ? getPositionName(member.positionId) : '—';
@@ -935,29 +1028,72 @@ function renderUsersList() {
             const projHtml = projs.length ? projs.map(p => `<span class="badge badge-employee" style="margin:1px">${esc(p.name)}</span>`).join(' ') : '<span style="color:var(--main-text3)">None</span>';
             const roleClass = u.role === 'admin' ? 'badge-admin' : 'badge-employee';
             return `<tr>
-        <td style="font-family:var(--font-m)">${esc(u.username)}</td>
-        <td>${esc(mName)}</td>
-        <td><span class="badge ${roleClass}">${u.role}</span></td>
-        <td>${esc(pos)}</td>
-        <td>${esc(dept)}</td>
-        <td>${sal != null ? '<span class="salary-val">' + fmt(sal) + '</span>' : '<span class="salary-na">Not set</span>'}</td>
-        <td>${projHtml}</td>
-        <td><div class="actions-cell">
-          <button class="btn-icon" onclick="showEditUser(${u.id})" title="Edit">&#9998;</button>
-          ${u.username !== 'admin' ? `<button class="btn-icon danger" onclick="confirmDeleteUser(${u.id})" title="Delete">&#10005;</button>` : ''}
-        </div></td>
-      </tr>`;
+                <td style="font-family:var(--font-m)">${esc(u.username)}</td>
+                <td>${esc(mName)}</td>
+                <td><span class="badge ${roleClass}">${u.role}</span></td>
+                <td>${esc(pos)}</td>
+                <td>${esc(dept)}</td>
+                <td>${sal != null ? '<span class="salary-val">' + fmt(sal) + '</span>' : '<span class="salary-na">Not set</span>'}</td>
+                <td>${projHtml}</td>
+                <td><div class="actions-cell">
+                    <button class="btn-icon" onclick="showEditUser(${u.id})" title="Edit">&#9998;</button>
+                    ${u.username !== 'admin' ? `<button class="btn-icon danger" onclick="confirmDeleteUser(${u.id})" title="Delete">&#10005;</button>` : ''}
+                </div></td>
+            </tr>`;
         }).join('');
     }
 
-    view.innerHTML = `
-    <div class="app-header"><h2>Users</h2><div class="header-sub">Manage accounts, salaries, positions and departments</div></div>
-    <div class="app-body">
-      <div class="section-head"><h2>All Users</h2><button class="btn btn-green" onclick="showAddUser()">+ Add User</button></div>
-      <div class="table-wrap"><table><thead><tr>
-        <th>Username</th><th>Name</th><th>Role</th><th>Position</th><th>Department</th><th>Salary</th><th>Projects</th><th>Actions</th>
-      </tr></thead><tbody>${rows}</tbody></table></div>
-    </div>`;
+    // Pagination
+    let paginationHtml = '';
+    if (DB.users.length > 0) {
+        const showFrom = startIdx + 1;
+        const showTo = Math.min(endIdx, DB.users.length);
+        let pageButtons = '';
+        const maxVisible = 5;
+        let startPage = Math.max(1, usrCurrentPage - Math.floor(maxVisible / 2));
+        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+        if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
+        pageButtons += '<button onclick="goUsrPage(1)" ' + (usrCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
+        pageButtons += '<button onclick="goUsrPage(' + (usrCurrentPage - 1) + ')" ' + (usrCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
+        for (let p = startPage; p <= endPage; p++) {
+            pageButtons += '<button onclick="goUsrPage(' + p + ')" class="' + (p === usrCurrentPage ? 'active' : '') + '">' + p + '</button>';
+        }
+        pageButtons += '<button onclick="goUsrPage(' + (usrCurrentPage + 1) + ')" ' + (usrCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
+        pageButtons += '<button onclick="goUsrPage(' + totalPages + ')" ' + (usrCurrentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
+        paginationHtml = '<div class="pagination">' +
+            '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + DB.users.length + ' users</div>' +
+            '<div style="display:flex;align-items:center;gap:20px">' +
+                '<div class="pagination-size"><label>Show</label>' +
+                    '<select onchange="changeUsrPageSize(this.value)">' +
+                        '<option value="5"' + (usrPageSize === 5 ? ' selected' : '') + '>5</option>' +
+                        '<option value="10"' + (usrPageSize === 10 ? ' selected' : '') + '>10</option>' +
+                        '<option value="25"' + (usrPageSize === 25 ? ' selected' : '') + '>25</option>' +
+                        '<option value="50"' + (usrPageSize === 50 ? ' selected' : '') + '>50</option>' +
+                        '<option value="100"' + (usrPageSize === 100 ? ' selected' : '') + '>100</option>' +
+                    '</select></div>' +
+                '<div class="pagination-controls">' + pageButtons + '</div>' +
+            '</div></div>';
+    }
+
+    document.getElementById('users-table-area').innerHTML =
+        '<div class="table-wrap"><table><thead><tr>' +
+            '<th>Username</th><th>Name</th><th>Role</th><th>Position</th><th>Department</th><th>Salary</th><th>Projects</th><th style="width:90px">Actions</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+        paginationHtml;
+}
+
+function goUsrPage(page) {
+    const totalPages = Math.ceil(DB.users.length / usrPageSize) || 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    usrCurrentPage = page;
+    renderUsersTable();
+}
+
+function changeUsrPageSize(size) {
+    usrPageSize = parseInt(size);
+    usrCurrentPage = 1;
+    renderUsersTable();
 }
 
 function showAddUser() {
@@ -1109,27 +1245,99 @@ async function doDeleteUser(userId) {
    SECTION 8: ADMIN — POSITIONS
    ========================================================== */
 
+var posCurrentPage = 1;
+var posPageSize = 10;
+
 function renderPositionsList() {
     const view = document.getElementById('admin-positions');
-    let rows = '';
-    if (DB.positions.length === 0) {
-        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No positions defined</td></tr>';
-    } else {
-        rows = DB.positions.map((p, index) => {
-            const count = DB.members.filter(m => m.positionId === p.id).length;
-            return `<tr><td style="font-family:var(--font-m)">${index + 1}</td><td>${esc(p.name)}</td><td>${count}</td>
-        <td><div class="actions-cell">
-          <button class="btn-icon" onclick="showEditPosition(${p.id})">&#9998;</button>
-          <button class="btn-icon danger" onclick="confirmDeletePosition(${p.id})">&#10005;</button>
-        </div></td></tr>`;
-        }).join('');
-    }
+
     view.innerHTML = `
     <div class="app-header"><h2>Positions</h2><div class="header-sub">Manage job positions</div></div>
     <div class="app-body">
       <div class="section-head"><h2>All Positions</h2><button class="btn btn-green" onclick="showAddPosition()">+ New Position</button></div>
-      <div class="table-wrap"><table><thead><tr><th style="width:60px">No</th><th>Position Name</th><th style="width:100px">Members</th><th style="width:100px">Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div id="positions-table-area"></div>
     </div>`;
+
+    posCurrentPage = 1;
+    renderPositionsTable();
+}
+
+function renderPositionsTable() {
+    const totalPages = Math.ceil(DB.positions.length / posPageSize) || 1;
+    if (posCurrentPage > totalPages) posCurrentPage = totalPages;
+    if (posCurrentPage < 1) posCurrentPage = 1;
+    const startIdx = (posCurrentPage - 1) * posPageSize;
+    const endIdx = startIdx + posPageSize;
+    const pageData = DB.positions.slice(startIdx, endIdx);
+
+    let rows = '';
+    if (DB.positions.length === 0) {
+        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No positions defined</td></tr>';
+    } else {
+        rows = pageData.map((p, index) => {
+            const count = DB.members.filter(m => m.positionId === p.id).length;
+            return `<tr>
+                <td style="font-family:var(--font-m);color:var(--main-text3)">${startIdx + index + 1}</td>
+                <td style="font-weight:500">${esc(p.name)}</td>
+                <td style="text-align:center;font-family:var(--font-m)">${count}</td>
+                <td><div class="actions-cell">
+                    <button class="btn-icon" onclick="showEditPosition(${p.id})">&#9998;</button>
+                    <button class="btn-icon danger" onclick="confirmDeletePosition(${p.id})">&#10005;</button>
+                </div></td>
+            </tr>`;
+        }).join('');
+    }
+
+    // Pagination
+    let paginationHtml = '';
+    if (DB.positions.length > 0) {
+        const showFrom = startIdx + 1;
+        const showTo = Math.min(endIdx, DB.positions.length);
+        let pageButtons = '';
+        const maxVisible = 5;
+        let startPage = Math.max(1, posCurrentPage - Math.floor(maxVisible / 2));
+        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+        if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
+        pageButtons += '<button onclick="goPosPage(1)" ' + (posCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
+        pageButtons += '<button onclick="goPosPage(' + (posCurrentPage - 1) + ')" ' + (posCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
+        for (let p = startPage; p <= endPage; p++) {
+            pageButtons += '<button onclick="goPosPage(' + p + ')" class="' + (p === posCurrentPage ? 'active' : '') + '">' + p + '</button>';
+        }
+        pageButtons += '<button onclick="goPosPage(' + (posCurrentPage + 1) + ')" ' + (posCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
+        pageButtons += '<button onclick="goPosPage(' + totalPages + ')" ' + (posCurrentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
+        paginationHtml = '<div class="pagination">' +
+            '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + DB.positions.length + ' positions</div>' +
+            '<div style="display:flex;align-items:center;gap:20px">' +
+                '<div class="pagination-size"><label>Show</label>' +
+                    '<select onchange="changePosPageSize(this.value)">' +
+                        '<option value="5"' + (posPageSize === 5 ? ' selected' : '') + '>5</option>' +
+                        '<option value="10"' + (posPageSize === 10 ? ' selected' : '') + '>10</option>' +
+                        '<option value="25"' + (posPageSize === 25 ? ' selected' : '') + '>25</option>' +
+                        '<option value="50"' + (posPageSize === 50 ? ' selected' : '') + '>50</option>' +
+                    '</select></div>' +
+                '<div class="pagination-controls">' + pageButtons + '</div>' +
+            '</div></div>';
+    }
+
+    document.getElementById('positions-table-area').innerHTML =
+        '<div class="table-wrap"><table><thead><tr>' +
+            '<th style="width:50px">No</th><th>Position Name</th><th style="width:100px">Members</th><th style="width:90px">Actions</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+        paginationHtml;
+}
+
+function goPosPage(page) {
+    const totalPages = Math.ceil(DB.positions.length / posPageSize) || 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    posCurrentPage = page;
+    renderPositionsTable();
+}
+
+function changePosPageSize(size) {
+    posPageSize = parseInt(size);
+    posCurrentPage = 1;
+    renderPositionsTable();
 }
 
 function showAddPosition() {
@@ -1177,28 +1385,99 @@ async function doDeletePosition(id) {
    SECTION 9: ADMIN — DEPARTMENTS
    ========================================================== */
 
+var deptCurrentPage = 1;
+var deptPageSize = 10;
+
 function renderDepartmentsList() {
     const view = document.getElementById('admin-departments');
-    let rows = '';
-    if (DB.departments.length === 0) {
-        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No departments defined</td></tr>';
-    } else {
-        rows = DB.departments.map((d, index) => {
-            const count = DB.members.filter(m => m.departmentId === d.id).length;
-            return `<tr><td style="font-family:var(--font-m)">${index + 1}</td><td>${esc(d.name)}</td><td>${count}</td>
-            <td><div class="actions-cell">
-            <button class="btn-icon" onclick="showEditDepartment(${d.id})">&#9998;</button>
-            <button class="btn-icon danger" onclick="confirmDeleteDepartment(${d.id})">&#10005;</button>
-            </div></td></tr>`;
-        }).join('');
-    }
 
     view.innerHTML = `
     <div class="app-header"><h2>Departments</h2><div class="header-sub">Manage departments</div></div>
     <div class="app-body">
       <div class="section-head"><h2>All Departments</h2><button class="btn btn-green" onclick="showAddDepartment()">+ New Department</button></div>
-      <div class="table-wrap"><table><thead><tr><th style="width:60px">No</th><th>Department Name</th><th style="width:100px">Members</th><th style="width:100px">Actions</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div id="departments-table-area"></div>
     </div>`;
+
+    deptCurrentPage = 1;
+    renderDepartmentsTable();
+}
+
+function renderDepartmentsTable() {
+    const totalPages = Math.ceil(DB.departments.length / deptPageSize) || 1;
+    if (deptCurrentPage > totalPages) deptCurrentPage = totalPages;
+    if (deptCurrentPage < 1) deptCurrentPage = 1;
+    const startIdx = (deptCurrentPage - 1) * deptPageSize;
+    const endIdx = startIdx + deptPageSize;
+    const pageData = DB.departments.slice(startIdx, endIdx);
+
+    let rows = '';
+    if (DB.departments.length === 0) {
+        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No departments defined</td></tr>';
+    } else {
+        rows = pageData.map((d, index) => {
+            const count = DB.members.filter(m => m.departmentId === d.id).length;
+            return `<tr>
+                <td style="font-family:var(--font-m);color:var(--main-text3)">${startIdx + index + 1}</td>
+                <td style="font-weight:500">${esc(d.name)}</td>
+                <td style="text-align:center;font-family:var(--font-m)">${count}</td>
+                <td><div class="actions-cell">
+                    <button class="btn-icon" onclick="showEditDepartment(${d.id})">&#9998;</button>
+                    <button class="btn-icon danger" onclick="confirmDeleteDepartment(${d.id})">&#10005;</button>
+                </div></td>
+            </tr>`;
+        }).join('');
+    }
+
+    // Pagination
+    let paginationHtml = '';
+    if (DB.departments.length > 0) {
+        const showFrom = startIdx + 1;
+        const showTo = Math.min(endIdx, DB.departments.length);
+        let pageButtons = '';
+        const maxVisible = 5;
+        let startPage = Math.max(1, deptCurrentPage - Math.floor(maxVisible / 2));
+        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+        if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
+        pageButtons += '<button onclick="goDeptPage(1)" ' + (deptCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
+        pageButtons += '<button onclick="goDeptPage(' + (deptCurrentPage - 1) + ')" ' + (deptCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
+        for (let p = startPage; p <= endPage; p++) {
+            pageButtons += '<button onclick="goDeptPage(' + p + ')" class="' + (p === deptCurrentPage ? 'active' : '') + '">' + p + '</button>';
+        }
+        pageButtons += '<button onclick="goDeptPage(' + (deptCurrentPage + 1) + ')" ' + (deptCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
+        pageButtons += '<button onclick="goDeptPage(' + totalPages + ')" ' + (deptCurrentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
+        paginationHtml = '<div class="pagination">' +
+            '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + DB.departments.length + ' departments</div>' +
+            '<div style="display:flex;align-items:center;gap:20px">' +
+                '<div class="pagination-size"><label>Show</label>' +
+                    '<select onchange="changeDeptPageSize(this.value)">' +
+                        '<option value="5"' + (deptPageSize === 5 ? ' selected' : '') + '>5</option>' +
+                        '<option value="10"' + (deptPageSize === 10 ? ' selected' : '') + '>10</option>' +
+                        '<option value="25"' + (deptPageSize === 25 ? ' selected' : '') + '>25</option>' +
+                        '<option value="50"' + (deptPageSize === 50 ? ' selected' : '') + '>50</option>' +
+                    '</select></div>' +
+                '<div class="pagination-controls">' + pageButtons + '</div>' +
+            '</div></div>';
+    }
+
+    document.getElementById('departments-table-area').innerHTML =
+        '<div class="table-wrap"><table><thead><tr>' +
+            '<th style="width:50px">No</th><th>Department Name</th><th style="width:100px">Members</th><th style="width:90px">Actions</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+        paginationHtml;
+}
+
+function goDeptPage(page) {
+    const totalPages = Math.ceil(DB.departments.length / deptPageSize) || 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    deptCurrentPage = page;
+    renderDepartmentsTable();
+}
+
+function changeDeptPageSize(size) {
+    deptPageSize = parseInt(size);
+    deptCurrentPage = 1;
+    renderDepartmentsTable();
 }
 
 function showAddDepartment() {
@@ -1243,84 +1522,141 @@ async function doDeleteDepartment(id) {
 
 
 /* ==========================================================
-   SECTION 11: EMPLOYEE — MY ITEMS (grouped by Scope + Item Summary)
+   SECTION 11: EMPLOYEE — MY ITEMS/MY WORK CATEGORY (grouped by Scope + Item Summary)
    ========================================================== */
+
+var empItemSummaryPage = 1;
+var empItemSummaryPageSize = 10;
+var empItemSummaryData = [];
+var empScopePages = {};
 
 function renderEmployeeProjects() {
     if (!currentUser || !currentUser.memberId) return;
-    const member = DB.members.find(m => m.id === currentUser.memberId); if (!member) return;
-    const projs = getMemberProjects(member.id);
+    var member = DB.members.find(function(m) { return m.id === currentUser.memberId; });
+    if (!member) return;
+    var projs = getMemberProjects(member.id);
 
     // Group by scope
-    const groups = {};
-    DB.scopes.forEach(s => { groups[s.id] = { scope: s, items: [] }; });
+    var groups = {};
+    DB.scopes.forEach(function(s) { groups[s.id] = { scope: s, items: [] }; });
     groups[0] = { scope: { id: 0, name: 'Uncategorized' }, items: [] };
 
-    projs.forEach(p => {
-        const sid = p.categoryId || 0;
+    projs.forEach(function(p) {
+        var sid = p.categoryId || 0;
         if (groups[sid]) groups[sid].items.push(p);
     });
     if (groups[0].items.length === 0) delete groups[0];
 
-    let content = '';
+    // Build scope sections
+    empScopePages = {};
+    var scopeSections = '';
     if (projs.length === 0) {
-        content = '<div class="empty"><div class="icon">&#128193;</div><p>Not assigned to any</p></div>';
+        scopeSections = '<div class="empty"><div class="icon">&#128193;</div><p>Not assigned to any</p></div>';
     } else {
-        Object.values(groups).forEach(g => {
+        Object.values(groups).forEach(function(g) {
             if (g.items.length === 0) return;
-            content += `
-            <div style="margin-bottom:28px">
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--main-border)">
-                <span style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text)">${esc(g.scope.name)}</span>
-                <span style="font-size:.82rem;color:var(--main-text3)">${g.items.length} item${g.items.length !== 1 ? 's' : ''}</span>
-              </div>
-              <div class="table-wrap"><table>
-                <thead><tr><th>Work Category Id/Name</th><th>Timeline</th><th>Team Size</th><th>Countdown</th></tr></thead>
-                <tbody>
-                  ${g.items.map(p => {
-                    const mc = getProjectMembers(p.id).length;
-                    const cd = getProjectCountdown(p);
-                    let cdHtml = '—';
-                    if (cd !== null) {
-                        if (cd > 30) cdHtml = '<span style="color:var(--ok);font-weight:600">&#9200; ' + cd + ' days left</span>';
-                        else if (cd > 7) cdHtml = '<span style="color:var(--warning);font-weight:600">&#9200; ' + cd + ' days left</span>';
-                        else if (cd > 0) cdHtml = '<span style="color:var(--danger);font-weight:600">&#9200; ' + cd + ' days left</span>';
-                        else if (cd === 0) cdHtml = '<span style="color:var(--warning);font-weight:600">&#9888; Due today!</span>';
-                        else cdHtml = '<span style="color:var(--danger);font-weight:600">&#10006; ' + Math.abs(cd) + ' days overdue</span>';
-                    }
-                    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-                    return `<tr>
-                        <td><div style="font-family:var(--font-d);font-size:1rem">${esc(p.name)}</div></td>
-                        <td style="font-family:var(--font-m);font-size:.85rem">${fmtDate(p.startDate)} — ${fmtDate(p.endDate)}</td>
-                        <td>${mc} member${mc !== 1 ? 's' : ''}</td>
-                        <td>${cdHtml}</td>
-                    </tr>`;
-                  }).join('')}
-                </tbody>
-              </table></div>
-            </div>`;
+            var sid = g.scope.id;
+
+            var itemsData = g.items.map(function(p) {
+                var mc = getProjectMembers(p.id).length;
+                var cd = getProjectCountdown(p);
+                var cdHtml = '—';
+                if (cd !== null) {
+                    if (cd > 30) cdHtml = '<span style="color:var(--ok);font-weight:600">' + cd + ' days left</span>';
+                    else if (cd > 7) cdHtml = '<span style="color:var(--warning);font-weight:600">' + cd + ' days left</span>';
+                    else if (cd > 0) cdHtml = '<span style="color:var(--danger);font-weight:600">' + cd + ' days left</span>';
+                    else if (cd === 0) cdHtml = '<span style="color:var(--warning);font-weight:600">Due today!</span>';
+                    else cdHtml = '<span style="color:var(--danger);font-weight:600">' + Math.abs(cd) + ' days overdue</span>';
+                }
+                var fmtDate = function(d) { return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; };
+                return { name: esc(p.name), timeline: fmtDate(p.startDate) + ' — ' + fmtDate(p.endDate), team: mc + ' member' + (mc !== 1 ? 's' : ''), cdHtml: cdHtml };
+            });
+
+            empScopePages[sid] = { page: 1, pageSize: 5, data: itemsData };
+
+            scopeSections += '<div class="collapse-section" style="margin-bottom:12px">' +
+                '<div class="collapse-header" onclick="toggleCollapse(\'scope-' + sid + '\')">' +
+                    '<div style="display:flex;align-items:center;gap:10px">' +
+                        '<span class="collapse-arrow" id="scope-' + sid + '-arrow">&#9654;</span>' +
+                        '<span style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text)">' + esc(g.scope.name) + '</span>' +
+                        '<span style="font-size:.82rem;color:var(--main-text3)">' + g.items.length + ' item' + (g.items.length !== 1 ? 's' : '') + '</span>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="collapse-content" id="scope-' + sid + '-content" style="display:none;padding-top:8px">' +
+                    '<div id="scope-items-table-' + sid + '"></div>' +
+                '</div>' +
+            '</div>';
         });
     }
 
-    // === Item Summary Table (from attendance data) ===
-    var itemSummaryHtml = buildEmpItemSummary(member.id);
+    // Build summary
+    buildEmpItemSummaryData(member.id);
+    var summaryHtml = empItemSummaryData.length > 0 ? '<div id="emp-item-summary-area"></div>' : '';
 
-    document.getElementById('emp-myprojects').innerHTML = `
-    <div class="app-header"><h2>My Work Category Details</h2><div class="header-sub">Items you are involved in</div></div>
-    <div class="app-body" style="max-width:none">
-      <div class="emp-card">
-        <div class="emp-name">${esc(member.name)}</div>
-        <div class="emp-project">Position: ${esc(getPositionName(member.positionId))} &nbsp;|&nbsp; Department: ${esc(getDeptName(member.departmentId))}</div>
-        <div class="emp-project" style="margin-bottom:8px">Work Assigned: <strong>${projs.length}</strong></div>
-      </div>
-      ${itemSummaryHtml}
-      ${content}
-    </div>`;
+    document.getElementById('emp-myprojects').innerHTML =
+        '<div class="app-header"><h2>My Work Category Details</h2><div class="header-sub">Items you are involved in</div></div>' +
+        '<div class="app-body" style="max-width:none">' +
+
+            // Member card
+            '<div class="emp-card">' +
+                '<div class="emp-name">' + esc(member.name) + '</div>' +
+                '<div class="emp-project">Position: ' + esc(getPositionName(member.positionId)) + ' &nbsp;|&nbsp; Department: ' + esc(getDeptName(member.departmentId)) + '</div>' +
+                '<div class="emp-project" style="margin-bottom:8px">Work Assigned: <strong>' + projs.length + '</strong></div>' +
+            '</div>' +
+
+                        // Header 1 + Container 1 (Summary)
+            '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px">' +
+                '<div style="padding:12px 20px;border-bottom:1px solid var(--main-border)">' +
+                    '<h2 style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text);letter-spacing:.02em;margin:0">Attendance Summary</h2>' +
+                '</div>' +
+                '<div style="padding:20px">' +
+                    summaryHtml +
+                '</div>' +
+            '</div>' +
+
+            // Header 2 + Container 2 (Scope details)
+            '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);overflow:hidden">' +
+                '<div style="padding:12px 20px;border-bottom:1px solid var(--main-border)">' +
+                    '<h2 style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text);letter-spacing:.02em;margin:0">Work Contributed</h2>' +
+                '</div>' +
+                '<div style="padding:20px">' +
+                    scopeSections +
+                '</div>' +
+            '</div>' +
+
+        '</div>';
+
+    // Render summary table
+    if (empItemSummaryData.length > 0) {
+        empItemSummaryPage = 1;
+        renderEmpItemSummaryTable();
+    }
+
+    // Render each scope table
+    Object.keys(empScopePages).forEach(function(sid) {
+        renderScopeItemsTable(parseInt(sid));
+    });
 }
 
-function buildEmpItemSummary(memberId) {
-    var myEntries = DB.attendance.filter(a => a.memberId === memberId && a.clockIn && a.clockOut);
-    if (myEntries.length === 0) return '';
+function toggleCollapse(sectionId) {
+    var content = document.getElementById(sectionId + '-content');
+    var arrow = document.getElementById(sectionId + '-arrow');
+    if (!content || !arrow) return;
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        arrow.style.transform = 'rotate(90deg)';
+    } else {
+        content.style.display = 'none';
+        arrow.style.transform = 'rotate(0deg)';
+    }
+}
+
+/* ---------- Summary Table ---------- */
+
+function buildEmpItemSummaryData(memberId) {
+    var myEntries = DB.attendance.filter(function(a) { return a.memberId === memberId && a.clockIn && a.clockOut; });
+    empItemSummaryData = [];
+    if (myEntries.length === 0) return;
 
     var itemGroups = {};
     myEntries.forEach(function(r) {
@@ -1332,23 +1668,149 @@ function buildEmpItemSummary(memberId) {
         itemGroups[pid].entries++;
     });
 
-    var rows = Object.keys(itemGroups).map(function(pid) {
+    Object.keys(itemGroups).forEach(function(pid) {
         var data = itemGroups[pid];
-        var proj = pid === '0' ? null : DB.projects.find(p => p.id === parseInt(pid));
-        var scope = proj && proj.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
-        var label = proj
-            ? (scope ? scope.name + ' → ' + proj.name : proj.name)
-            : '<span style="color:var(--main-text3)">Unassigned</span>';
-        return '<tr><td>' + label +
-            '</td><td style="text-align:right;font-family:var(--font-m)">' + data.entries +
-            '</td><td style="text-align:right;font-family:var(--font-m)">' + formatDuration(data.ms) +
-            '</td><td style="text-align:right;font-family:var(--font-m)">' + fmtCost(data.cost) + '</td></tr>';
-    }).join('');
+        var proj = pid === '0' ? null : DB.projects.find(function(p) { return p.id === parseInt(pid); });
+        var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
+        var label = proj ? (scope ? esc(scope.name) + ' &rarr; ' + esc(proj.name) : esc(proj.name)) : '<span style="color:var(--main-text3)">Unassigned</span>';
+        empItemSummaryData.push({ label: label, entries: data.entries, hours: data.ms, cost: data.cost });
+    });
+}
 
-    return '<div class="section-head" style="margin-top:4px"><h2>Summary Table</h2></div>' +
-        '<div class="table-wrap" style="margin-bottom:24px"><table>' +
-        '<thead><tr><th>Scope → Item</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody></table></div>';
+function renderEmpItemSummaryTable() {
+    var data = empItemSummaryData;
+    var totalPages = Math.ceil(data.length / empItemSummaryPageSize) || 1;
+    if (empItemSummaryPage > totalPages) empItemSummaryPage = totalPages;
+    if (empItemSummaryPage < 1) empItemSummaryPage = 1;
+    var startIdx = (empItemSummaryPage - 1) * empItemSummaryPageSize;
+    var pageData = data.slice(startIdx, startIdx + empItemSummaryPageSize);
+
+    var rows = '';
+    if (data.length === 0) {
+        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>';
+    } else {
+        rows = pageData.map(function(r) {
+            return '<tr><td>' + r.label +
+                '</td><td style="text-align:right;font-family:var(--font-m)">' + r.entries +
+                '</td><td style="text-align:right;font-family:var(--font-m)">' + formatDuration(r.hours) +
+                '</td><td style="text-align:right;font-family:var(--font-m)">' + fmtCost(r.cost) + '</td></tr>';
+        }).join('');
+    }
+
+    var paginationHtml = buildRptPagination(data.length, empItemSummaryPage, empItemSummaryPageSize, 'goEmpItemSummaryPage', 'changeEmpItemSummaryPageSize');
+
+    document.getElementById('emp-item-summary-area').innerHTML =
+        '<div class="collapse-section" style="margin-bottom:16px">' +
+            '<div class="collapse-header" onclick="toggleCollapse(\'emp-summary\')">' +
+                '<div style="display:flex;align-items:center;gap:10px">' +
+                    '<span class="collapse-arrow" id="emp-summary-arrow" style="transform:rotate(90deg)">&#9654;</span>' +
+                    '<span style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text)">Attendance Overview</span>' +
+                    '<span style="font-size:.82rem;color:var(--main-text3)">' + data.length + ' items</span>' +
+                '</div>' +
+            '</div>' +
+            '<div class="collapse-content" id="emp-summary-content" style="display:block;padding-top:8px">' +
+                '<div class="table-wrap"><table>' +
+                    '<thead><tr><th>Scope &rarr; Item</th><th style="text-align:right">Records</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
+                    '<tbody>' + rows + '</tbody>' +
+                '</table></div>' +
+                paginationHtml +
+            '</div>' +
+        '</div>';
+}
+
+function goEmpItemSummaryPage(page) {
+    var totalPages = Math.ceil(empItemSummaryData.length / empItemSummaryPageSize) || 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    empItemSummaryPage = page;
+    renderEmpItemSummaryTable();
+}
+
+function changeEmpItemSummaryPageSize(size) {
+    empItemSummaryPageSize = parseInt(size);
+    empItemSummaryPage = 1;
+    renderEmpItemSummaryTable();
+}
+
+/* ---------- Scope Items Table ---------- */
+
+function renderScopeItemsTable(scopeId) {
+    var sp = empScopePages[scopeId];
+    if (!sp) return;
+    var data = sp.data;
+    var totalPages = Math.ceil(data.length / sp.pageSize) || 1;
+    if (sp.page > totalPages) sp.page = totalPages;
+    if (sp.page < 1) sp.page = 1;
+    var startIdx = (sp.page - 1) * sp.pageSize;
+    var pageData = data.slice(startIdx, startIdx + sp.pageSize);
+
+    var rows = '';
+    if (data.length === 0) {
+        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No items</td></tr>';
+    } else {
+        rows = pageData.map(function(r) {
+            return '<tr>' +
+                '<td><div style="font-family:var(--font-d);font-size:1rem">' + r.name + '</div></td>' +
+                '<td style="font-family:var(--font-m);font-size:.85rem">' + r.timeline + '</td>' +
+                '<td>' + r.team + '</td>' +
+                '<td>' + r.cdHtml + '</td>' +
+            '</tr>';
+        }).join('');
+    }
+
+    // Inline pagination (needs scopeId in onclick)
+    var paginationHtml = '';
+    if (data.length > 0) {
+        var showFrom = startIdx + 1;
+        var showTo = Math.min(startIdx + sp.pageSize, data.length);
+        var pageButtons = '';
+        var maxVisible = 5;
+        var startP = Math.max(1, sp.page - Math.floor(maxVisible / 2));
+        var endP = Math.min(totalPages, startP + maxVisible - 1);
+        if (endP - startP < maxVisible - 1) startP = Math.max(1, endP - maxVisible + 1);
+        pageButtons += '<button onclick="goScopeItemsPage(' + scopeId + ',1)" ' + (sp.page === 1 ? 'disabled' : '') + '>&laquo;</button>';
+        pageButtons += '<button onclick="goScopeItemsPage(' + scopeId + ',' + (sp.page - 1) + ')" ' + (sp.page === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
+        for (var p = startP; p <= endP; p++) {
+            pageButtons += '<button onclick="goScopeItemsPage(' + scopeId + ',' + p + ')" class="' + (p === sp.page ? 'active' : '') + '">' + p + '</button>';
+        }
+        pageButtons += '<button onclick="goScopeItemsPage(' + scopeId + ',' + (sp.page + 1) + ')" ' + (sp.page === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
+        pageButtons += '<button onclick="goScopeItemsPage(' + scopeId + ',' + totalPages + ')" ' + (sp.page === totalPages ? 'disabled' : '') + '>&raquo;</button>';
+        paginationHtml = '<div class="pagination">' +
+            '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + data.length + '</div>' +
+            '<div style="display:flex;align-items:center;gap:20px">' +
+                '<div class="pagination-size"><label>Show</label>' +
+                    '<select onchange="changeScopeItemsPageSize(' + scopeId + ',this.value)">' +
+                        '<option value="5"' + (sp.pageSize === 5 ? ' selected' : '') + '>5</option>' +
+                        '<option value="10"' + (sp.pageSize === 10 ? ' selected' : '') + '>10</option>' +
+                        '<option value="25"' + (sp.pageSize === 25 ? ' selected' : '') + '>25</option>' +
+                    '</select></div>' +
+                '<div class="pagination-controls">' + pageButtons + '</div>' +
+            '</div></div>';
+    }
+
+    document.getElementById('scope-items-table-' + scopeId).innerHTML =
+        '<div class="table-wrap"><table>' +
+            '<thead><tr><th>Work Category Id/Name</th><th>Timeline</th><th>Team Size</th><th>Countdown</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+        '</table></div>' + paginationHtml;
+}
+
+function goScopeItemsPage(scopeId, page) {
+    var sp = empScopePages[scopeId];
+    if (!sp) return;
+    var totalPages = Math.ceil(sp.data.length / sp.pageSize) || 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    sp.page = page;
+    renderScopeItemsTable(scopeId);
+}
+
+function changeScopeItemsPageSize(scopeId, size) {
+    var sp = empScopePages[scopeId];
+    if (!sp) return;
+    sp.pageSize = parseInt(size);
+    sp.page = 1;
+    renderScopeItemsTable(scopeId);
 }
 
 
@@ -2845,6 +3307,9 @@ async function doDeleteSubScope(id) {
 /* ==========================================================
    SECTION 19: Work List
    ========================================================== */
+var wlCurrentPage = 1;
+var wlPageSize = 10;
+
 function renderWorkList() {
     const view = document.getElementById('admin-worklist');
     var scopeFilterOpts = '<option value="">All Categories</option>' +
@@ -2859,12 +3324,18 @@ function renderWorkList() {
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
                 '<div style="display:flex;align-items:center;gap:10px">' +
                     '<label style="font-size:.82rem;color:var(--main-text3)">Filter by Category:</label>' +
-                    '<select class="input" id="worklist-filter" onchange="renderWorklistTable()" style="width:180px;padding:8px 10px;font-size:.82rem">' + scopeFilterOpts + '</select>' +
+                    '<select class="input" id="worklist-filter" onchange="wlFilterChanged()" style="width:180px;padding:8px 10px;font-size:.82rem">' + scopeFilterOpts + '</select>' +
                 '</div>' +
                 '<button class="btn btn-green" onclick="showAddWorklist()">+ Add Work List</button>' +
             '</div>' +
             '<div id="worklist-table-area"></div>' +
         '</div>';
+    wlCurrentPage = 1;
+    renderWorklistTable();
+}
+
+function wlFilterChanged() {
+    wlCurrentPage = 1;
     renderWorklistTable();
 }
 
@@ -2874,16 +3345,24 @@ function renderWorklistTable() {
         ? DB.worklist.filter(w => w.scopeId === parseInt(filterScopeId))
         : DB.worklist;
 
+    // Pagination
+    var totalPages = Math.ceil(filtered.length / wlPageSize) || 1;
+    if (wlCurrentPage > totalPages) wlCurrentPage = totalPages;
+    if (wlCurrentPage < 1) wlCurrentPage = 1;
+    var startIdx = (wlCurrentPage - 1) * wlPageSize;
+    var endIdx = startIdx + wlPageSize;
+    var pageData = filtered.slice(startIdx, endIdx);
+
     var rows = '';
     if (filtered.length === 0) {
         rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No work items found</td></tr>';
     } else {
-        rows = filtered.map(w => {
+        rows = pageData.map(function(w, idx) {
             var scope = w.scopeId ? DB.scopes.find(s => s.id === w.scopeId) : null;
             return '<tr>' +
-                '<td style="font-family:var(--font-m)">' + w.id + '</td>' +
+                '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
                 '<td>' + (scope ? '<span class="badge badge-scope">' + esc(scope.name) + '</span>' : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
-                '<td>' + esc(w.title) + '</td>' +
+                '<td style="font-weight:500">' + esc(w.title) + '</td>' +
                 '<td><div class="actions-cell">' +
                     '<button class="btn-icon" onclick="showEditWorklist(' + w.id + ')" title="Edit">&#9998;</button>' +
                     '<button class="btn-icon danger" onclick="confirmDeleteWorklist(' + w.id + ')" title="Delete">&#10005;</button>' +
@@ -2892,13 +3371,64 @@ function renderWorklistTable() {
         }).join('');
     }
 
+    // Pagination HTML
+    var paginationHtml = '';
+    if (filtered.length > 0) {
+        var showFrom = startIdx + 1;
+        var showTo = Math.min(endIdx, filtered.length);
+        var pageButtons = '';
+        var maxVisible = 5;
+        var startPage = Math.max(1, wlCurrentPage - Math.floor(maxVisible / 2));
+        var endPage = Math.min(totalPages, startPage + maxVisible - 1);
+        if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
+        pageButtons += '<button onclick="goWlPage(1)" ' + (wlCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
+        pageButtons += '<button onclick="goWlPage(' + (wlCurrentPage - 1) + ')" ' + (wlCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
+        for (var p = startPage; p <= endPage; p++) {
+            pageButtons += '<button onclick="goWlPage(' + p + ')" class="' + (p === wlCurrentPage ? 'active' : '') + '">' + p + '</button>';
+        }
+        pageButtons += '<button onclick="goWlPage(' + (wlCurrentPage + 1) + ')" ' + (wlCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
+        pageButtons += '<button onclick="goWlPage(' + totalPages + ')" ' + (wlCurrentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
+        paginationHtml = '<div class="pagination">' +
+            '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + filtered.length + ' items</div>' +
+            '<div style="display:flex;align-items:center;gap:20px">' +
+                '<div class="pagination-size"><label>Show</label>' +
+                    '<select onchange="changeWlPageSize(this.value)">' +
+                        '<option value="5"' + (wlPageSize === 5 ? ' selected' : '') + '>5</option>' +
+                        '<option value="10"' + (wlPageSize === 10 ? ' selected' : '') + '>10</option>' +
+                        '<option value="25"' + (wlPageSize === 25 ? ' selected' : '') + '>25</option>' +
+                        '<option value="50"' + (wlPageSize === 50 ? ' selected' : '') + '>50</option>' +
+                        '<option value="100"' + (wlPageSize === 100 ? ' selected' : '') + '>100</option>' +
+                    '</select></div>' +
+                '<div class="pagination-controls">' + pageButtons + '</div>' +
+            '</div></div>';
+    }
+
     document.getElementById('worklist-table-area').innerHTML =
         '<div class="table-wrap"><table><thead><tr>' +
-            '<th style="width:60px">ID</th>' +
+            '<th style="width:50px">No</th>' +
             '<th style="width:160px">Category</th>' +
             '<th>Title</th>' +
             '<th style="width:90px">Actions</th>' +
-        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+        paginationHtml;
+}
+
+function goWlPage(page) {
+    var filterScopeId = document.getElementById('worklist-filter') ? document.getElementById('worklist-filter').value : '';
+    var filtered = filterScopeId
+        ? DB.worklist.filter(w => w.scopeId === parseInt(filterScopeId))
+        : DB.worklist;
+    var totalPages = Math.ceil(filtered.length / wlPageSize) || 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    wlCurrentPage = page;
+    renderWorklistTable();
+}
+
+function changeWlPageSize(size) {
+    wlPageSize = parseInt(size);
+    wlCurrentPage = 1;
+    renderWorklistTable();
 }
 
 function showAddWorklist() {
@@ -3167,6 +3697,13 @@ async function doDeleteDetail(id) {
    SECTION 18: ADMIN — Report (scope → item)
    ========================================================== */
 
+var rptItemPage = 1;
+var rptItemPageSize = 10;
+var rptItemData_cache = [];
+var rptEmpPage = 1;
+var rptEmpPageSize = 10;
+var rptEmpData_cache = [];
+
 function renderAdminReport() {
     var view = document.getElementById('admin-report');
     var today = todayStr();
@@ -3206,7 +3743,6 @@ function renderAdminReport() {
             '<div id="rpt-tables"></div>' +
         '</div>';
 
-    // Category → Item 联动
     msOnChange('rpt-ms-scope', function(selectedScopeIds) {
         var filtered = selectedScopeIds.length > 0
             ? DB.projects.filter(function(p) { return selectedScopeIds.indexOf(p.categoryId) !== -1; })
@@ -3214,7 +3750,6 @@ function renderAdminReport() {
         msRebuild('rpt-ms-item', filtered.map(function(p) { return { value: p.id, label: p.name }; }), true);
     });
 
-    // Department → Employee 联动
     msOnChange('rpt-ms-dept', function(selectedDeptIds) {
         var filtered = selectedDeptIds.length > 0
             ? DB.members.filter(function(m) { return selectedDeptIds.indexOf(m.departmentId) !== -1; })
@@ -3225,43 +3760,19 @@ function renderAdminReport() {
     generateReport();
 }
 
-function rptDeptChanged() {
-    var deptId = document.getElementById('rpt-dept').value;
-    var empSelect = document.getElementById('rpt-emp');
-    var filtered = deptId
-        ? DB.members.filter(function(m) { return m.departmentId === parseInt(deptId); })
-        : DB.members;
-    empSelect.innerHTML = '<option value="">All Employees</option>' +
-        filtered.map(function(m) { return '<option value="' + m.id + '">' + esc(m.name) + '</option>'; }).join('');
-}
-
-function rptScopeChanged() {
-    var scopeId = document.getElementById('rpt-scope').value;
-    var itemSelect = document.getElementById('rpt-item');
-    var filtered = scopeId
-        ? DB.projects.filter(p => p.categoryId === parseInt(scopeId))
-        : DB.projects;
-    itemSelect.innerHTML = '<option value="">All Items</option>' +
-        filtered.map(p => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('');
-}
-
 function resetReport() {
     var today = todayStr();
     var thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     document.getElementById('rpt-from').value = thirtyDaysAgo.toISOString().slice(0, 10);
     document.getElementById('rpt-to').value = today;
-
     msClear('rpt-ms-scope');
     msClear('rpt-ms-dept');
     msClear('rpt-ms-emp');
-
     var allItemOpts = DB.projects.map(function(p) { return { value: p.id, label: p.name }; });
     msRebuild('rpt-ms-item', allItemOpts, false);
-
     generateReport();
 }
-
 
 function generateReport() {
     var fromDate = document.getElementById('rpt-from').value;
@@ -3272,35 +3783,25 @@ function generateReport() {
     var empIds = msGetValues('rpt-ms-emp');
     if (!fromDate || !toDate) return;
 
-    // Filter attendance by date range
     var filtered = DB.attendance.filter(function(a) {
         if (!a.date) return false;
         return a.date >= fromDate && a.date <= toDate;
     });
 
-    // Filter by scope(s)
     if (scopeIds.length > 0) {
         var scopeItemIds = DB.projects.filter(function(p) { return scopeIds.indexOf(p.categoryId) !== -1; }).map(function(p) { return p.id; });
         filtered = filtered.filter(function(a) { return scopeItemIds.indexOf(a.projectId) !== -1; });
     }
-
-    // Filter by item(s)
     if (itemIds.length > 0) {
         filtered = filtered.filter(function(a) { return itemIds.indexOf(a.projectId) !== -1; });
     }
-
-    // Filter by department(s)
     if (deptIds.length > 0) {
         var deptMemberIds = DB.members.filter(function(m) { return deptIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
         filtered = filtered.filter(function(a) { return deptMemberIds.indexOf(a.memberId) !== -1; });
     }
-
-    // Filter by employee(s)
     if (empIds.length > 0) {
         filtered = filtered.filter(function(a) { return empIds.indexOf(a.memberId) !== -1; });
     }
-
-
 
     // ===== STATS =====
     var totalHours = 0, totalCost = 0;
@@ -3314,7 +3815,7 @@ function generateReport() {
     var uniqueEmployees = new Set(filtered.map(function(a) { return a.memberId; })).size;
     var uniqueItems = new Set(filtered.filter(function(a) { return a.projectId; }).map(function(a) { return a.projectId; })).size;
     var uniqueScopes = new Set(filtered.filter(function(a) { return a.projectId; }).map(function(a) {
-        var proj = DB.projects.find(p => p.id === a.projectId);
+        var proj = DB.projects.find(function(p) { return p.id === a.projectId; });
         return proj && proj.categoryId ? proj.categoryId : 0;
     })).size;
 
@@ -3328,7 +3829,10 @@ function generateReport() {
             '<div class="stat-card"><div class="stat-label">Active ID/Name</div><div class="stat-value">' + uniqueItems + '</div></div>' +
         '</div>';
 
-    // ===== CHART 1: Cost by Scope → Item (Bar) =====
+    // ===== CHARTS DATA =====
+    var palette = ['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
+
+    // Chart 1: Cost by Scope → Item (Bar)
     var itemCosts = {};
     filtered.forEach(function(r) {
         if (!r.clockIn || !r.clockOut) return;
@@ -3339,7 +3843,6 @@ function generateReport() {
         itemCosts[pid] += cost;
     });
     var itemLabels = [], itemData = [], itemColors = [];
-    var palette = ['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
     Object.entries(itemCosts).forEach(function(entry, i) {
         var pid = parseInt(entry[0]);
         var cost = entry[1];
@@ -3351,14 +3854,13 @@ function generateReport() {
         itemColors.push(palette[i % palette.length]);
     });
 
-    // ===== CHART 2: Cost by Scope (Pie) =====
+    // Chart 2: Cost by Scope (Pie)
     var scopeCosts = {};
     filtered.forEach(function(r) {
         if (!r.clockIn || !r.clockOut) return;
         var ms = new Date(r.clockOut) - new Date(r.clockIn);
         var cost = getEntryCost(r.memberId, ms) || 0;
-        // Get scope from item's categoryId instead of attendance's scopeId
-        var proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
+        var proj = r.projectId ? DB.projects.find(function(p) { return p.id === r.projectId; }) : null;
         var sid = proj && proj.categoryId ? proj.categoryId : 0;
         if (!scopeCosts[sid]) scopeCosts[sid] = 0;
         scopeCosts[sid] += cost;
@@ -3383,10 +3885,10 @@ function generateReport() {
             '<div style="position:relative;height:280px"><canvas id="chart-scope-cost"></canvas></div>' +
         '</div>';
 
-    // ===== CHART 3: Monthly Hours Trend =====
+    // Chart 3: Monthly Hours Trend
     var monthlyHours = {};
     var monthlyCost = {};
-    filtered.forEach(function(r) {    // ← DB.attendance 改成 filtered
+    filtered.forEach(function(r) {
         if (!r.clockIn || !r.clockOut || !r.date) return;
         var m = r.date.substring(0, 7);
         var ms = new Date(r.clockOut) - new Date(r.clockIn);
@@ -3395,13 +3897,12 @@ function generateReport() {
         monthlyHours[m] += ms;
         monthlyCost[m] += cost;
     });
-
     var monthLabels = Object.keys(monthlyHours).sort();
     var monthHoursData = monthLabels.map(function(m) { return Math.round(monthlyHours[m] / (1000 * 60 * 60) * 10) / 10; });
     var monthCostData = monthLabels.map(function(m) { return Math.round(monthlyCost[m] * 100) / 100; });
     var prettyMonths = monthLabels.map(function(m) { var parts = m.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(parts[1])-1] + ' ' + parts[0].substring(2); });
 
-    // ===== CHART 4: Employee Hours (Horizontal Bar) =====
+    // Chart 4: Employee Hours
     var empHours = {};
     filtered.forEach(function(r) {
         if (!r.clockIn || !r.clockOut) return;
@@ -3427,8 +3928,7 @@ function generateReport() {
         '</div>';
 
     // ===== TABLES =====
-    // Item summary table (grouped by scope → item)
-    var itemSummaryRows = '';
+    rptItemData_cache = [];
     Object.entries(itemCosts).sort(function(a, b) { return b[1] - a[1]; }).forEach(function(entry) {
         var pid = parseInt(entry[0]);
         var cost = entry[1];
@@ -3447,16 +3947,10 @@ function generateReport() {
             else if (cd === 0) cdHtml = '<span style="color:var(--warning);font-weight:600">Today!</span>';
             else cdHtml = '<span style="color:var(--danger);font-weight:600">' + Math.abs(cd) + 'd overdue</span>';
         }
-        itemSummaryRows += '<tr><td>' + label + '</td>' +
-            '<td>' + cdHtml + '</td>' +
-            '<td style="text-align:right;font-family:var(--font-m)">' + members + '</td>' +
-            '<td style="text-align:right;font-family:var(--font-m)">' + entries + '</td>' +
-            '<td style="text-align:right;font-family:var(--font-m)">' + formatDuration(hours) + '</td>' +
-            '<td style="text-align:right;font-family:var(--font-m)">' + fmtCost(cost) + '</td></tr>';
+        rptItemData_cache.push({ label: label, cdHtml: cdHtml, members: members, entries: entries, hours: hours, cost: cost });
     });
 
-    // Employee summary table
-    var empSummaryRows = '';
+    rptEmpData_cache = [];
     var empStats = {};
     filtered.forEach(function(r) {
         if (!r.clockIn || !r.clockOut) return;
@@ -3472,103 +3966,181 @@ function generateReport() {
         var mid = parseInt(entry[0]);
         var data = entry[1];
         var member = DB.members.find(function(m) { return m.id === mid; });
-        empSummaryRows += '<tr><td>' + (member ? esc(member.name) : 'Unknown') + '</td>' +
-            '<td>' + (member ? esc(getPositionName(member.positionId)) : '—') + '</td>' +
-            '<td>' + (member ? esc(getDeptName(member.departmentId)) : '—') + '</td>' +
-            '<td style="text-align:right;font-family:var(--font-m)">' + data.entries + '</td>' +
-            '<td style="text-align:right;font-family:var(--font-m)">' + data.days.size + '</td>' +
-            '<td style="text-align:right;font-family:var(--font-m)">' + formatDuration(data.ms) + '</td>' +
-            '<td style="text-align:right;font-family:var(--font-m)">' + fmtCost(data.cost) + '</td>' +
-            '<td style="text-align:right;font-family:var(--font-m)">' + fmtHourlyRate(member) + '</td></tr>';
+        rptEmpData_cache.push({
+            name: member ? esc(member.name) : 'Unknown',
+            pos: member ? esc(getPositionName(member.positionId)) : '—',
+            dept: member ? esc(getDeptName(member.departmentId)) : '—',
+            entries: data.entries,
+            days: data.days.size,
+            ms: data.ms,
+            cost: data.cost,
+            rate: fmtHourlyRate(member)
+        });
     });
 
     document.getElementById('rpt-tables').innerHTML =
         '<div class="section-head" style="margin-top:8px"><h2>Item Summary</h2></div>' +
-        '<div class="table-wrap" style="margin-bottom:32px"><table>' +
-            '<thead><tr><th>Scope &rarr; Item</th><th>Countdown</th><th style="text-align:right">Members</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
-            '<tbody>' + itemSummaryRows + '</tbody>' +
-        '</table></div>' +
-        '<div class="section-head"><h2>Employee Summary</h2></div>' +
-        '<div class="table-wrap"><table>' +
-            '<thead><tr><th>Employee</th><th>Position</th><th>Department</th><th style="text-align:right">Entries</th><th style="text-align:right">Days</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th><th style="text-align:right">Rate</th></tr></thead>' +
-            '<tbody>' + empSummaryRows + '</tbody>' +
-        '</table></div>';
+        '<div id="rpt-item-table-area"></div>' +
+        '<div class="section-head" style="margin-top:24px"><h2>Employee Summary</h2></div>' +
+        '<div id="rpt-emp-table-area"></div>';
+
+    rptItemPage = 1;
+    rptEmpPage = 1;
+    renderRptItemTable(rptItemData_cache);
+    renderRptEmpTable(rptEmpData_cache);
 
     // ===== RENDER CHARTS =====
     var chartTextColor = '#7a7570';
     var chartGridColor = 'rgba(122,117,112,0.15)';
 
-    // Chart 1: Cost by Scope → Item (Bar)
     new Chart(document.getElementById('chart-item-cost'), {
         type: 'bar',
-        data: {
-            labels: itemLabels,
-            datasets: [{ label: 'Cost (RM)', data: itemData, backgroundColor: itemColors, borderRadius: 6, maxBarThickness: 50 }]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: {
-                y: { beginAtZero: true, ticks: { color: chartTextColor, callback: function(v) { return 'RM' + v; } }, grid: { color: chartGridColor } },
-                x: { ticks: { color: chartTextColor, maxRotation: 45, font: { size: 10 } }, grid: { display: false } }
-            }
-        }
+        data: { labels: itemLabels, datasets: [{ label: 'Cost (RM)', data: itemData, backgroundColor: itemColors, borderRadius: 6, maxBarThickness: 50 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: chartTextColor, callback: function(v) { return 'RM' + v; } }, grid: { color: chartGridColor } }, x: { ticks: { color: chartTextColor, maxRotation: 45, font: { size: 10 } }, grid: { display: false } } } }
     });
 
-    // Chart 2: Cost by Scope (Doughnut)
     new Chart(document.getElementById('chart-scope-cost'), {
         type: 'doughnut',
-        data: {
-            labels: scopeLabels,
-            datasets: [{ data: scopeData, backgroundColor: scopeColors, borderWidth: 0, hoverOffset: 8 }]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: {
-                legend: { position: 'right', labels: { color: chartTextColor, padding: 12, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } } },
-                tooltip: { callbacks: { label: function(ctx) { return ctx.label + ': RM' + ctx.parsed.toFixed(2); } } }
-            }
-        }
+        data: { labels: scopeLabels, datasets: [{ data: scopeData, backgroundColor: scopeColors, borderWidth: 0, hoverOffset: 8 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: chartTextColor, padding: 12, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: function(ctx) { return ctx.label + ': RM' + ctx.parsed.toFixed(2); } } } } }
     });
 
-    // Chart 3: Monthly Trend (Bar with dual axis)
     new Chart(document.getElementById('chart-monthly'), {
         type: 'bar',
-        data: {
-            labels: prettyMonths,
-            datasets: [
-                { label: 'Hours', data: monthHoursData, backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 6, yAxisID: 'y', maxBarThickness: 40 },
-                { label: 'Cost (RM)', data: monthCostData, type: 'line', borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', pointRadius: 4, pointBackgroundColor: '#ef4444', tension: 0.3, yAxisID: 'y1', fill: true }
-            ]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { labels: { color: chartTextColor, usePointStyle: true, padding: 16 } } },
-            scales: {
-                y: { beginAtZero: true, position: 'left', ticks: { color: chartTextColor, callback: function(v) { return v + 'h'; } }, grid: { color: chartGridColor } },
-                y1: { beginAtZero: true, position: 'right', ticks: { color: '#ef4444', callback: function(v) { return 'RM' + v; } }, grid: { drawOnChartArea: false } },
-                x: { ticks: { color: chartTextColor }, grid: { display: false } }
-            }
-        }
+        data: { labels: prettyMonths, datasets: [
+            { label: 'Hours', data: monthHoursData, backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 6, yAxisID: 'y', maxBarThickness: 40 },
+            { label: 'Cost (RM)', data: monthCostData, type: 'line', borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', pointRadius: 4, pointBackgroundColor: '#ef4444', tension: 0.3, yAxisID: 'y1', fill: true }
+        ] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: chartTextColor, usePointStyle: true, padding: 16 } } }, scales: { y: { beginAtZero: true, position: 'left', ticks: { color: chartTextColor, callback: function(v) { return v + 'h'; } }, grid: { color: chartGridColor } }, y1: { beginAtZero: true, position: 'right', ticks: { color: '#ef4444', callback: function(v) { return 'RM' + v; } }, grid: { drawOnChartArea: false } }, x: { ticks: { color: chartTextColor }, grid: { display: false } } } }
     });
 
-    // Chart 4: Employee Hours (Horizontal Bar)
     new Chart(document.getElementById('chart-emp-hours'), {
         type: 'bar',
-        data: {
-            labels: empLabels,
-            datasets: [{ label: 'Hours', data: empData, backgroundColor: 'rgba(34,197,94,0.7)', borderRadius: 6, maxBarThickness: 30 }]
-        },
-        options: {
-            indexAxis: 'y',
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: {
-                x: { beginAtZero: true, ticks: { color: chartTextColor, callback: function(v) { return v + 'h'; } }, grid: { color: chartGridColor } },
-                y: { ticks: { color: chartTextColor, font: { size: 11 } }, grid: { display: false } }
-            }
-        }
+        data: { labels: empLabels, datasets: [{ label: 'Hours', data: empData, backgroundColor: 'rgba(34,197,94,0.7)', borderRadius: 6, maxBarThickness: 30 }] },
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { color: chartTextColor, callback: function(v) { return v + 'h'; } }, grid: { color: chartGridColor } }, y: { ticks: { color: chartTextColor, font: { size: 11 } }, grid: { display: false } } } }
     });
+}
+
+// ===== Report Table Pagination =====
+
+function buildRptPagination(totalItems, currentPage, pageSize, goFunc, changeFunc) {
+    if (totalItems <= 0) return '';
+    var totalPages = Math.ceil(totalItems / pageSize) || 1;
+    var startIdx = (currentPage - 1) * pageSize;
+    var showFrom = startIdx + 1;
+    var showTo = Math.min(startIdx + pageSize, totalItems);
+    var pageButtons = '';
+    var maxVisible = 5;
+    var startP = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+    var endP = Math.min(totalPages, startP + maxVisible - 1);
+    if (endP - startP < maxVisible - 1) startP = Math.max(1, endP - maxVisible + 1);
+    pageButtons += '<button onclick="' + goFunc + '(1)" ' + (currentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
+    pageButtons += '<button onclick="' + goFunc + '(' + (currentPage - 1) + ')" ' + (currentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
+    for (var p = startP; p <= endP; p++) {
+        pageButtons += '<button onclick="' + goFunc + '(' + p + ')" class="' + (p === currentPage ? 'active' : '') + '">' + p + '</button>';
+    }
+    pageButtons += '<button onclick="' + goFunc + '(' + (currentPage + 1) + ')" ' + (currentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
+    pageButtons += '<button onclick="' + goFunc + '(' + totalPages + ')" ' + (currentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
+    return '<div class="pagination">' +
+        '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + totalItems + '</div>' +
+        '<div style="display:flex;align-items:center;gap:20px">' +
+            '<div class="pagination-size"><label>Show</label>' +
+                '<select onchange="' + changeFunc + '(this.value)">' +
+                    '<option value="5"' + (pageSize === 5 ? ' selected' : '') + '>5</option>' +
+                    '<option value="10"' + (pageSize === 10 ? ' selected' : '') + '>10</option>' +
+                    '<option value="25"' + (pageSize === 25 ? ' selected' : '') + '>25</option>' +
+                    '<option value="50"' + (pageSize === 50 ? ' selected' : '') + '>50</option>' +
+                '</select></div>' +
+            '<div class="pagination-controls">' + pageButtons + '</div>' +
+        '</div></div>';
+}
+
+function renderRptItemTable(data) {
+    var totalPages = Math.ceil(data.length / rptItemPageSize) || 1;
+    if (rptItemPage > totalPages) rptItemPage = totalPages;
+    if (rptItemPage < 1) rptItemPage = 1;
+    var startIdx = (rptItemPage - 1) * rptItemPageSize;
+    var pageData = data.slice(startIdx, startIdx + rptItemPageSize);
+
+    var rows = '';
+    if (data.length === 0) {
+        rows = '<tr><td colspan="6" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>';
+    } else {
+        rows = pageData.map(function(r) {
+            return '<tr><td>' + r.label + '</td>' +
+                '<td>' + r.cdHtml + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + r.members + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + r.entries + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + formatDuration(r.hours) + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + fmtCost(r.cost) + '</td></tr>';
+        }).join('');
+    }
+
+    document.getElementById('rpt-item-table-area').innerHTML =
+        '<div class="table-wrap"><table>' +
+            '<thead><tr><th>Scope &rarr; Item</th><th>Countdown</th><th style="text-align:right">Members</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+        '</table></div>' +
+        buildRptPagination(data.length, rptItemPage, rptItemPageSize, 'goRptItemPage', 'changeRptItemPageSize');
+}
+
+function renderRptEmpTable(data) {
+    var totalPages = Math.ceil(data.length / rptEmpPageSize) || 1;
+    if (rptEmpPage > totalPages) rptEmpPage = totalPages;
+    if (rptEmpPage < 1) rptEmpPage = 1;
+    var startIdx = (rptEmpPage - 1) * rptEmpPageSize;
+    var pageData = data.slice(startIdx, startIdx + rptEmpPageSize);
+
+    var rows = '';
+    if (data.length === 0) {
+        rows = '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>';
+    } else {
+        rows = pageData.map(function(r) {
+            return '<tr><td>' + r.name + '</td>' +
+                '<td>' + r.pos + '</td>' +
+                '<td>' + r.dept + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + r.entries + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + r.days + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + formatDuration(r.ms) + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + fmtCost(r.cost) + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + r.rate + '</td></tr>';
+        }).join('');
+    }
+
+    document.getElementById('rpt-emp-table-area').innerHTML =
+        '<div class="table-wrap"><table>' +
+            '<thead><tr><th>Employee</th><th>Position</th><th>Department</th><th style="text-align:right">Entries</th><th style="text-align:right">Days</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th><th style="text-align:right">Rate</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+        '</table></div>' +
+        buildRptPagination(data.length, rptEmpPage, rptEmpPageSize, 'goRptEmpPage', 'changeRptEmpPageSize');
+}
+
+function goRptItemPage(page) {
+    var totalPages = Math.ceil(rptItemData_cache.length / rptItemPageSize) || 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    rptItemPage = page;
+    renderRptItemTable(rptItemData_cache);
+}
+
+function changeRptItemPageSize(size) {
+    rptItemPageSize = parseInt(size);
+    rptItemPage = 1;
+    renderRptItemTable(rptItemData_cache);
+}
+
+function goRptEmpPage(page) {
+    var totalPages = Math.ceil(rptEmpData_cache.length / rptEmpPageSize) || 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    rptEmpPage = page;
+    renderRptEmpTable(rptEmpData_cache);
+}
+
+function changeRptEmpPageSize(size) {
+    rptEmpPageSize = parseInt(size);
+    rptEmpPage = 1;
+    renderRptEmpTable(rptEmpData_cache);
 }
 
 
