@@ -40,13 +40,14 @@ let DB = {
     scopes: [],
     subScopes: [],
     details: [],
+    worklist: [], 
     projectAssignments: [],
     attendance: [],
 };
 
 async function loadDB() {
     try {
-        const [projects, members, users, positions, departments, scopes, subScopes, details, assignments, attendance] = await Promise.all([
+        const [projects, members, users, positions, departments, scopes, subScopes, details, assignments, attendance, worklist] = await Promise.all([
             api('/projects'),
             api('/members'),
             api('/users'),
@@ -56,7 +57,8 @@ async function loadDB() {
             api('/subscopes'),
             api('/details'),
             api('/assignments'),
-            api('/attendance')
+            api('/attendance'),
+            api('/worklist')
         ]);
         DB.projects = projects;
         DB.members = members;
@@ -68,16 +70,9 @@ async function loadDB() {
         DB.details = details;
         DB.projectAssignments = assignments;
         DB.attendance = attendance;
+        DB.worklist = worklist;
     } catch (e) {
-        console.error('Failed to load core data:', e);
-    }
-
-    // worklist 单独加载，失败不影响其他页面
-    try {
-        DB.worklist = await api('/worklist');
-    } catch (e) {
-        console.error('Worklist failed:', e);
-        DB.worklist = [];
+        console.error('Failed to load data:', e);
     }
 }
 
@@ -296,7 +291,7 @@ async function showPage(id) {
     const el = document.getElementById(id);
     if (el) el.classList.add('active');
     if (id === 'admin-layout') { await loadDB(); adminNav('projects'); updateAvatars(); }
-    if (id === 'employee-layout') { await loadDB(); empNav('myprojects'); updateAvatars(); }
+    if (id === 'employee-layout') { await loadDB(); empNav('attendance'); updateAvatars(); }
     if (id === 'detail-layout') { await loadDB(); renderProjectDetail(); updateAvatars(); }
 }
 
@@ -410,7 +405,7 @@ document.addEventListener('touchmove', function(e) {
                 await adminNav(page);
             } else {
                 document.getElementById('employee-layout').classList.add('active');
-                var page = localStorage.getItem('multitrade_emp_page') || 'myprojects';
+                var page = localStorage.getItem('multitrade_emp_page') || 'attendance';
                 var navItems = document.querySelectorAll('#emp-nav .nav-item');
                 navItems.forEach(n => n.classList.remove('active'));
                 navItems.forEach(n => {
@@ -438,7 +433,7 @@ document.addEventListener('touchmove', function(e) {
 
 
 /* ==========================================================
-   SECTION 6: MAIN SCOPE (tabs = category, table = items)
+   SECTION 6: Main Category/MAIN SCOPE (tabs = category, table = items)
    ========================================================== */
 
 var activeCategoryId = null;
@@ -1670,29 +1665,32 @@ function changeEmpAttPageSize(size) {
 }
 
 function showAddTimeEntry() {
-    var today = todayStr();
-    // 显示所有 scope
-    var scopeOptions = '<option value="">-- Select Category --</option>' +
-        DB.scopes.map(function(s) {
-            return '<option value="' + s.id + '">' + esc(s.name) + '</option>';
-        }).join('');
+    try {
+        var today = todayStr();
+        var scopeOptions = '<option value="">-- Select Category --</option>' +
+            DB.scopes.map(function(s) {
+                return '<option value="' + s.id + '">' + esc(s.name) + '</option>';
+            }).join('');
 
-    showModal(`
-    <h3>Add Time Entry</h3>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="${today}"></div><br>
-        <div class="field"><label>Category</label><select class="input" id="entry-scope-filter" onchange="entryScopeChanged()">${scopeOptions}</select></div>
-        <div class="field"><label>ID/Name</label><select class="input" id="entry-project"><option value="">-- Select Category First --</option></select></div>
-        <div style="display:none"><select class="input" id="entry-detail">${detailOpts(null)}</select></div>
-        <div class="field"><label>Work Plan</label><select class="input" id="entry-workplan"><option value="">-- Select Category First --</option></select></div>
-        <div class="field"><label>Work Done</label><select class="input" id="entry-workdone"><option value="">-- Select Category First --</option></select></div>
-        <div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="09:00"></div>
-        <div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="17:00"></div>
-    </div>
-    <div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="entry-desc" rows="2" placeholder="For Other Selected" style="resize:vertical"></textarea></div>
-    <p class="auth-error" id="entry-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddTimeEntry()">Save</button></div>`);
-    setTimeout(function() { document.getElementById('entry-scope-filter').focus(); }, 100);
+        showModal(`
+        <h3>Add Time Entry</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="${today}"></div><br>
+            <div class="field"><label>Category</label><select class="input" id="entry-scope-filter" onchange="entryScopeChanged()">${scopeOptions}</select></div>
+            <div class="field"><label>ID/Name</label><select class="input" id="entry-project"><option value="">-- Select Category First --</option></select></div>
+            <div style="display:none"><select class="input" id="entry-detail">${detailOpts(null)}</select></div>
+            <div class="field"><label>Work Plan</label><select class="input" id="entry-workplan"><option value="">-- Select Category First --</option></select></div>
+            <div class="field"><label>Work Done</label><select class="input" id="entry-workdone"><option value="">-- Select Category First --</option></select></div>
+            <div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="09:00"></div>
+            <div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="17:00"></div>
+        </div>
+        <div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="entry-desc" rows="2" placeholder="For Other Selected" style="resize:vertical"></textarea></div>
+        <p class="auth-error" id="entry-error"></p>
+        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddTimeEntry()">Save</button></div>`);
+        setTimeout(function() { document.getElementById('entry-scope-filter').focus(); }, 100);
+    } catch (e) {
+        alert('Error: ' + e.message);  // ← 会弹出具体报错
+    }
 }
 
 function showEditTimeEntry(entryId) {
@@ -1790,6 +1788,7 @@ function entryFilterWorklist() {
     var wpSelect = document.getElementById('entry-workplan');
     var wdSelect = document.getElementById('entry-workdone');
     if (!wpSelect || !wdSelect) return;
+    if (!DB.worklist) DB.worklist = [];  // ← 加这行
     if (!scopeId) {
         wpSelect.innerHTML = '<option value="">-- Select Category First --</option>';
         wdSelect.innerHTML = '<option value="">-- Select Category First --</option>';
@@ -1809,8 +1808,10 @@ async function doAddTimeEntry() {
     var errEl = document.getElementById('entry-error');
     var date = document.getElementById('entry-date').value;
     var projectId = document.getElementById('entry-project').value;
-    var subScopeId = document.getElementById('entry-subscope').value;
-    var detailId = document.getElementById('entry-detail').value;
+    var subScopeEl = document.getElementById('entry-subscope');
+    var detailEl = document.getElementById('entry-detail');
+    var subScopeId = subScopeEl ? subScopeEl.value : '';
+    var detailId = detailEl ? detailEl.value : '';
     var workPlanId = document.getElementById('entry-workplan').value;
     var workDoneId = document.getElementById('entry-workdone').value;
     var start = document.getElementById('entry-start').value;
@@ -1871,8 +1872,10 @@ async function doEditTimeEntry(entryId) {
     var errEl = document.getElementById('entry-error');
     var date = document.getElementById('entry-date').value;
     var projectId = document.getElementById('entry-project').value;
-    var subScopeId = document.getElementById('entry-subscope').value;
-    var detailId = document.getElementById('entry-detail').value;
+    var subScopeEl = document.getElementById('entry-subscope');
+    var detailEl = document.getElementById('entry-detail');
+    var subScopeId = subScopeEl ? subScopeEl.value : '';
+    var detailId = detailEl ? detailEl.value : '';
     var workPlanId = document.getElementById('entry-workplan').value;
     var workDoneId = document.getElementById('entry-workdone').value;
     var start = document.getElementById('entry-start').value;
