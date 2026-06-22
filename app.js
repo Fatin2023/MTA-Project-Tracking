@@ -2623,12 +2623,12 @@ document.addEventListener('click', function(e) {
    ========================================================== */
 
 var adminAttCurrentPage = 1;
-var adminAttPageSize = 25;
+var adminAttPageSize = 10;
 var adminAttFilteredData = [];
 
 function renderAdminAttendance() {
     adminAttCurrentPage = 1;
-    adminAttPageSize = 25;
+    adminAttPageSize = 10;
 
     var today = todayStr();
     var thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
