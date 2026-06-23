@@ -848,7 +848,7 @@ async function initDB() {
         // 4. DEFAULT ADMIN
         await pool.query(`
             INSERT INTO users (username, password, role)
-            VALUES ('admin', 'admin123', 'admin')
+            VALUES ('adminMTA', 'admin00000', 'admin')
             ON CONFLICT (username) DO NOTHING
         `);
         console.log('Admin user ready');

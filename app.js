@@ -680,7 +680,7 @@ function showAddCategory() {
     var picList = DB.members.map(function(m) {
         return '<label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;font-size:.84rem;border-bottom:1px solid var(--main-border)">' +
             '<input type="checkbox" value="' + m.id + '" style="accent-color:var(--accent);width:15px;height:15px">' +
-            esc(m.name) + ' <span style="color:var(--main-text3);font-size:.76rem">(' + esc(getPositionName(m.positionId)) + ')</span></label>';
+            esc(m.name) + ' <span style="color:var(--main-text3);font-size:.76rem">(' + esc(getPositionName(m.positionId)) + ' · ' + esc(getDeptName(m.departmentId)) + ')</span></label>';
     }).join('');
 
     showModal('<h3>New Category</h3>' +
@@ -720,7 +720,7 @@ function showEditCategory(sid) {
         var checked = currentPics.indexOf(m.id) !== -1 ? 'checked' : '';
         return '<label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;font-size:.84rem;border-bottom:1px solid var(--main-border)">' +
             '<input type="checkbox" value="' + m.id + '" ' + checked + ' style="accent-color:var(--accent);width:15px;height:15px">' +
-            esc(m.name) + ' <span style="color:var(--main-text3);font-size:.76rem">(' + esc(getPositionName(m.positionId)) + ')</span></label>';
+            esc(m.name) + ' <span style="color:var(--main-text3);font-size:.76rem">(' + esc(getPositionName(m.positionId)) + ' · ' + esc(getDeptName(m.departmentId)) + ')</span></label>';
     }).join('');
 
     showModal('<h3>Edit Category</h3>' +
@@ -1213,77 +1213,169 @@ async function doDeleteWorklist(id) {
 
 var usrCurrentPage = 1;
 var usrPageSize = 10;
+var usrSearchQuery = '';
+var usrFilterRoles = [];
+var usrFilterPositions = [];
+var usrFilterDepts = [];
 
 function renderUsersList() {
-    const view = document.getElementById('admin-users');
+    var view = document.getElementById('admin-users');
 
-    view.innerHTML = `
-    <div class="app-header"><h2>Users</h2><div class="header-sub">Manage accounts, salaries, positions and departments</div></div>
-    <div class="app-body">
-      <div class="section-head"><h2>All Users</h2><button class="btn btn-green" onclick="showAddUser()">+ Add User</button></div>
-      <div id="users-table-area"></div>
-    </div>`;
+    var posOpts = DB.positions.map(function(p) { return { value: p.id, label: p.name }; });
+    var deptOpts = DB.departments.map(function(d) { return { value: d.id, label: d.name }; });
+
+    view.innerHTML =
+        '<div class="app-header"><h2>Users</h2><div class="header-sub">Manage accounts, salaries, positions and departments</div></div>' +
+        '<div class="app-body">' +
+
+            '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">' +
+                    '<span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span>' +
+                '</div>' +
+                '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+                    '<div style="display:flex;align-items:center;gap:6px">' +
+                        '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Search</label>' +
+                        '<input class="input" id="usr-search" placeholder="Name, username, position..." value="' + esc(usrSearchQuery) + '" oninput="usrSearchChanged()" style="max-width:220px;padding:8px 10px;font-size:.82rem">' +
+                    '</div>' +
+                    '<div style="display:flex;align-items:center;gap:6px">' +
+                        '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Position</label>' +
+                        '<div style="min-width:140px">' + msGenerate('usr-ms-pos', posOpts, 'All Positions') + '</div>' +
+                    '</div>' +
+                    '<div style="display:flex;align-items:center;gap:6px">' +
+                        '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Department</label>' +
+                        '<div style="min-width:140px">' + msGenerate('usr-ms-dept', deptOpts, 'All Departments') + '</div>' +
+                    '</div>' +
+                    '<div style="display:flex;gap:8px;margin-left:auto">' +
+                        '<button class="btn btn-ghost btn-sm" onclick="resetUsrFilter()">Reset</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+
+            '<div class="section-head"><h2>All Users</h2><button class="btn btn-green" onclick="showAddUser()">+ Add User</button></div>' +
+            '<div id="users-table-area"></div>' +
+        '</div>';
+
+    msOnChange('usr-ms-pos', function() { usrCurrentPage = 1; renderUsersTable(); });
+    msOnChange('usr-ms-dept', function() { usrCurrentPage = 1; renderUsersTable(); });
 
     usrCurrentPage = 1;
     renderUsersTable();
 }
 
+function usrSearchChanged() {
+    usrSearchQuery = document.getElementById('usr-search').value.trim().toLowerCase();
+    usrCurrentPage = 1;
+    renderUsersTable();
+}
+
+function usrFilterChanged() {
+    usrCurrentPage = 1;
+    renderUsersTable();
+}
+
+function resetUsrFilter() {
+    usrSearchQuery = '';
+    document.getElementById('usr-search').value = '';
+    msClear('usr-ms-pos');
+    msClear('usr-ms-dept');
+    usrCurrentPage = 1;
+    renderUsersTable();
+}
+
+function getFilteredUsers() {
+    var posIds = [];
+    var deptIds = [];
+    try { posIds = msGetValues('usr-ms-pos') || []; } catch(e) {}
+    try { deptIds = msGetValues('usr-ms-dept') || []; } catch(e) {}
+
+    return DB.users.filter(function(u) {
+        var member = u.memberId ? DB.members.find(function(m) { return m.id === u.memberId; }) : null;
+
+        if (posIds.length > 0) {
+            if (!member || !member.positionId) return false;
+            var posMatch = false;
+            for (var i = 0; i < posIds.length; i++) {
+                if (String(posIds[i]) === String(member.positionId)) { posMatch = true; break; }
+            }
+            if (!posMatch) return false;
+        }
+
+        if (deptIds.length > 0) {
+            if (!member || !member.departmentId) return false;
+            var deptMatch = false;
+            for (var i = 0; i < deptIds.length; i++) {
+                if (String(deptIds[i]) === String(member.departmentId)) { deptMatch = true; break; }
+            }
+            if (!deptMatch) return false;
+        }
+
+        if (usrSearchQuery) {
+            var posName = member && member.positionId ? getPositionName(member.positionId).toLowerCase() : '';
+            var deptName = member && member.departmentId ? getDeptName(member.departmentId).toLowerCase() : '';
+            var memberName = member ? member.name.toLowerCase() : '';
+            var haystack = u.username.toLowerCase() + ' ' + memberName + ' ' + u.role + ' ' + posName + ' ' + deptName;
+            if (haystack.indexOf(usrSearchQuery) === -1) return false;
+        }
+
+        return true;
+    });
+}
+
 function renderUsersTable() {
-    const totalPages = Math.ceil(DB.users.length / usrPageSize) || 1;
+    var filtered = getFilteredUsers();
+    var totalPages = Math.ceil(filtered.length / usrPageSize) || 1;
     if (usrCurrentPage > totalPages) usrCurrentPage = totalPages;
     if (usrCurrentPage < 1) usrCurrentPage = 1;
-    const startIdx = (usrCurrentPage - 1) * usrPageSize;
-    const endIdx = startIdx + usrPageSize;
-    const pageData = DB.users.slice(startIdx, endIdx);
+    var startIdx = (usrCurrentPage - 1) * usrPageSize;
+    var endIdx = startIdx + usrPageSize;
+    var pageData = filtered.slice(startIdx, endIdx);
 
-    let rows = '';
-    if (DB.users.length === 0) {
-        rows = '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No users</td></tr>';
+    var rows = '';
+    if (filtered.length === 0) {
+        rows = '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No users found</td></tr>';
     } else {
-        rows = pageData.map(u => {
-            const member = u.memberId ? DB.members.find(m => m.id === u.memberId) : null;
-            const mName = member ? member.name : '—';
-            const pos = member && member.positionId ? getPositionName(member.positionId) : '—';
-            const dept = member && member.departmentId ? getDeptName(member.departmentId) : '—';
-            const sal = member ? latestSalary(member) : null;
-            const projs = member ? getMemberProjects(member.id) : [];
-            const projHtml = projs.length ? projs.map(p => `<span class="badge badge-employee" style="margin:1px">${esc(p.name)}</span>`).join(' ') : '<span style="color:var(--main-text3)">None</span>';
-            const roleClass = u.role === 'admin' ? 'badge-admin' : 'badge-employee';
-            return `<tr>
-                <td style="font-family:var(--font-m)">${esc(u.username)}</td>
-                <td>${esc(mName)}</td>
-                <td><span class="badge ${roleClass}">${u.role}</span></td>
-                <td>${esc(pos)}</td>
-                <td>${esc(dept)}</td>
-                <td>${sal != null ? '<span class="salary-val">' + fmt(sal) + '</span>' : '<span class="salary-na">Not set</span>'}</td>
-                <td>${projHtml}</td>
-                <td><div class="actions-cell">
-                    <button class="btn-icon" onclick="showEditUser(${u.id})" title="Edit">&#9998;</button>
-                    ${u.username !== 'admin' ? `<button class="btn-icon danger" onclick="confirmDeleteUser(${u.id})" title="Delete">&#10005;</button>` : ''}
-                </div></td>
-            </tr>`;
+        rows = pageData.map(function(u) {
+            var member = u.memberId ? DB.members.find(function(m) { return m.id === u.memberId; }) : null;
+            var mName = member ? member.name : '—';
+            var pos = member && member.positionId ? getPositionName(member.positionId) : '—';
+            var dept = member && member.departmentId ? getDeptName(member.departmentId) : '—';
+            var sal = member ? latestSalary(member) : null;
+            var projs = member ? getMemberProjects(member.id) : [];
+            var projHtml = projs.length ? projs.map(function(p) { return '<span class="badge badge-employee" style="margin:1px">' + esc(p.name) + '</span>'; }).join(' ') : '<span style="color:var(--main-text3)">None</span>';
+            var roleClass = u.role === 'admin' ? 'badge-admin' : 'badge-employee';
+            return '<tr>' +
+                '<td style="font-family:var(--font-m)">' + esc(u.username) + '</td>' +
+                '<td>' + esc(mName) + '</td>' +
+                '<td><span class="badge ' + roleClass + '">' + u.role + '</span></td>' +
+                '<td>' + esc(pos) + '</td>' +
+                '<td>' + esc(dept) + '</td>' +
+                '<td>' + (sal != null ? '<span class="salary-val">' + fmt(sal) + '</span>' : '<span class="salary-na">Not set</span>') + '</td>' +
+                '<td>' + projHtml + '</td>' +
+                '<td><div class="actions-cell">' +
+                    '<button class="btn-icon" onclick="showEditUser(' + u.id + ')" title="Edit">&#9998;</button>' +
+                    (u.username !== 'admin' ? '<button class="btn-icon danger" onclick="confirmDeleteUser(' + u.id + ')" title="Delete">&#10005;</button>' : '') +
+                '</div></td></tr>';
         }).join('');
     }
 
-    // Pagination
-    let paginationHtml = '';
-    if (DB.users.length > 0) {
-        const showFrom = startIdx + 1;
-        const showTo = Math.min(endIdx, DB.users.length);
-        let pageButtons = '';
-        const maxVisible = 5;
-        let startPage = Math.max(1, usrCurrentPage - Math.floor(maxVisible / 2));
-        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+    var paginationHtml = '';
+    if (filtered.length > 0) {
+        var showFrom = startIdx + 1;
+        var showTo = Math.min(endIdx, filtered.length);
+        var pageButtons = '';
+        var maxVisible = 5;
+        var startPage = Math.max(1, usrCurrentPage - Math.floor(maxVisible / 2));
+        var endPage = Math.min(totalPages, startPage + maxVisible - 1);
         if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
         pageButtons += '<button onclick="goUsrPage(1)" ' + (usrCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
         pageButtons += '<button onclick="goUsrPage(' + (usrCurrentPage - 1) + ')" ' + (usrCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
-        for (let p = startPage; p <= endPage; p++) {
+        for (var p = startPage; p <= endPage; p++) {
             pageButtons += '<button onclick="goUsrPage(' + p + ')" class="' + (p === usrCurrentPage ? 'active' : '') + '">' + p + '</button>';
         }
         pageButtons += '<button onclick="goUsrPage(' + (usrCurrentPage + 1) + ')" ' + (usrCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
         pageButtons += '<button onclick="goUsrPage(' + totalPages + ')" ' + (usrCurrentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
         paginationHtml = '<div class="pagination">' +
-            '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + DB.users.length + ' users</div>' +
+            '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + filtered.length + ' users</div>' +
             '<div style="display:flex;align-items:center;gap:20px">' +
                 '<div class="pagination-size"><label>Show</label>' +
                     '<select onchange="changeUsrPageSize(this.value)">' +
@@ -1305,7 +1397,8 @@ function renderUsersTable() {
 }
 
 function goUsrPage(page) {
-    const totalPages = Math.ceil(DB.users.length / usrPageSize) || 1;
+    var filtered = getFilteredUsers();
+    var totalPages = Math.ceil(filtered.length / usrPageSize) || 1;
     if (page < 1) page = 1;
     if (page > totalPages) page = totalPages;
     usrCurrentPage = page;
@@ -1319,61 +1412,59 @@ function changeUsrPageSize(size) {
 }
 
 function showAddUser() {
-    const posOpts = DB.positions.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
-    const deptOpts = DB.departments.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
-    showModal(`<h3>Add User</h3>
-    <div class="field"><label>Role</label><select class="input" id="adduser-role" onchange="toggleAddUserFields()"><option value="employee">Employee</option><option value="admin">Admin</option></select></div>
-    <div id="emp-fields">
-      <div class="field"><label>Full Name</label><input class="input" id="adduser-name" placeholder="e.g. John Smith"></div>
-      <div class="field"><label>Position</label><select class="input" id="adduser-pos"><option value="">None</option>${posOpts}</select></div>
-      <div class="field"><label>Department</label><select class="input" id="adduser-dept"><option value="">None</option>${deptOpts}</select></div>
-      <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="adduser-salary" type="number" placeholder="e.g. 15000.00"></div>
-    </div>
-    <div class="field"><label>Username</label><input class="input" id="adduser-user" placeholder="Login username"></div>
-    <div class="field"><label>Password</label><input class="input" id="adduser-pass" type="password" placeholder="Min. 6 characters"></div>
-    <p class="auth-error" id="adduser-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddUser()">Create</button></div>`);
-    setTimeout(() => document.getElementById('adduser-name')?.focus(), 100);
+    var posOpts = DB.positions.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
+    var deptOpts = DB.departments.map(function(d) { return '<option value="' + d.id + '">' + esc(d.name) + '</option>'; }).join('');
+    showModal('<h3>Add User</h3>' +
+        '<div class="field"><label>Role</label><select class="input" id="adduser-role" onchange="toggleAddUserFields()"><option value="employee">Employee</option><option value="admin">Admin</option></select></div>' +
+        '<div id="emp-fields">' +
+            '<div class="field"><label>Full Name</label><input class="input" id="adduser-name" placeholder="e.g. John Smith"></div>' +
+            '<div class="field"><label>Position</label><select class="input" id="adduser-pos"><option value="">None</option>' + posOpts + '</select></div>' +
+            '<div class="field"><label>Department</label><select class="input" id="adduser-dept"><option value="">None</option>' + deptOpts + '</select></div>' +
+            '<div class="field"><label>Monthly Salary</label><input class="input input-mono" id="adduser-salary" type="number" placeholder="e.g. 15000.00"></div>' +
+        '</div>' +
+        '<div class="field"><label>Username</label><input class="input" id="adduser-user" placeholder="Login username"></div>' +
+        '<div class="field"><label>Password</label><input class="input" id="adduser-pass" type="password" placeholder="Min. 6 characters"></div>' +
+        '<p class="auth-error" id="adduser-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddUser()">Create</button></div>');
+    setTimeout(function() { var el = document.getElementById('adduser-name'); if (el) el.focus(); }, 100);
 }
 
 function toggleAddUserFields() {
-    const role = document.getElementById('adduser-role').value;
+    var role = document.getElementById('adduser-role').value;
     document.getElementById('emp-fields').style.display = role === 'employee' ? '' : 'none';
 }
 
 async function doAddUser() {
-    const role = document.getElementById('adduser-role').value;
-    const username = document.getElementById('adduser-user').value.trim();
-    const pass = document.getElementById('adduser-pass').value;
-    const errEl = document.getElementById('adduser-error'); errEl.textContent = '';
+    var role = document.getElementById('adduser-role').value;
+    var username = document.getElementById('adduser-user').value.trim();
+    var pass = document.getElementById('adduser-pass').value;
+    var errEl = document.getElementById('adduser-error'); errEl.textContent = '';
     if (!username) { errEl.textContent = 'Enter a username'; return; }
     if (username.length < 2) { errEl.textContent = 'Min 2 characters'; return; }
     if (pass.length < 6) { errEl.textContent = 'Min 6 characters'; return; }
 
-    let memberId = null;
+    var memberId = null;
     if (role === 'employee') {
-        const name = document.getElementById('adduser-name').value.trim();
+        var name = document.getElementById('adduser-name').value.trim();
         if (!name) { errEl.textContent = 'Enter a name'; return; }
-        const posId = document.getElementById('adduser-pos').value;
-        const deptId = document.getElementById('adduser-dept').value;
-        const sal = parseFloat(document.getElementById('adduser-salary').value);
-        const now = new Date().toISOString().slice(0, 7);
+        var posId = document.getElementById('adduser-pos').value;
+        var deptId = document.getElementById('adduser-dept').value;
+        var sal = parseFloat(document.getElementById('adduser-salary').value);
+        var now = new Date().toISOString().slice(0, 7);
 
-        // Create member
-        const memberResult = await api('/members', {
+        var memberResult = await api('/members', {
             method: 'POST',
-            body: { name, positionId: posId ? parseInt(posId) : null, departmentId: deptId ? parseInt(deptId) : null }
+            body: { name: name, positionId: posId ? parseInt(posId) : null, departmentId: deptId ? parseInt(deptId) : null }
         });
         memberId = memberResult.id;
 
-        // Set salary if provided
         if (!isNaN(sal) && sal > 0) {
-            await api('/salaries', { method: 'PUT', body: { memberId, month: now, amount: sal } });
+            await api('/salaries', { method: 'PUT', body: { memberId: memberId, month: now, amount: sal } });
         }
     }
 
     try {
-        await api('/users', { method: 'POST', body: { username, password: pass, role, memberId } });
+        await api('/users', { method: 'POST', body: { username: username, password: pass, role: role, memberId: memberId } });
     } catch (ex) {
         errEl.textContent = ex.message; return;
     }
@@ -1382,33 +1473,33 @@ async function doAddUser() {
 }
 
 function showEditUser(userId) {
-    const user = DB.users.find(u => u.id === userId); if (!user) return;
-    const member = user.memberId ? DB.members.find(m => m.id === user.memberId) : null;
-    const posOpts = DB.positions.map(p => { const sel = member && member.positionId === p.id ? 'selected' : ''; return `<option value="${p.id}" ${sel}>${esc(p.name)}</option>`; }).join('');
-    const deptOpts = DB.departments.map(d => { const sel = member && member.departmentId === d.id ? 'selected' : ''; return `<option value="${d.id}" ${sel}>${esc(d.name)}</option>`; }).join('');
+    var user = DB.users.find(function(u) { return u.id === userId; }); if (!user) return;
+    var member = user.memberId ? DB.members.find(function(m) { return m.id === user.memberId; }) : null;
+    var posOpts = DB.positions.map(function(p) { var sel = member && member.positionId === p.id ? 'selected' : ''; return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>'; }).join('');
+    var deptOpts = DB.departments.map(function(d) { var sel = member && member.departmentId === d.id ? 'selected' : ''; return '<option value="' + d.id + '" ' + sel + '>' + esc(d.name) + '</option>'; }).join('');
 
-    let html = `<h3>Edit — ${esc(user.username)}</h3>`;
+    var html = '<h3>Edit — ' + esc(user.username) + '</h3>';
     if (user.role === 'employee' && member) {
-        const curSal = latestSalary(member);
-        html += `<div class="field"><label>Full Name</label><input class="input" id="edituser-name" value="${esc(member.name)}"></div>
-      <div class="field"><label>Position</label><select class="input" id="edituser-pos"><option value="">None</option>${posOpts}</select></div>
-      <div class="field"><label>Department</label><select class="input" id="edituser-dept"><option value="">None</option>${deptOpts}</select></div>
-      <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="edituser-salary" type="number" value="${curSal || ''}" placeholder="e.g. 15000.00"></div>`;
+        var curSal = latestSalary(member);
+        html += '<div class="field"><label>Full Name</label><input class="input" id="edituser-name" value="' + esc(member.name) + '"></div>' +
+            '<div class="field"><label>Position</label><select class="input" id="edituser-pos"><option value="">None</option>' + posOpts + '</select></div>' +
+            '<div class="field"><label>Department</label><select class="input" id="edituser-dept"><option value="">None</option>' + deptOpts + '</select></div>' +
+            '<div class="field"><label>Monthly Salary</label><input class="input input-mono" id="edituser-salary" type="number" value="' + (curSal || '') + '" placeholder="e.g. 15000.00"></div>';
     }
-    html += `<div class="field"><label>Username</label><input class="input" id="edituser-user" value="${esc(user.username)}"></div>
-    <div class="field"><label>New Password (blank = keep)</label><input class="input" id="edituser-pass" type="password" placeholder="Leave blank"></div>
-    <div class="field"><label>Role</label><select class="input" id="edituser-role"><option value="employee" ${user.role === 'employee' ? 'selected' : ''}>Employee</option><option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option></select></div>
-    <p class="auth-error" id="edituser-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditUser(${user.id})">Save</button></div>`;
+    html += '<div class="field"><label>Username</label><input class="input" id="edituser-user" value="' + esc(user.username) + '"></div>' +
+        '<div class="field"><label>New Password (blank = keep)</label><input class="input" id="edituser-pass" type="password" placeholder="Leave blank"></div>' +
+        '<div class="field"><label>Role</label><select class="input" id="edituser-role"><option value="employee" ' + (user.role === 'employee' ? 'selected' : '') + '>Employee</option><option value="admin" ' + (user.role === 'admin' ? 'selected' : '') + '>Admin</option></select></div>' +
+        '<p class="auth-error" id="edituser-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditUser(' + user.id + ')">Save</button></div>';
     showModal(html);
 }
 
 async function doEditUser(userId) {
-    const user = DB.users.find(u => u.id === userId); if (!user) return;
-    const errEl = document.getElementById('edituser-error');
-    const newUsername = document.getElementById('edituser-user').value.trim();
-    const newPass = document.getElementById('edituser-pass').value;
-    const newRole = document.getElementById('edituser-role').value;
+    var user = DB.users.find(function(u) { return u.id === userId; }); if (!user) return;
+    var errEl = document.getElementById('edituser-error');
+    var newUsername = document.getElementById('edituser-user').value.trim();
+    var newPass = document.getElementById('edituser-pass').value;
+    var newRole = document.getElementById('edituser-role').value;
     if (!newUsername) { errEl.textContent = 'Username cannot be empty'; return; }
     if (newPass && newPass.length < 6) { errEl.textContent = 'Min 6 characters'; return; }
 
@@ -1418,16 +1509,16 @@ async function doEditUser(userId) {
     });
 
     if (user.memberId) {
-        const nameEl = document.getElementById('edituser-name');
-        const posEl = document.getElementById('edituser-pos');
-        const deptEl = document.getElementById('edituser-dept');
-        const salEl = document.getElementById('edituser-salary');
-        const name = nameEl ? nameEl.value.trim() : null;
-        const posId = posEl ? (posEl.value ? parseInt(posEl.value) : null) : undefined;
-        const deptId = deptEl ? (deptEl.value ? parseInt(deptEl.value) : null) : undefined;
+        var nameEl = document.getElementById('edituser-name');
+        var posEl = document.getElementById('edituser-pos');
+        var deptEl = document.getElementById('edituser-dept');
+        var salEl = document.getElementById('edituser-salary');
+        var name = nameEl ? nameEl.value.trim() : null;
+        var posId = posEl ? (posEl.value ? parseInt(posEl.value) : null) : undefined;
+        var deptId = deptEl ? (deptEl.value ? parseInt(deptEl.value) : null) : undefined;
 
         if (name || posId !== undefined || deptId !== undefined) {
-            const member = DB.members.find(m => m.id === user.memberId);
+            var member = DB.members.find(function(m) { return m.id === user.memberId; });
             if (member) {
                 await api('/members/' + user.memberId, {
                     method: 'PUT',
@@ -1441,8 +1532,8 @@ async function doEditUser(userId) {
         }
 
         if (salEl) {
-            const val = parseFloat(salEl.value);
-            const now = new Date().toISOString().slice(0, 7);
+            var val = parseFloat(salEl.value);
+            var now = new Date().toISOString().slice(0, 7);
             await api('/salaries', { method: 'PUT', body: { memberId: user.memberId, month: now, amount: isNaN(val) ? 0 : val } });
         }
     }
@@ -1451,10 +1542,10 @@ async function doEditUser(userId) {
 }
 
 function confirmDeleteUser(userId) {
-    const user = DB.users.find(u => u.id === userId); if (!user || user.username === 'admin') return;
-    showModal(`<h3>Delete User</h3>
-    <p style="color:var(--main-text2);line-height:1.6">Delete <strong style="color:var(--main-text)">${esc(user.username)}</strong>?<br>${user.memberId ? 'Member profile, salary and attendance will be deleted.' : ''}</p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteUser(${userId})">Delete</button></div>`);
+    var user = DB.users.find(function(u) { return u.id === userId; }); if (!user || user.username === 'admin') return;
+    showModal('<h3>Delete User</h3>' +
+        '<p style="color:var(--main-text2);line-height:1.6">Delete <strong style="color:var(--main-text)">' + esc(user.username) + '</strong>?<br>' + (user.memberId ? 'Member profile, salary and attendance will be deleted.' : '') + '</p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteUser(' + userId + ')">Delete</button></div>');
 }
 
 async function doDeleteUser(userId) {
