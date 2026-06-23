@@ -1751,8 +1751,11 @@ var empItemSummaryPage = 1;
 var empItemSummaryPageSize = 10;
 var empItemSummaryData = [];
 var empScopePages = {};
+var empScopeSearch = {};
 
 function renderEmployeeProjects() {
+    empScopeSearch = {};
+    
     if (!currentUser || !currentUser.memberId) return;
     var member = DB.members.find(function(m) { return m.id === currentUser.memberId; });
     if (!member) return;
@@ -1822,7 +1825,10 @@ function renderEmployeeProjects() {
                     '</div>' +
                 '</div>' +
                 '<div class="collapse-content" id="scope-' + scopeId + '-content" style="display:none;padding-top:8px">' +
-                    (isPic ? '<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn btn-green btn-sm" onclick="empShowAddItem(' + scopeId + ')">+ Add Item</button></div>' : '') +
+                    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
+                        '<input class="input" id="scope-search-' + scopeId + '" placeholder="Search ID/Name..." value="' + esc(empScopeSearch[scopeId] || '') + '" oninput="scopeSearchChanged(' + scopeId + ')" style="max-width:260px;padding:7px 10px;font-size:.82rem">' +
+                        (isPic ? '<button class="btn btn-green btn-sm" style="margin-left:auto" onclick="empShowAddItem(' + scopeId + ')">+ Add Item</button>' : '') +
+                    '</div>' +
                     '<div id="scope-items-table-' + scopeId + '"></div>' +
                 '</div>' +
             '</div>';
@@ -1858,6 +1864,13 @@ function renderEmployeeProjects() {
     Object.keys(empScopePages).forEach(function(sid) {
         renderScopeItemsTable(parseInt(sid));
     });
+}
+// search
+function scopeSearchChanged(scopeId) {
+    empScopeSearch[scopeId] = document.getElementById('scope-search-' + scopeId).value.trim().toLowerCase();
+    var sp = empScopePages[scopeId];
+    if (sp) sp.page = 1;
+    renderScopeItemsTable(scopeId);
 }
 
 /* ---------- Employee PIC Item CRUD ---------- */
@@ -2045,8 +2058,14 @@ function changeEmpItemSummaryPageSize(size) {
 function renderScopeItemsTable(scopeId) {
     var sp = empScopePages[scopeId];
     if (!sp) return;
-    var data = sp.data;
     var isPic = sp.isPic;
+    var query = empScopeSearch[scopeId] || '';
+
+    // Filter
+    var data = query
+        ? sp.data.filter(function(r) { return r.name.toLowerCase().indexOf(query) !== -1; })
+        : sp.data;
+
     var totalPages = Math.ceil(data.length / sp.pageSize) || 1;
     if (sp.page > totalPages) sp.page = totalPages;
     if (sp.page < 1) sp.page = 1;
@@ -2057,7 +2076,9 @@ function renderScopeItemsTable(scopeId) {
     var rows = '';
     if (data.length === 0) {
         var colCount = isPic ? 4 : 3;
-        rows = '<tr><td colspan="' + colCount + '" style="text-align:center;color:var(--main-text3);padding:30px">No items. ' + (isPic ? 'Click "+ Add Item" to create one.' : '') + '</td></tr>';
+        rows = '<tr><td colspan="' + colCount + '" style="text-align:center;color:var(--main-text3);padding:30px">' +
+            (query ? 'No items matching "' + esc(query) + '"' : 'No items. ' + (isPic ? 'Click "+ Add Item" to create one.' : '')) +
+            '</td></tr>';
     } else {
         rows = pageData.map(function(r) {
             var actionCell = isPic ? '<td><div class="actions-cell">' +
