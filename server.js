@@ -621,27 +621,59 @@ app.delete('/api/details/:id', async (req, res) => {
 // ========================================
 // SCOPES
 // ========================================
-
 app.get('/api/scopes', async (req, res) => {
     try {
-        const { rows } = await pool.query('SELECT id, name, created_at FROM scopes ORDER BY name');
-        res.json(rows);
+        const result = await pool.query('SELECT * FROM scopes ORDER BY id');
+        const scopes = await Promise.all(result.rows.map(async (s) => {
+            const pics = await pool.query(
+                'SELECT member_id FROM scope_pics WHERE scope_id = $1', [s.id]
+            );
+            return {
+                id: s.id,
+                name: s.name,
+                createdAt: s.created_at,
+                picMemberIds: pics.rows.map(r => r.member_id)
+            };
+        }));
+        res.json(scopes);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/scopes — 带 picMemberIds
 app.post('/api/scopes', async (req, res) => {
-    const { name } = req.body;
+    const { name, picMemberIds } = req.body;
     try {
-        const { rows } = await pool.query('INSERT INTO scopes(name) VALUES($1) RETURNING *', [name]);
-        res.json(rows[0]);
+        const result = await pool.query(
+            'INSERT INTO scopes (name) VALUES ($1) RETURNING id', [name]
+        );
+        const scopeId = result.rows[0].id;
+        if (picMemberIds && picMemberIds.length > 0) {
+            for (const mid of picMemberIds) {
+                await pool.query(
+                    'INSERT INTO scope_pics (scope_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                    [scopeId, mid]
+                );
+            }
+        }
+        res.json({ id: scopeId });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// PUT /api/scopes/:id — 带 picMemberIds
 app.put('/api/scopes/:id', async (req, res) => {
-    const { name } = req.body;
+    const { name, picMemberIds } = req.body;
     try {
-        await pool.query('UPDATE scopes SET name=$1 WHERE id=$2', [name, req.params.id]);
-        res.json({ ok: true });
+        await pool.query('UPDATE scopes SET name = $1 WHERE id = $2', [name, req.params.id]);
+        await pool.query('DELETE FROM scope_pics WHERE scope_id = $1', [req.params.id]);
+        if (picMemberIds && picMemberIds.length > 0) {
+            for (const mid of picMemberIds) {
+                await pool.query(
+                    'INSERT INTO scope_pics (scope_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                    [req.params.id, mid]
+                );
+            }
+        }
+        res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -765,6 +797,13 @@ async function initDB() {
                 project_id INT REFERENCES projects(id) ON DELETE SET NULL,
                 description TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS scope_pics (
+                id SERIAL PRIMARY KEY,
+                scope_id INT REFERENCES scopes(id) ON DELETE CASCADE,
+                member_id INT REFERENCES members(id) ON DELETE CASCADE,
+                UNIQUE(scope_id, member_id)
             );
         `);
         console.log('Tables created');

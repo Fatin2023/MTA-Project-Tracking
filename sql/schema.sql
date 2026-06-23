@@ -103,6 +103,13 @@ CREATE TABLE worklist (
     title VARCHAR(255) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS scope_pics (
+    id SERIAL PRIMARY KEY,
+    scope_id INT REFERENCES scopes(id) ON DELETE CASCADE,
+    member_id INT REFERENCES members(id) ON DELETE CASCADE,
+    UNIQUE(scope_id, member_id)
+);
+
 ALTER TABLE attendance ADD COLUMN work_plan_id INTEGER REFERENCES worklist(id) ON DELETE SET NULL;
 ALTER TABLE attendance ADD COLUMN work_done_id INTEGER REFERENCES worklist(id) ON DELETE SET NULL;
 

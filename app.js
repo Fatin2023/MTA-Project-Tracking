@@ -432,7 +432,6 @@ document.addEventListener('touchmove', function(e) {
 
 
 
-
 /* ==========================================================
    SECTION 6: Work Category/MAIN SCOPE (tabs = category, table = items)
    ========================================================== */
@@ -678,39 +677,76 @@ function getFilteredItems() {
 // ---- Category CRUD ----
 
 function showAddCategory() {
-    showModal(`<h3>New Category</h3>
-    <div class="field"><label>Category Name</label><input class="input" id="inp-cat-name" placeholder="e.g. Electrical, Mechanical"></div>
-    <p class="auth-error" id="cat-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddCategory()">Create</button></div>`);
-    setTimeout(() => document.getElementById('inp-cat-name')?.focus(), 100);
+    var picList = DB.members.map(function(m) {
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;font-size:.84rem;border-bottom:1px solid var(--main-border)">' +
+            '<input type="checkbox" value="' + m.id + '" style="accent-color:var(--accent);width:15px;height:15px">' +
+            esc(m.name) + ' <span style="color:var(--main-text3);font-size:.76rem">(' + esc(getPositionName(m.positionId)) + ')</span></label>';
+    }).join('');
+
+    showModal('<h3>New Category</h3>' +
+        '<div class="field"><label>Category Name</label><input class="input" id="inp-cat-name" placeholder="e.g. Electrical, Mechanical"></div>' +
+        '<div style="margin-top:8px"><label style="font-size:.85rem;display:block;margin-bottom:6px">PIC (Person In Charge)</label>' +
+            '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+                '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#pic-list-add input\').forEach(function(c){c.checked=true})">All</button>' +
+                '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#pic-list-add input\').forEach(function(c){c.checked=false})">Clear</button>' +
+            '</div>' +
+            '<div id="pic-list-add" style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">' + picList + '</div>' +
+        '</div>' +
+        '<p class="auth-error" id="cat-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddCategory()">Create</button></div>');
+    setTimeout(function() { document.getElementById('inp-cat-name').focus(); }, 100);
 }
 
 async function doAddCategory() {
-    const errEl = document.getElementById('cat-error');
-    const name = document.getElementById('inp-cat-name').value.trim();
+    var errEl = document.getElementById('cat-error');
+    var name = document.getElementById('inp-cat-name').value.trim();
     if (!name) { errEl.textContent = 'Name is required'; return; }
+    var picMemberIds = [];
+    document.querySelectorAll('#pic-list-add input:checked').forEach(function(c) {
+        picMemberIds.push(parseInt(c.value));
+    });
     try {
-        await api('/scopes', { method: 'POST', body: { name } });
+        await api('/scopes', { method: 'POST', body: { name: name, picMemberIds: picMemberIds } });
         hideModal(); await loadDB(); renderMainScope();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
 function showEditCategory(sid) {
-    const scope = DB.scopes.find(s => s.id === sid);
+    var scope = DB.scopes.find(function(s) { return s.id === sid; });
     if (!scope) return;
-    showModal(`<h3>Edit Category</h3>
-    <div class="field"><label>Category Name</label><input class="input" id="inp-cat-edit" value="${esc(scope.name)}"></div>
-    <p class="auth-error" id="cat-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditCategory(${sid})">Save</button></div>`);
-    setTimeout(() => { const el = document.getElementById('inp-cat-edit'); el.focus(); el.select(); }, 100);
+    var currentPics = scope.picMemberIds || [];
+
+    var picList = DB.members.map(function(m) {
+        var checked = currentPics.indexOf(m.id) !== -1 ? 'checked' : '';
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;font-size:.84rem;border-bottom:1px solid var(--main-border)">' +
+            '<input type="checkbox" value="' + m.id + '" ' + checked + ' style="accent-color:var(--accent);width:15px;height:15px">' +
+            esc(m.name) + ' <span style="color:var(--main-text3);font-size:.76rem">(' + esc(getPositionName(m.positionId)) + ')</span></label>';
+    }).join('');
+
+    showModal('<h3>Edit Category</h3>' +
+        '<div class="field"><label>Category Name</label><input class="input" id="inp-cat-edit" value="' + esc(scope.name) + '"></div>' +
+        '<div style="margin-top:8px"><label style="font-size:.85rem;display:block;margin-bottom:6px">PIC (Person In Charge)</label>' +
+            '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+                '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#pic-list-edit input\').forEach(function(c){c.checked=true})">All</button>' +
+                '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#pic-list-edit input\').forEach(function(c){c.checked=false})">Clear</button>' +
+            '</div>' +
+            '<div id="pic-list-edit" style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">' + picList + '</div>' +
+        '</div>' +
+        '<p class="auth-error" id="cat-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditCategory(' + sid + ')">Save</button></div>');
+    setTimeout(function() { var el = document.getElementById('inp-cat-edit'); el.focus(); el.select(); }, 100);
 }
 
 async function doEditCategory(sid) {
-    const errEl = document.getElementById('cat-error');
-    const name = document.getElementById('inp-cat-edit').value.trim();
+    var errEl = document.getElementById('cat-error');
+    var name = document.getElementById('inp-cat-edit').value.trim();
     if (!name) { errEl.textContent = 'Name is required'; return; }
+    var picMemberIds = [];
+    document.querySelectorAll('#pic-list-edit input:checked').forEach(function(c) {
+        picMemberIds.push(parseInt(c.value));
+    });
     try {
-        await api('/scopes/' + sid, { method: 'PUT', body: { name } });
+        await api('/scopes/' + sid, { method: 'PUT', body: { name: name, picMemberIds: picMemberIds } });
         hideModal(); await loadDB(); renderMainScope();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
@@ -982,6 +1018,191 @@ function confirmRemoveFromProject(pid, memberId) {
 async function doRemoveFromProject(pid, memberId) {
     await api('/assignments', { method: 'DELETE', body: { projectId: pid, memberId } });
     hideModal(); await loadDB(); renderProjectDetail();
+}
+
+/* ==========================================================
+   SECTION 19: Work List
+   ========================================================== */
+var wlCurrentPage = 1;
+var wlPageSize = 10;
+
+function renderWorkList() {
+    const view = document.getElementById('admin-worklist');
+    var scopeFilterOpts = '<option value="">All Categories</option>' +
+        DB.scopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
+
+    view.innerHTML =
+        '<div class="app-header">' +
+            '<h2>Work List</h2>' +
+            '<div class="header-sub">Manage work items for attendance tracking</div>' +
+        '</div>' +
+        '<div class="app-body">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
+                '<div style="display:flex;align-items:center;gap:10px">' +
+                    '<label style="font-size:.82rem;color:var(--main-text3)">Filter by Category:</label>' +
+                    '<select class="input" id="worklist-filter" onchange="wlFilterChanged()" style="width:180px;padding:8px 10px;font-size:.82rem">' + scopeFilterOpts + '</select>' +
+                '</div>' +
+                '<button class="btn btn-green" onclick="showAddWorklist()">+ Add Work List</button>' +
+            '</div>' +
+            '<div id="worklist-table-area"></div>' +
+        '</div>';
+    wlCurrentPage = 1;
+    renderWorklistTable();
+}
+
+function wlFilterChanged() {
+    wlCurrentPage = 1;
+    renderWorklistTable();
+}
+
+function renderWorklistTable() {
+    var filterScopeId = document.getElementById('worklist-filter') ? document.getElementById('worklist-filter').value : '';
+    var filtered = filterScopeId
+        ? DB.worklist.filter(w => w.scopeId === parseInt(filterScopeId))
+        : DB.worklist;
+
+    // Pagination
+    var totalPages = Math.ceil(filtered.length / wlPageSize) || 1;
+    if (wlCurrentPage > totalPages) wlCurrentPage = totalPages;
+    if (wlCurrentPage < 1) wlCurrentPage = 1;
+    var startIdx = (wlCurrentPage - 1) * wlPageSize;
+    var endIdx = startIdx + wlPageSize;
+    var pageData = filtered.slice(startIdx, endIdx);
+
+    var rows = '';
+    if (filtered.length === 0) {
+        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No work items found</td></tr>';
+    } else {
+        rows = pageData.map(function(w, idx) {
+            var scope = w.scopeId ? DB.scopes.find(s => s.id === w.scopeId) : null;
+            return '<tr>' +
+                '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
+                '<td>' + (scope ? '<span class="badge badge-scope">' + esc(scope.name) + '</span>' : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td style="font-weight:500">' + esc(w.title) + '</td>' +
+                '<td><div class="actions-cell">' +
+                    '<button class="btn-icon" onclick="showEditWorklist(' + w.id + ')" title="Edit">&#9998;</button>' +
+                    '<button class="btn-icon danger" onclick="confirmDeleteWorklist(' + w.id + ')" title="Delete">&#10005;</button>' +
+                '</div></td>' +
+            '</tr>';
+        }).join('');
+    }
+
+    // Pagination HTML
+    var paginationHtml = '';
+    if (filtered.length > 0) {
+        var showFrom = startIdx + 1;
+        var showTo = Math.min(endIdx, filtered.length);
+        var pageButtons = '';
+        var maxVisible = 5;
+        var startPage = Math.max(1, wlCurrentPage - Math.floor(maxVisible / 2));
+        var endPage = Math.min(totalPages, startPage + maxVisible - 1);
+        if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
+        pageButtons += '<button onclick="goWlPage(1)" ' + (wlCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
+        pageButtons += '<button onclick="goWlPage(' + (wlCurrentPage - 1) + ')" ' + (wlCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
+        for (var p = startPage; p <= endPage; p++) {
+            pageButtons += '<button onclick="goWlPage(' + p + ')" class="' + (p === wlCurrentPage ? 'active' : '') + '">' + p + '</button>';
+        }
+        pageButtons += '<button onclick="goWlPage(' + (wlCurrentPage + 1) + ')" ' + (wlCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
+        pageButtons += '<button onclick="goWlPage(' + totalPages + ')" ' + (wlCurrentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
+        paginationHtml = '<div class="pagination">' +
+            '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + filtered.length + ' items</div>' +
+            '<div style="display:flex;align-items:center;gap:20px">' +
+                '<div class="pagination-size"><label>Show</label>' +
+                    '<select onchange="changeWlPageSize(this.value)">' +
+                        '<option value="5"' + (wlPageSize === 5 ? ' selected' : '') + '>5</option>' +
+                        '<option value="10"' + (wlPageSize === 10 ? ' selected' : '') + '>10</option>' +
+                        '<option value="25"' + (wlPageSize === 25 ? ' selected' : '') + '>25</option>' +
+                        '<option value="50"' + (wlPageSize === 50 ? ' selected' : '') + '>50</option>' +
+                        '<option value="100"' + (wlPageSize === 100 ? ' selected' : '') + '>100</option>' +
+                    '</select></div>' +
+                '<div class="pagination-controls">' + pageButtons + '</div>' +
+            '</div></div>';
+    }
+
+    document.getElementById('worklist-table-area').innerHTML =
+        '<div class="table-wrap"><table><thead><tr>' +
+            '<th style="width:50px">No</th>' +
+            '<th style="width:160px">Category</th>' +
+            '<th>Title</th>' +
+            '<th style="width:90px">Actions</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+        paginationHtml;
+}
+
+function goWlPage(page) {
+    var filterScopeId = document.getElementById('worklist-filter') ? document.getElementById('worklist-filter').value : '';
+    var filtered = filterScopeId
+        ? DB.worklist.filter(w => w.scopeId === parseInt(filterScopeId))
+        : DB.worklist;
+    var totalPages = Math.ceil(filtered.length / wlPageSize) || 1;
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    wlCurrentPage = page;
+    renderWorklistTable();
+}
+
+function changeWlPageSize(size) {
+    wlPageSize = parseInt(size);
+    wlCurrentPage = 1;
+    renderWorklistTable();
+}
+
+function showAddWorklist() {
+    var scopeOpts = '<option value="">-- None --</option>' +
+        DB.scopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
+    showModal('<h3>Add Work List</h3>' +
+        '<div class="field"><label>Category</label><select class="input" id="wl-scope">' + scopeOpts + '</select></div>' +
+        '<div class="field"><label>Work List</label><input class="input" id="wl-title" placeholder="e.g. Wiring Installation"></div>' +
+        '<p class="auth-error" id="wl-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-green" onclick="doAddWorklist()">Create</button></div>');
+    setTimeout(function() { document.getElementById('wl-title').focus(); }, 100);
+}
+
+async function doAddWorklist() {
+    var title = document.getElementById('wl-title').value.trim();
+    var scopeId = document.getElementById('wl-scope').value;
+    var errEl = document.getElementById('wl-error'); errEl.textContent = '';
+    if (!title) { errEl.textContent = 'Title is required'; return; }
+    try {
+        await api('/worklist', { method: 'POST', body: { title: title, scopeId: scopeId ? parseInt(scopeId) : null } });
+    } catch (ex) { errEl.textContent = ex.message; return; }
+    hideModal(); await loadDB(); renderWorkList();
+}
+
+function showEditWorklist(id) {
+    var w = DB.worklist.find(x => x.id === id); if (!w) return;
+    var scopeOpts = '<option value="">-- None --</option>' +
+        DB.scopes.map(s => {
+            return '<option value="' + s.id + '"' + (w.scopeId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>';
+        }).join('');
+    showModal('<h3>Edit — ' + esc(w.title) + '</h3>' +
+        '<div class="field"><label>Category</label><select class="input" id="wl-scope">' + scopeOpts + '</select></div>' +
+        '<div class="field"><label>Work List</label><input class="input" id="wl-title" value="' + esc(w.title) + '"></div>' +
+        '<p class="auth-error" id="wl-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-green" onclick="doEditWorklist(' + id + ')">Save</button></div>');
+}
+
+async function doEditWorklist(id) {
+    var title = document.getElementById('wl-title').value.trim();
+    var scopeId = document.getElementById('wl-scope').value;
+    var errEl = document.getElementById('wl-error'); errEl.textContent = '';
+    if (!title) { errEl.textContent = 'Title is required'; return; }
+    try {
+        await api('/worklist/' + id, { method: 'PUT', body: { title: title, scopeId: scopeId ? parseInt(scopeId) : null } });
+    } catch (ex) { errEl.textContent = ex.message; return; }
+    hideModal(); await loadDB(); renderWorkList();
+}
+
+function confirmDeleteWorklist(id) {
+    var w = DB.worklist.find(x => x.id === id); if (!w) return;
+    showModal('<h3>Delete Work Item</h3>' +
+        '<p style="color:var(--main-text2);line-height:1.6">Delete <strong style="color:var(--main-text)">' + esc(w.title) + '</strong>?<br>Attendance records using this will be set to empty.</p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteWorklist(' + id + ')">Delete</button></div>');
+}
+
+async function doDeleteWorklist(id) {
+    await api('/worklist/' + id, { method: 'DELETE' });
+    hideModal(); await loadDB(); renderWorkList();
 }
 
 
@@ -1535,28 +1756,42 @@ function renderEmployeeProjects() {
     if (!currentUser || !currentUser.memberId) return;
     var member = DB.members.find(function(m) { return m.id === currentUser.memberId; });
     if (!member) return;
-    var projs = getMemberProjects(member.id);
+    var assignedProjs = getMemberProjects(member.id);
+    var assignedIds = new Set(assignedProjs.map(function(p) { return p.id; }));
 
-    // Group by scope
+    // Build groups: PIC scope → all items; non-PIC → assigned only
     var groups = {};
-    DB.scopes.forEach(function(s) { groups[s.id] = { scope: s, items: [] }; });
-    groups[0] = { scope: { id: 0, name: 'Uncategorized' }, items: [] };
-
-    projs.forEach(function(p) {
-        var sid = p.categoryId || 0;
-        if (groups[sid]) groups[sid].items.push(p);
+    DB.scopes.forEach(function(s) {
+        var isPic = s.picMemberIds && s.picMemberIds.indexOf(member.id) !== -1;
+        var items;
+        if (isPic) {
+            // PIC: show ALL items in this category
+            items = DB.projects.filter(function(p) { return p.categoryId === s.id; });
+        } else {
+            // Not PIC: only show assigned items
+            items = assignedProjs.filter(function(p) { return p.categoryId === s.id; });
+        }
+        if (items.length > 0) {
+            groups[s.id] = { scope: s, items: items, isPic: isPic };
+        }
     });
-    if (groups[0].items.length === 0) delete groups[0];
+
+    // Uncategorized (assigned only)
+    var uncatItems = assignedProjs.filter(function(p) { return !p.categoryId; });
+    if (uncatItems.length > 0) {
+        groups[0] = { scope: { id: 0, name: 'Uncategorized', picMemberIds: [] }, items: uncatItems, isPic: false };
+    }
 
     // Build scope sections
     empScopePages = {};
     var scopeSections = '';
-    if (projs.length === 0) {
+
+    if (Object.keys(groups).length === 0) {
         scopeSections = '<div class="empty"><div class="icon">&#128193;</div><p>Not assigned to any</p></div>';
     } else {
         Object.values(groups).forEach(function(g) {
-            if (g.items.length === 0) return;
-            var sid = g.scope.id;
+            var scopeId = g.scope.id;
+            var isPic = g.isPic;
 
             var itemsData = g.items.map(function(p) {
                 var mc = getProjectMembers(p.id).length;
@@ -1570,73 +1805,145 @@ function renderEmployeeProjects() {
                     else cdHtml = '<span style="color:var(--danger);font-weight:600">' + Math.abs(cd) + ' days overdue</span>';
                 }
                 var fmtDate = function(d) { return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; };
-                return { name: esc(p.name), timeline: fmtDate(p.startDate) + ' — ' + fmtDate(p.endDate), team: mc + ' member' + (mc !== 1 ? 's' : ''), cdHtml: cdHtml };
+                return { id: p.id, name: esc(p.name), timeline: fmtDate(p.startDate) + ' — ' + fmtDate(p.endDate), team: mc + ' member' + (mc !== 1 ? 's' : ''), cdHtml: cdHtml };
             });
 
-            empScopePages[sid] = { page: 1, pageSize: 5, data: itemsData };
+            empScopePages[scopeId] = { page: 1, pageSize: 5, data: itemsData, isPic: isPic, scopeId: scopeId };
+
+            var picBadge = isPic ? ' <span class="badge badge-scope" style="font-size:.68rem;padding:2px 6px;vertical-align:middle">(You Are PIC)</span>' : '';
 
             scopeSections += '<div class="collapse-section" style="margin-bottom:12px">' +
-                '<div class="collapse-header" onclick="toggleCollapse(\'scope-' + sid + '\')">' +
+                '<div class="collapse-header" onclick="toggleCollapse(\'scope-' + scopeId + '\')">' +
                     '<div style="display:flex;align-items:center;gap:10px">' +
-                        '<span class="collapse-arrow" id="scope-' + sid + '-arrow">&#9654;</span>' +
+                        '<span class="collapse-arrow" id="scope-' + scopeId + '-arrow">&#9654;</span>' +
                         '<span style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text)">' + esc(g.scope.name) + '</span>' +
+                        picBadge +
                         '<span style="font-size:.82rem;color:var(--main-text3)">' + g.items.length + ' item' + (g.items.length !== 1 ? 's' : '') + '</span>' +
                     '</div>' +
                 '</div>' +
-                '<div class="collapse-content" id="scope-' + sid + '-content" style="display:none;padding-top:8px">' +
-                    '<div id="scope-items-table-' + sid + '"></div>' +
+                '<div class="collapse-content" id="scope-' + scopeId + '-content" style="display:none;padding-top:8px">' +
+                    (isPic ? '<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn btn-green btn-sm" onclick="empShowAddItem(' + scopeId + ')">+ Add Item</button></div>' : '') +
+                    '<div id="scope-items-table-' + scopeId + '"></div>' +
                 '</div>' +
             '</div>';
         });
     }
 
-    // Build summary
+    // Summary
     buildEmpItemSummaryData(member.id);
     var summaryHtml = empItemSummaryData.length > 0 ? '<div id="emp-item-summary-area"></div>' : '';
 
     document.getElementById('emp-myprojects').innerHTML =
         '<div class="app-header"><h2>My Work Category Details</h2><div class="header-sub">Items you are involved in</div></div>' +
         '<div class="app-body" style="max-width:none">' +
-
-            // Member card
             '<div class="emp-card">' +
                 '<div class="emp-name">' + esc(member.name) + '</div>' +
                 '<div class="emp-project">Position: ' + esc(getPositionName(member.positionId)) + ' &nbsp;|&nbsp; Department: ' + esc(getDeptName(member.departmentId)) + '</div>' +
-                '<div class="emp-project" style="margin-bottom:8px">Work Assigned: <strong>' + projs.length + '</strong></div>' +
+                '<div class="emp-project" style="margin-bottom:8px">Work Assigned: <strong>' + assignedProjs.length + '</strong></div>' +
             '</div>' +
-
-                        // Header 1 + Container 1 (Summary)
             '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px">' +
-                '<div style="padding:12px 20px;border-bottom:1px solid var(--main-border)">' +
-                    '<h2 style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text);letter-spacing:.02em;margin:0">Attendance Summary</h2>' +
-                '</div>' +
-                '<div style="padding:20px">' +
-                    summaryHtml +
-                '</div>' +
+                '<div style="padding:12px 20px;border-bottom:1px solid var(--main-border)"><h2 style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text);letter-spacing:.02em;margin:0">Attendance Summary</h2></div>' +
+                '<div style="padding:20px">' + summaryHtml + '</div>' +
             '</div>' +
-
-            // Header 2 + Container 2 (Scope details)
             '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);overflow:hidden">' +
-                '<div style="padding:12px 20px;border-bottom:1px solid var(--main-border)">' +
-                    '<h2 style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text);letter-spacing:.02em;margin:0">Work Contributed</h2>' +
-                '</div>' +
-                '<div style="padding:20px">' +
-                    scopeSections +
-                '</div>' +
+                '<div style="padding:12px 20px;border-bottom:1px solid var(--main-border)"><h2 style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text);letter-spacing:.02em;margin:0">Work Contributed</h2></div>' +
+                '<div style="padding:20px">' + scopeSections + '</div>' +
             '</div>' +
-
         '</div>';
 
-    // Render summary table
     if (empItemSummaryData.length > 0) {
         empItemSummaryPage = 1;
         renderEmpItemSummaryTable();
     }
-
-    // Render each scope table
     Object.keys(empScopePages).forEach(function(sid) {
         renderScopeItemsTable(parseInt(sid));
     });
+}
+
+/* ---------- Employee PIC Item CRUD ---------- */
+
+function empShowAddItem(scopeId) {
+    var scope = DB.scopes.find(function(s) { return s.id === scopeId; });
+    var scopeName = scope ? scope.name : '';
+
+    showModal('<h3>Add Item to ' + esc(scopeName) + '</h3>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+            '<div class="field"><label>ID / Name</label><input class="input" id="emp-inp-item-name" placeholder="e.g. PLC-001 Panel"></div><br>' +
+            '<div class="field"><label>Start Date</label><input class="input" id="emp-inp-item-start" type="date"></div>' +
+            '<div class="field"><label>End Date</label><input class="input" id="emp-inp-item-end" type="date"></div>' +
+        '</div>' +
+        '<p class="auth-error" id="emp-item-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="empDoAddItem(' + scopeId + ')">Create</button></div>');
+    setTimeout(function() { document.getElementById('emp-inp-item-name').focus(); }, 100);
+}
+
+async function empDoAddItem(scopeId) {
+    var errEl = document.getElementById('emp-item-error');
+    var name = document.getElementById('emp-inp-item-name').value.trim();
+    var startDate = document.getElementById('emp-inp-item-start').value || null;
+    var endDate = document.getElementById('emp-inp-item-end').value || null;
+    if (!name) { errEl.textContent = 'ID / Name is required'; return; }
+    try {
+        await api('/projects', { method: 'POST', body: { name: name, categoryId: scopeId, startDate: startDate, endDate: endDate } });
+        hideModal(); await loadDB(); renderEmployeeProjects();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
+}
+
+function empShowEditItem(pid) {
+    var proj = DB.projects.find(function(p) { return p.id === pid; });
+    if (!proj) return;
+
+    var cd = getProjectCountdown(proj);
+    var cdHtml = '—';
+    if (cd !== null) {
+        if (cd > 30) cdHtml = '<span style="color:var(--ok)">' + cd + ' days left</span>';
+        else if (cd > 7) cdHtml = '<span style="color:var(--warning)">' + cd + ' days left</span>';
+        else if (cd > 0) cdHtml = '<span style="color:var(--danger)">' + cd + ' days left</span>';
+        else if (cd === 0) cdHtml = '<span style="color:var(--warning)">Due today</span>';
+        else cdHtml = '<span style="color:var(--danger)">' + Math.abs(cd) + ' days overdue</span>';
+    }
+
+    showModal('<h3>Edit Item</h3>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+            '<div class="field"><label>ID / Name</label><input class="input" id="emp-inp-item-edit" value="' + esc(proj.name) + '"></div><br>' +
+            '<div class="field"><label>Start Date</label><input class="input" id="emp-inp-item-start-edit" type="date" value="' + (proj.startDate || '') + '"></div>' +
+            '<div class="field"><label>End Date</label><input class="input" id="emp-inp-item-end-edit" type="date" value="' + (proj.endDate || '') + '"></div>' +
+            '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase">Countdown</span><span style="font-size:.9rem">' + cdHtml + '</span></div>' +
+        '</div>' +
+        '<p class="auth-error" id="emp-item-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="empDoEditItem(' + pid + ')">Save</button></div>');
+    setTimeout(function() { var el = document.getElementById('emp-inp-item-edit'); el.focus(); el.select(); }, 100);
+}
+
+async function empDoEditItem(pid) {
+    var errEl = document.getElementById('emp-item-error');
+    var proj = DB.projects.find(function(p) { return p.id === pid; });
+    var name = document.getElementById('emp-inp-item-edit').value.trim();
+    var startDate = document.getElementById('emp-inp-item-start-edit').value || null;
+    var endDate = document.getElementById('emp-inp-item-end-edit').value || null;
+    if (!name) { errEl.textContent = 'ID / Name is required'; return; }
+    try {
+        await api('/projects/' + pid, {
+            method: 'PUT',
+            body: { name: name, categoryId: proj ? proj.categoryId : null, startDate: startDate, endDate: endDate }
+        });
+        hideModal(); await loadDB(); renderEmployeeProjects();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
+}
+
+function empConfirmDeleteItem(pid) {
+    var p = DB.projects.find(function(x) { return x.id === pid; });
+    if (!p) return;
+    showModal('<h3>Delete Item</h3>' +
+        '<p style="color:var(--main-text2);line-height:1.6">Delete <strong style="color:var(--main-text)">' + esc(p.name) + '</strong>?</p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="empDoDeleteItem(' + pid + ')">Delete</button></div>');
+}
+
+async function empDoDeleteItem(pid) {
+    try {
+        await api('/projects/' + pid, { method: 'DELETE' });
+        hideModal(); await loadDB(); renderEmployeeProjects();
+    } catch (e) { alert('Failed: ' + e.message); }
 }
 
 function toggleCollapse(sectionId) {
@@ -1711,7 +2018,7 @@ function renderEmpItemSummaryTable() {
             '</div>' +
             '<div class="collapse-content" id="emp-summary-content" style="display:block;padding-top:8px">' +
                 '<div class="table-wrap"><table>' +
-                    '<thead><tr><th>Scope &rarr; Item</th><th style="text-align:right">Records</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
+                    '<thead><tr><th>Work Category &rarr; ID/Name</th><th style="text-align:right">Records</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
                     '<tbody>' + rows + '</tbody>' +
                 '</table></div>' +
                 paginationHtml +
@@ -1739,27 +2046,34 @@ function renderScopeItemsTable(scopeId) {
     var sp = empScopePages[scopeId];
     if (!sp) return;
     var data = sp.data;
+    var isPic = sp.isPic;
     var totalPages = Math.ceil(data.length / sp.pageSize) || 1;
     if (sp.page > totalPages) sp.page = totalPages;
     if (sp.page < 1) sp.page = 1;
     var startIdx = (sp.page - 1) * sp.pageSize;
     var pageData = data.slice(startIdx, startIdx + sp.pageSize);
 
+    var actionsCol = isPic ? '<th style="width:80px">Actions</th>' : '';
     var rows = '';
     if (data.length === 0) {
-        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No items</td></tr>';
+        var colCount = isPic ? 4 : 3;
+        rows = '<tr><td colspan="' + colCount + '" style="text-align:center;color:var(--main-text3);padding:30px">No items. ' + (isPic ? 'Click "+ Add Item" to create one.' : '') + '</td></tr>';
     } else {
         rows = pageData.map(function(r) {
+            var actionCell = isPic ? '<td><div class="actions-cell">' +
+                '<button class="btn-icon" onclick="empShowEditItem(' + r.id + ')" title="Edit">&#9998;</button>' +
+                '<button class="btn-icon danger" onclick="empConfirmDeleteItem(' + r.id + ')" title="Delete">&#10005;</button>' +
+            '</div></td>' : '';
             return '<tr>' +
                 '<td><div style="font-family:var(--font-d);font-size:1rem">' + r.name + '</div></td>' +
                 '<td style="font-family:var(--font-m);font-size:.85rem">' + r.timeline + '</td>' +
-                '<td>' + r.team + '</td>' +
                 '<td>' + r.cdHtml + '</td>' +
+                actionCell +
             '</tr>';
         }).join('');
     }
 
-    // Inline pagination (needs scopeId in onclick)
+    // Pagination
     var paginationHtml = '';
     if (data.length > 0) {
         var showFrom = startIdx + 1;
@@ -1791,7 +2105,7 @@ function renderScopeItemsTable(scopeId) {
 
     document.getElementById('scope-items-table-' + scopeId).innerHTML =
         '<div class="table-wrap"><table>' +
-            '<thead><tr><th>Work Category Id/Name</th><th>Timeline</th><th>Team Size</th><th>Countdown</th></tr></thead>' +
+            '<thead><tr><th>Work Category Id/Name</th><th>Timeline</th><th>Countdown</th>' + actionsCol + '</tr></thead>' +
             '<tbody>' + rows + '</tbody>' +
         '</table></div>' + paginationHtml;
 }
@@ -3429,190 +3743,7 @@ async function doDeleteSubScope(id) {
     } catch (e) { alert('Failed: ' + e.message); }
 }
 
-/* ==========================================================
-   SECTION 19: Work List
-   ========================================================== */
-var wlCurrentPage = 1;
-var wlPageSize = 10;
 
-function renderWorkList() {
-    const view = document.getElementById('admin-worklist');
-    var scopeFilterOpts = '<option value="">All Categories</option>' +
-        DB.scopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
-
-    view.innerHTML =
-        '<div class="app-header">' +
-            '<h2>Work List</h2>' +
-            '<div class="header-sub">Manage work items for attendance tracking</div>' +
-        '</div>' +
-        '<div class="app-body">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
-                '<div style="display:flex;align-items:center;gap:10px">' +
-                    '<label style="font-size:.82rem;color:var(--main-text3)">Filter by Category:</label>' +
-                    '<select class="input" id="worklist-filter" onchange="wlFilterChanged()" style="width:180px;padding:8px 10px;font-size:.82rem">' + scopeFilterOpts + '</select>' +
-                '</div>' +
-                '<button class="btn btn-green" onclick="showAddWorklist()">+ Add Work List</button>' +
-            '</div>' +
-            '<div id="worklist-table-area"></div>' +
-        '</div>';
-    wlCurrentPage = 1;
-    renderWorklistTable();
-}
-
-function wlFilterChanged() {
-    wlCurrentPage = 1;
-    renderWorklistTable();
-}
-
-function renderWorklistTable() {
-    var filterScopeId = document.getElementById('worklist-filter') ? document.getElementById('worklist-filter').value : '';
-    var filtered = filterScopeId
-        ? DB.worklist.filter(w => w.scopeId === parseInt(filterScopeId))
-        : DB.worklist;
-
-    // Pagination
-    var totalPages = Math.ceil(filtered.length / wlPageSize) || 1;
-    if (wlCurrentPage > totalPages) wlCurrentPage = totalPages;
-    if (wlCurrentPage < 1) wlCurrentPage = 1;
-    var startIdx = (wlCurrentPage - 1) * wlPageSize;
-    var endIdx = startIdx + wlPageSize;
-    var pageData = filtered.slice(startIdx, endIdx);
-
-    var rows = '';
-    if (filtered.length === 0) {
-        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No work items found</td></tr>';
-    } else {
-        rows = pageData.map(function(w, idx) {
-            var scope = w.scopeId ? DB.scopes.find(s => s.id === w.scopeId) : null;
-            return '<tr>' +
-                '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
-                '<td>' + (scope ? '<span class="badge badge-scope">' + esc(scope.name) + '</span>' : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
-                '<td style="font-weight:500">' + esc(w.title) + '</td>' +
-                '<td><div class="actions-cell">' +
-                    '<button class="btn-icon" onclick="showEditWorklist(' + w.id + ')" title="Edit">&#9998;</button>' +
-                    '<button class="btn-icon danger" onclick="confirmDeleteWorklist(' + w.id + ')" title="Delete">&#10005;</button>' +
-                '</div></td>' +
-            '</tr>';
-        }).join('');
-    }
-
-    // Pagination HTML
-    var paginationHtml = '';
-    if (filtered.length > 0) {
-        var showFrom = startIdx + 1;
-        var showTo = Math.min(endIdx, filtered.length);
-        var pageButtons = '';
-        var maxVisible = 5;
-        var startPage = Math.max(1, wlCurrentPage - Math.floor(maxVisible / 2));
-        var endPage = Math.min(totalPages, startPage + maxVisible - 1);
-        if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
-        pageButtons += '<button onclick="goWlPage(1)" ' + (wlCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
-        pageButtons += '<button onclick="goWlPage(' + (wlCurrentPage - 1) + ')" ' + (wlCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
-        for (var p = startPage; p <= endPage; p++) {
-            pageButtons += '<button onclick="goWlPage(' + p + ')" class="' + (p === wlCurrentPage ? 'active' : '') + '">' + p + '</button>';
-        }
-        pageButtons += '<button onclick="goWlPage(' + (wlCurrentPage + 1) + ')" ' + (wlCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
-        pageButtons += '<button onclick="goWlPage(' + totalPages + ')" ' + (wlCurrentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
-        paginationHtml = '<div class="pagination">' +
-            '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + filtered.length + ' items</div>' +
-            '<div style="display:flex;align-items:center;gap:20px">' +
-                '<div class="pagination-size"><label>Show</label>' +
-                    '<select onchange="changeWlPageSize(this.value)">' +
-                        '<option value="5"' + (wlPageSize === 5 ? ' selected' : '') + '>5</option>' +
-                        '<option value="10"' + (wlPageSize === 10 ? ' selected' : '') + '>10</option>' +
-                        '<option value="25"' + (wlPageSize === 25 ? ' selected' : '') + '>25</option>' +
-                        '<option value="50"' + (wlPageSize === 50 ? ' selected' : '') + '>50</option>' +
-                        '<option value="100"' + (wlPageSize === 100 ? ' selected' : '') + '>100</option>' +
-                    '</select></div>' +
-                '<div class="pagination-controls">' + pageButtons + '</div>' +
-            '</div></div>';
-    }
-
-    document.getElementById('worklist-table-area').innerHTML =
-        '<div class="table-wrap"><table><thead><tr>' +
-            '<th style="width:50px">No</th>' +
-            '<th style="width:160px">Category</th>' +
-            '<th>Title</th>' +
-            '<th style="width:90px">Actions</th>' +
-        '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-        paginationHtml;
-}
-
-function goWlPage(page) {
-    var filterScopeId = document.getElementById('worklist-filter') ? document.getElementById('worklist-filter').value : '';
-    var filtered = filterScopeId
-        ? DB.worklist.filter(w => w.scopeId === parseInt(filterScopeId))
-        : DB.worklist;
-    var totalPages = Math.ceil(filtered.length / wlPageSize) || 1;
-    if (page < 1) page = 1;
-    if (page > totalPages) page = totalPages;
-    wlCurrentPage = page;
-    renderWorklistTable();
-}
-
-function changeWlPageSize(size) {
-    wlPageSize = parseInt(size);
-    wlCurrentPage = 1;
-    renderWorklistTable();
-}
-
-function showAddWorklist() {
-    var scopeOpts = '<option value="">-- None --</option>' +
-        DB.scopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
-    showModal('<h3>Add Work List</h3>' +
-        '<div class="field"><label>Category</label><select class="input" id="wl-scope">' + scopeOpts + '</select></div>' +
-        '<div class="field"><label>Work List</label><input class="input" id="wl-title" placeholder="e.g. Wiring Installation"></div>' +
-        '<p class="auth-error" id="wl-error"></p>' +
-        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-green" onclick="doAddWorklist()">Create</button></div>');
-    setTimeout(function() { document.getElementById('wl-title').focus(); }, 100);
-}
-
-async function doAddWorklist() {
-    var title = document.getElementById('wl-title').value.trim();
-    var scopeId = document.getElementById('wl-scope').value;
-    var errEl = document.getElementById('wl-error'); errEl.textContent = '';
-    if (!title) { errEl.textContent = 'Title is required'; return; }
-    try {
-        await api('/worklist', { method: 'POST', body: { title: title, scopeId: scopeId ? parseInt(scopeId) : null } });
-    } catch (ex) { errEl.textContent = ex.message; return; }
-    hideModal(); await loadDB(); renderWorkList();
-}
-
-function showEditWorklist(id) {
-    var w = DB.worklist.find(x => x.id === id); if (!w) return;
-    var scopeOpts = '<option value="">-- None --</option>' +
-        DB.scopes.map(s => {
-            return '<option value="' + s.id + '"' + (w.scopeId === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>';
-        }).join('');
-    showModal('<h3>Edit — ' + esc(w.title) + '</h3>' +
-        '<div class="field"><label>Category</label><select class="input" id="wl-scope">' + scopeOpts + '</select></div>' +
-        '<div class="field"><label>Work List</label><input class="input" id="wl-title" value="' + esc(w.title) + '"></div>' +
-        '<p class="auth-error" id="wl-error"></p>' +
-        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-green" onclick="doEditWorklist(' + id + ')">Save</button></div>');
-}
-
-async function doEditWorklist(id) {
-    var title = document.getElementById('wl-title').value.trim();
-    var scopeId = document.getElementById('wl-scope').value;
-    var errEl = document.getElementById('wl-error'); errEl.textContent = '';
-    if (!title) { errEl.textContent = 'Title is required'; return; }
-    try {
-        await api('/worklist/' + id, { method: 'PUT', body: { title: title, scopeId: scopeId ? parseInt(scopeId) : null } });
-    } catch (ex) { errEl.textContent = ex.message; return; }
-    hideModal(); await loadDB(); renderWorkList();
-}
-
-function confirmDeleteWorklist(id) {
-    var w = DB.worklist.find(x => x.id === id); if (!w) return;
-    showModal('<h3>Delete Work Item</h3>' +
-        '<p style="color:var(--main-text2);line-height:1.6">Delete <strong style="color:var(--main-text)">' + esc(w.title) + '</strong>?<br>Attendance records using this will be set to empty.</p>' +
-        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteWorklist(' + id + ')">Delete</button></div>');
-}
-
-async function doDeleteWorklist(id) {
-    await api('/worklist/' + id, { method: 'DELETE' });
-    hideModal(); await loadDB(); renderWorkList();
-}
 
 
 
