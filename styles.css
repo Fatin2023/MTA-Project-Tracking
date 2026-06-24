@@ -252,44 +252,11 @@ tbody tr:last-child td{border-bottom:none}
     background: var(--main-surface);
 }
 
-/* 默认允许换行 */
+/* ===== 让一些列更紧凑 ===== */
 .table-wrap table th,
 .table-wrap table td {
-    white-space: normal;
-    word-break: break-word;
-}
-
-/* 只有这些列不让换行（日期、时间、数字） */
-.table-wrap table th:nth-child(1),  /* Date */
-.table-wrap table td:nth-child(1),
-.table-wrap table th:nth-last-child(3),  /* Start */
-.table-wrap table td:nth-last-child(3),
-.table-wrap table th:nth-last-child(2),  /* End */
-.table-wrap table td:nth-last-child(2),
-.table-wrap table th:nth-last-child(1),  /* Actions */
-.table-wrap table td:nth-last-child(1) {
     white-space: nowrap;
 }
-
-/* table 宽度固定，不撑开 */
-.table-wrap table {
-    table-layout: fixed;
-    width: 100%;
-}
-
-/* 给每列分配宽度 */
-/* Admin Attendance 表 */
-.att-table th:nth-child(1) { width: 90px; }   /* Date */
-.att-table th:nth-child(2) { width: 90px; }   /* Dept */
-.att-table th:nth-child(3) { width: 100px; }  /* Employee */
-.att-table th:nth-child(4) { width: 150px; }  /* Category & ID */
-.att-table th:nth-child(5) { width: 90px; }   /* Plan */
-.att-table th:nth-child(6) { width: 90px; }   /* Done */
-.att-table th:nth-child(7) { width: 100px; }   /* Remark — 占剩余空间 */
-.att-table th:nth-child(8) { width: 70px; }   /* Start */
-.att-table th:nth-child(9) { width: 70px; }   /* End */
-.att-table th:nth-child(10){ width: 70px; }   /* Duration */
-.att-table th:nth-child(11){ width: 80px; }   /* Actions */
 
 /* Description 列可以换行，不要占太多宽度 */
 .table-wrap table th:nth-child(9),
