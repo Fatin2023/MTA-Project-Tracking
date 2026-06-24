@@ -73,12 +73,10 @@ h1,h2,h3{font-family:var(--font-d);font-weight:600;letter-spacing:-.01em}
 .logout-btn:hover{color:#f87171;background:rgba(248,113,113,.1)}
 
 /* Main content = LIGHT */
-.app-main{flex:1;margin-left:var(--sidebar-w);min-height:100vh;background:var(--main-bg);padding-top:0}
-.app-header{padding:24px 36px;border-bottom:1px solid var(--main-border);background:var(--main-surface)}
+.app-main{flex:1;margin-left:var(--sidebar-w);min-height:100vh;background:var(--main-bg);padding-top:0;overflow-x:hidden}.app-header{padding:24px 36px;border-bottom:1px solid var(--main-border);background:var(--main-surface)}
 .app-header h2{font-size:1.35rem;color:var(--main-text)}
 .app-header .header-sub{font-size:.82rem;color:var(--main-text3);margin-top:2px}
-.app-body{padding:28px 36px 60px;max-width:none}
-
+.app-body{padding:28px 36px 60px;max-width:100%;overflow:hidden}
 /* ========== BUTTONS ========== */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border:none;border-radius:var(--radius-sm);
   font-family:var(--font-b);font-size:.88rem;font-weight:500;cursor:pointer;transition:all .2s ease;white-space:nowrap}
