@@ -1349,7 +1349,7 @@ function renderUsersTable() {
                 '<td><span class="badge ' + roleClass + '">' + u.role + '</span></td>' +
                 '<td>' + esc(pos) + '</td>' +
                 '<td>' + esc(dept) + '</td>' +
-                '<td>' + (sal != null ? '<span class="salary-val">' + fmt(sal) + '</span>' : '<span class="salary-na">Not set</span>') + '</td>' +
+                '<td>' + (sal != null && sal > 0 ? '<span class="salary-val">' + fmt(sal) + '</span>' : '<span class="salary-na">Not set</span>') + '</td>' +
                 '<td>' + projHtml + '</td>' +
                 '<td><div class="actions-cell">' +
                     '<button class="btn-icon" onclick="showEditUser(' + u.id + ')" title="Edit">&#9998;</button>' +
@@ -1484,8 +1484,8 @@ function showEditUser(userId) {
         html += '<div class="field"><label>Full Name</label><input class="input" id="edituser-name" value="' + esc(member.name) + '"></div>' +
             '<div class="field"><label>Position</label><select class="input" id="edituser-pos"><option value="">None</option>' + posOpts + '</select></div>' +
             '<div class="field"><label>Department</label><select class="input" id="edituser-dept"><option value="">None</option>' + deptOpts + '</select></div>' +
-            '<div class="field"><label>Monthly Salary</label><input class="input input-mono" id="edituser-salary" type="number" value="' + (curSal || '') + '" placeholder="e.g. 15000.00"></div>';
-    }
+            '<div class="field"><label>Monthly Salary</label><input class="input input-mono" id="edituser-salary" type="number" value="' + (curSal > 0 ? curSal : '') + '" placeholder="e.g. 15000.00"></div>';
+        }
     html += '<div class="field"><label>Username</label><input class="input" id="edituser-user" value="' + esc(user.username) + '"></div>' +
         '<div class="field"><label>New Password (blank = keep)</label><input class="input" id="edituser-pass" type="password" placeholder="Leave blank"></div>' +
         '<div class="field"><label>Role</label><select class="input" id="edituser-role"><option value="employee" ' + (user.role === 'employee' ? 'selected' : '') + '>Employee</option><option value="admin" ' + (user.role === 'admin' ? 'selected' : '') + '>Admin</option></select></div>' +
@@ -1532,9 +1532,14 @@ async function doEditUser(userId) {
         }
 
         if (salEl) {
-            var val = parseFloat(salEl.value);
+            var rawVal = salEl.value.trim();
+            var val = parseFloat(rawVal);
             var now = new Date().toISOString().slice(0, 7);
-            await api('/salaries', { method: 'PUT', body: { memberId: user.memberId, month: now, amount: isNaN(val) ? 0 : val } });
+            if (rawVal !== '' && !isNaN(val) && val > 0) {
+                await api('/salaries', { method: 'PUT', body: { memberId: user.memberId, month: now, amount: val } });
+            } else {
+                await api('/salaries', { method: 'PUT', body: { memberId: user.memberId, month: now, amount: 0 } });
+            }
         }
     }
 
@@ -4512,6 +4517,7 @@ function changeRptEmpPageSize(size) {
 }
 
 
+/*BOM Panel Material Tracking Part */
 
 
 
