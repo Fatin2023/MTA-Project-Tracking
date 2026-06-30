@@ -2576,7 +2576,7 @@ function showAddTimeEntry() {
             <div class="field"><label>Work Plan</label><select class="input" id="entry-workplan"><option value="">-- Select Category First --</option></select></div>
             <div class="field"><label>Work Done</label><select class="input" id="entry-workdone"><option value="">-- Select Category First --</option></select></div>
             <div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="09:00"></div>
-            <div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="17:00"></div>
+            <div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="18:00"></div>
         </div>
         <div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="entry-desc" rows="2" placeholder="For Other Selected" style="resize:vertical"></textarea></div>
         <p class="auth-error" id="entry-error"></p>
@@ -3456,7 +3456,7 @@ function showAdminAddAttendance() {
         '<div class="field"><label>Work Plan</label><select class="input" id="att-workplan"><option value="">-- Select Category First --</option></select></div>' +
         '<div class="field"><label>Work Done</label><select class="input" id="att-workdone"><option value="">-- Select Category First --</option></select></div>' +
         '<div class="field"><label>Start Time</label><input class="input" id="att-start" type="time" value="09:00"></div>' +
-        '<div class="field"><label>End Time</label><input class="input" id="att-end" type="time" value="17:00"></div>' +
+        '<div class="field"><label>End Time</label><input class="input" id="att-end" type="time" value="18:00"></div>' +
     '</div>' +
     '<div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="att-desc" rows="2" placeholder="For Other Selected" style="resize:vertical"></textarea></div>' +
     '<p class="auth-error" id="att-error"></p>' +
