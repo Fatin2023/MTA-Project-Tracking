@@ -90,12 +90,12 @@ app.post('/api/register', async (req, res) => {
 // ========================================
 // PROJECTS
 // ========================================
+
 // GET /api/projects
 app.get('/api/projects', async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT p.id, p.name, p.category_id, p.start_date, p.end_date,
-                   COALESCE(s.name, 'Uncategorized') as category_name
+            SELECT p.*, COALESCE(s.name, 'Uncategorized') as category_name
             FROM projects p
             LEFT JOIN scopes s ON p.category_id = s.id
             ORDER BY p.id
@@ -106,7 +106,10 @@ app.get('/api/projects', async (req, res) => {
             categoryId: r.category_id,
             categoryName: r.category_name,
             startDate: r.start_date,
-            endDate: r.end_date
+            endDate: r.end_date,
+            customer: r.customer || '',
+            location: r.location || '',
+            installDate: r.install_date
         }));
         res.json(projects);
     } catch (err) {
@@ -114,14 +117,22 @@ app.get('/api/projects', async (req, res) => {
     }
 });
 
-
 // POST /api/projects
-app.post('/api/projects', async (req, res) => {
-    const { name, categoryId, startDate, endDate } = req.body;
+app.post('/api/projects', requireEditOrPic, async (req, res) => {
+    const { name, categoryId, startDate, endDate, customer, location, installDate } = req.body;
     try {
+        if (categoryId && name) {
+            const exists = await pool.query(
+                'SELECT id FROM projects WHERE LOWER(name) = LOWER($1) AND category_id = $2',
+                [name.trim(), categoryId]
+            );
+            if (exists.rows.length > 0) {
+                return res.status(400).json({ error: 'Panel ID "' + name + '" already exists' });
+            }
+        }
         const result = await pool.query(
-            'INSERT INTO projects (name, category_id, start_date, end_date) VALUES ($1, $2, $3, $4) RETURNING id',
-            [name, categoryId || null, startDate || null, endDate || null]
+            'INSERT INTO projects (name, category_id, start_date, end_date, customer, location, install_date) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+            [name, categoryId || null, startDate || null, endDate || null, customer || '', location || '', installDate || null]
         );
         res.json({ id: result.rows[0].id });
     } catch (err) {
@@ -130,12 +141,21 @@ app.post('/api/projects', async (req, res) => {
 });
 
 // PUT /api/projects/:id
-app.put('/api/projects/:id', async (req, res) => {
-    const { name, categoryId, startDate, endDate } = req.body;
+app.put('/api/projects/:id', requireEditOrPic, async (req, res) => {
+    const { name, categoryId, startDate, endDate, customer, location, installDate } = req.body;
     try {
+        if (categoryId && name) {
+            const exists = await pool.query(
+                'SELECT id FROM projects WHERE LOWER(name) = LOWER($1) AND category_id = $2 AND id != $3',
+                [name.trim(), categoryId, req.params.id]
+            );
+            if (exists.rows.length > 0) {
+                return res.status(400).json({ error: 'Panel ID "' + name + '" already exists' });
+            }
+        }
         await pool.query(
-            'UPDATE projects SET name = $1, category_id = $2, start_date = $3, end_date = $4 WHERE id = $5',
-            [name, categoryId || null, startDate || null, endDate || null, req.params.id]
+            'UPDATE projects SET name = $1, category_id = $2, start_date = $3, end_date = $4, customer = $5, location = $6, install_date = $7 WHERE id = $8',
+            [name, categoryId || null, startDate || null, endDate || null, customer || '', location || '', installDate || null, req.params.id]
         );
         res.json({ success: true });
     } catch (err) {
@@ -143,8 +163,8 @@ app.put('/api/projects/:id', async (req, res) => {
     }
 });
 
-
-app.delete('/api/projects/:id', async (req, res) => {
+// DELETE /api/projects/:id
+app.delete('/api/projects/:id', requireEditOrPic, async (req, res) => {
     try {
         await pool.query('DELETE FROM projects WHERE id = $1', [req.params.id]);
         res.json({ success: true });
@@ -321,18 +341,13 @@ app.delete('/api/users/:id', async (req, res) => {
 app.put('/api/salaries', async (req, res) => {
     const { memberId, month, amount } = req.body;
     try {
-        if (!amount || amount <= 0) {
-            await pool.query(
-                'DELETE FROM salaries WHERE member_id = $1 AND month = $2', [memberId, month]
-            );
-        } else {
-            await pool.query(`
-                INSERT INTO salaries (member_id, month, amount)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (member_id, month)
-                DO UPDATE SET amount = $3
-            `, [memberId, month, amount]);
-        }
+        const finalAmount = (!amount || amount <= 0) ? 0 : amount;
+        await pool.query(`
+            INSERT INTO salaries (member_id, month, amount)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (member_id, month)
+            DO UPDATE SET amount = $3
+        `, [memberId, month, finalAmount]);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -727,18 +742,457 @@ app.delete('/api/worklist/:id', async (req, res) => {
 });
 
 
+
 // ========================================
-// START SERVER
+// PANEL TRACKING — M_DASHBOARD
 // ========================================
-// Catch-all — serve index.html for any route
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+app.get('/api/m-dashboard', async (req, res) => {
+    try {
+        const scopeResult = await pool.query(
+            `SELECT id FROM scopes WHERE LOWER(name) LIKE LOWER($1) LIMIT 1`,
+            ['%Panel Build%']
+        );
+        let panelCount = 0;
+        if (scopeResult.rows.length > 0) {
+            const r = await pool.query(
+                `SELECT COUNT(*) AS total FROM projects WHERE category_id = $1`,
+                [scopeResult.rows[0].id]
+            );
+            panelCount = parseInt(r.rows[0].total);
+        }
+        const materials = await pool.query('SELECT COUNT(*) AS total FROM m_material');
+        res.json({
+            total_panels: panelCount,
+            complete: 0,
+            in_progress: 0,
+            total_materials: parseInt(materials.rows[0].total),
+            total_ordered: 0,
+            total_installed: 0
+        });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Auto-create tables + start server
+// ========================================
+// M_USERS
+// ========================================
+
+app.get('/api/m-users', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT id, username, role, created_at FROM m_users ORDER BY id');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/m-users', async (req, res) => {
+    const { username, password, role } = req.body;
+    try {
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password required' });
+        }
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        }
+        const exists = await pool.query('SELECT id FROM m_users WHERE username = $1', [username]);
+        if (exists.rows.length > 0) {
+            return res.status(400).json({ error: 'Username already taken' });
+        }
+        const result = await pool.query(
+            'INSERT INTO m_users (username, password, role) VALUES ($1, $2, $3) RETURNING id',
+            [username, password, role || 'admin']
+        );
+        res.json({ id: result.rows[0].id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/m-users/:id', async (req, res) => {
+    const { username, password, role } = req.body;
+    try {
+        if (password) {
+            if (password.length < 6) {
+                return res.status(400).json({ error: 'Password must be at least 6 characters' });
+            }
+            await pool.query(
+                'UPDATE m_users SET username = $1, password = $2, role = $3 WHERE id = $4',
+                [username, password, role, req.params.id]
+            );
+        } else {
+            await pool.query(
+                'UPDATE m_users SET username = $1, role = $2 WHERE id = $3',
+                [username, role, req.params.id]
+            );
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/m-users/:id', async (req, res) => {
+    try {
+        const user = await pool.query('SELECT username FROM m_users WHERE id = $1', [req.params.id]);
+        if (user.rows.length > 0 && user.rows[0].username === 'admin') {
+            return res.status(400).json({ error: 'Cannot delete default admin' });
+        }
+        await pool.query('DELETE FROM m_users WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ========================================
+// M_PANEL
+// ========================================
+
+app.get('/api/m-panels', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM m_panel ORDER BY id DESC');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/m-panels', async (req, res) => {
+    const { name, project_name, customer, customer_location, pic, status, start_date, end_date, remark } = req.body;
+    try {
+        const result = await pool.query(
+            `INSERT INTO m_panel (name, project_name, customer, customer_location, pic, status, start_date, end_date, remark)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+            [name, project_name || '', customer || '', customer_location || '', pic || '', status || 'pending', start_date || null, end_date || null, remark || '']
+        );
+        res.json({ id: result.rows[0].id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/m-panels/:id', async (req, res) => {
+    const { name, project_name, customer, customer_location, pic, status, start_date, end_date, remark } = req.body;
+    try {
+        await pool.query(
+            `UPDATE m_panel SET name=$1, project_name=$2, customer=$3, customer_location=$4, pic=$5, status=$6, start_date=$7, end_date=$8, remark=$9 WHERE id=$10`,
+            [name, project_name, customer, customer_location, pic, status, start_date || null, end_date || null, remark, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/m-panels/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM m_panel WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ========================================
+// M_MATERIAL
+// ========================================
+
+app.get('/api/m-materials', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM m_material ORDER BY id');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/m-materials', requireEdit, async (req, res) => {
+    const { part_no, brand, serial_no, description, yom, vendor, vendor_po_no, panel_no, install_date, category, unit, unit_price } = req.body;
+    try {
+        const result = await pool.query(
+            `INSERT INTO m_material (part_no, brand, serial_no, description, yom, vendor, vendor_po_no, panel_no, install_date, category, unit, unit_price)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+            [part_no, brand || '', serial_no || '', description || '', yom || '', vendor || '', vendor_po_no || '', panel_no || '', install_date || null, category || '', unit || 'pc', unit_price || 0]
+        );
+        res.json({ id: result.rows[0].id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/m-materials/:id', requireEdit, async (req, res) => {
+    const { part_no, brand, serial_no, description, yom, vendor, vendor_po_no, panel_no, install_date, category, unit, unit_price } = req.body;
+    try {
+        await pool.query(
+            `UPDATE m_material SET part_no=$1, brand=$2, serial_no=$3, description=$4, yom=$5, vendor=$6, vendor_po_no=$7, panel_no=$8, install_date=$9, category=$10, unit=$11, unit_price=$12 WHERE id=$13`,
+            [part_no, brand, serial_no, description, yom || '', vendor || '', vendor_po_no || '', panel_no || '', install_date || null, category, unit, unit_price, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/m-materials/:id', requireEdit, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM m_material WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+
+// ========================================
+// PANEL IDs FROM PROJECT TRACKING
+// ========================================
+
+app.get('/api/m-panel-ids', async (req, res) => {
+    try {
+        const scopeResult = await pool.query(
+            `SELECT id FROM scopes WHERE LOWER(name) LIKE LOWER($1) LIMIT 1`,
+            ['%Panel Build%']
+        );
+        if (scopeResult.rows.length === 0) {
+            return res.json([]);
+        }
+        const result = await pool.query(
+            `SELECT id, name, start_date, end_date, customer, location, install_date FROM projects WHERE category_id = $1 ORDER BY name`,
+            [scopeResult.rows[0].id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ========================================
+// IMPORT EXCEL (no multer — uses base64 JSON)
+// ========================================
+const XLSX = require('xlsx');
+
+app.post('/api/m-import/panels', requireEdit, async (req, res) => {
+    try {
+        const { filename, data } = req.body;
+        if (!data) return res.status(400).json({ error: 'No file data' });
+
+        const buffer = Buffer.from(data, 'base64');
+        const wb = XLSX.read(buffer, { type: 'buffer' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        if (rows.length === 0) return res.status(400).json({ error: 'File is empty' });
+
+        const scopeResult = await pool.query(
+            `SELECT id FROM scopes WHERE LOWER(name) LIKE LOWER($1) LIMIT 1`, ['%Panel Build%']
+        );
+        const panelScopeId = scopeResult.rows.length > 0 ? scopeResult.rows[0].id : null;
+
+        let existingNames = new Set();
+        if (panelScopeId) {
+            const existing = await pool.query(
+                'SELECT LOWER(name) as name FROM projects WHERE category_id = $1', [panelScopeId]
+            );
+            existing.rows.forEach(r => existingNames.add(r.name));
+        }
+
+        let inserted = 0, skipped = 0, errors = [];
+
+        for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            const name = String(r['Panel ID'] || r['Panel Name'] || r['Name'] || r['panel_id'] || r['panel_name'] || r['PanelID'] || r['PanelId'] || r['PANEL ID'] || r['panel id'] || '').trim();
+            if (!name) { skipped++; errors.push(`Row ${i + 2}: missing Panel ID`); continue; }
+
+            if (existingNames.has(name.toLowerCase())) {
+                skipped++; errors.push(`Row ${i + 2}: Panel ID "${name}" already exists`); continue;
+            }
+
+            try {
+                await pool.query(
+                    `INSERT INTO projects (name, category_id, start_date, end_date, customer, install_date) VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [name, panelScopeId, r['Start Date'] || null, r['End Date'] || null,
+                    String(r['Customer'] || '').trim(),
+                    r['Install Date'] || null]
+                );
+                existingNames.add(name.toLowerCase());
+                inserted++;
+            } catch (e) { skipped++; errors.push(`Row ${i + 2}: ${e.message}`); }
+        }
+
+        res.json({ success: true, total: rows.length, inserted, skipped, errors });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/m-import/materials', requireEdit, async (req, res) => {
+    try {
+        const { filename, data } = req.body;
+        if (!data) return res.status(400).json({ error: 'No file data' });
+
+        const buffer = Buffer.from(data, 'base64');
+        const wb = XLSX.read(buffer, { type: 'buffer' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        if (rows.length === 0) return res.status(400).json({ error: 'File is empty' });
+
+        let inserted = 0, skipped = 0, errors = [];
+
+        const scopeResult = await pool.query(
+            `SELECT id FROM scopes WHERE LOWER(name) LIKE LOWER($1) LIMIT 1`, ['%Panel Build%']
+        );
+        const validPanelSet = new Set();
+        if (scopeResult.rows.length > 0) {
+            const panels = await pool.query(
+                `SELECT name FROM projects WHERE category_id = $1`, [scopeResult.rows[0].id]
+            );
+            panels.rows.forEach(p => validPanelSet.add(p.name));
+        }
+
+        for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            const partNo = String(r['Part No'] || '').trim();
+            const serialNo = String(r['Serial No'] || '').trim();
+            const panelId = String(r['Panel ID'] || '').trim();
+
+            if (!partNo) { skipped++; errors.push(`Row ${i + 2}: missing Part No`); continue; }
+            if (!serialNo) { skipped++; errors.push(`Row ${i + 2}: missing Serial No`); continue; }
+            if (!panelId) { skipped++; errors.push(`Row ${i + 2}: missing Panel ID`); continue; }
+
+            if (validPanelSet.size > 0 && !validPanelSet.has(panelId)) {
+                skipped++; errors.push(`Row ${i + 2}: Panel ID "${panelId}" not found`); continue;
+            }
+
+            try {
+                await pool.query(
+                    `INSERT INTO m_material (part_no, brand, description, serial_no, yom, vendor, vendor_po_no, panel_no, install_date, category, unit, unit_price) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                    [partNo, String(r['Brand']||'').trim(), String(r['Description']||'').trim(), serialNo, String(r['YOM']||'').trim(), String(r['Vendor']||'').trim(), String(r['Vendor PO No']||'').trim(), panelId, r['Install Date']||null, String(r['Category']||'Other').trim(), String(r['Unit']||'pc').trim(), parseFloat(r['Unit Price']||0)||0]
+                );
+                inserted++;
+            } catch (e) { skipped++; errors.push(`Row ${i + 2}: ${e.message}`); }
+        }
+
+        res.json({ success: true, total: rows.length, inserted, skipped, errors });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ---------- DOWNLOAD TEMPLATES ----------
+app.get('/api/m-template/panels', (req, res) => {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+        ['Panel ID', 'Customer', 'Start Date', 'End Date', 'Install Date'],
+        ['P10093', 'Petronas', '2025-01-15', '2025-06-30', '2025-06-15'],
+    ]);
+    ws['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Panels');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Disposition', 'attachment; filename="panel_import_template.xlsx"');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buf);
+});
+
+app.get('/api/m-template/materials', (req, res) => {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+        ['Part No', 'Brand', 'Description', 'Serial No', 'YOM', 'Vendor', 'Vendor PO No', 'Panel ID', 'Install Date', 'Category', 'Unit', 'Unit Price'],
+        ['CB-MCCB100', 'Schneider', 'MCCB 100A 3P', 'SN-20240001', '2024', 'Supplier Sdn Bhd', 'PO-2024-001', 'P10093', '2025-03-15', 'Breaker', 'pc', '250.00'],
+    ]);
+    ws['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 8 }, { wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 8 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Materials');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Disposition', 'attachment; filename="material_import_template.xlsx"');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buf);
+});
+
+
+// ---------- Role and Permission ----------
+function requireEdit(req, res, next) {
+    const role = req.headers['x-user-role'];
+    if (role !== 'admin' && role !== 'employee') {
+        return res.status(403).json({ error: 'Edit access required' });
+    }
+    next();
+}
+
+app.post('/api/import/projects', async (req, res) => {
+    try {
+        const { filename, data, categoryId } = req.body;
+        if (!data) return res.status(400).json({ error: 'No file data' });
+        if (!categoryId) return res.status(400).json({ error: 'Category ID required' });
+
+        const buffer = Buffer.from(data, 'base64');
+        const wb = XLSX.read(buffer, { type: 'buffer' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        if (rows.length === 0) return res.status(400).json({ error: 'File is empty' });
+
+        let inserted = 0, skipped = 0, errors = [];
+
+        for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            const name = String(r['ID/Name'] || r['ID'] || r['Name'] || r['Project'] || r['Item'] || '').trim();
+            if (!name) { skipped++; errors.push('Row ' + (i + 2) + ': missing ID/Name'); continue; }
+
+            try {
+                await pool.query(
+                    `INSERT INTO projects (name, category_id, start_date, end_date, customer) VALUES ($1, $2, $3, $4, $5)`,
+                    [name, categoryId, r['Start Date'] || null, r['End Date'] || null,
+                    String(r['Customer'] || '').trim()]
+                );
+                inserted++;
+            } catch (e) { skipped++; errors.push('Row ' + (i + 2) + ': ' + e.message); }
+        }
+
+        res.json({ success: true, total: rows.length, inserted, skipped, errors });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/template/projects/:scopeId', async (req, res) => {
+    try {
+        const scope = await pool.query('SELECT name FROM scopes WHERE id = $1', [req.params.scopeId]);
+        const scopeName = scope.rows.length > 0 ? scope.rows[0].name : 'Items';
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([
+            ['ID/Name', 'Customer', 'Start Date', 'End Date'],
+            ['PLC-001', 'Petronas', '2025-01-15', '2025-06-30'],
+        ]);
+        ws['!cols'] = [{ wch: 14 }, { wch: 20 }, { wch: 14 }, { wch: 14 }];
+        XLSX.utils.book_append_sheet(wb, ws, scopeName.substring(0, 31));
+        const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        res.setHeader('Content-Disposition', 'attachment; filename="' + scopeName + '_template.xlsx"');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.send(buf);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+async function requireEditOrPic(req, res, next) {
+    const role = req.headers['x-user-role'];
+    const memberId = req.headers['x-member-id'];
+
+    if (role === 'admin' || role === 'employee') {
+        return next();
+    }
+
+    // Check if user is a PIC for any scope
+    if (memberId) {
+        try {
+            const picCheck = await pool.query('SELECT 1 FROM scope_pics WHERE member_id = $1 LIMIT 1', [memberId]);
+            if (picCheck.rows.length > 0) {
+                return next();
+            }
+        } catch (e) { /* fall through */ }
+    }
+
+    return res.status(403).json({ error: 'Edit access required' });
+}
+
+// ---------- InitDB ----------
 async function initDB() {
     try {
-        // 1. CREATE TABLES
+        // 1. CREATE TABLES — Attendance (existing)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS positions (
                 id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW()
@@ -798,7 +1252,6 @@ async function initDB() {
                 description TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT NOW()
             );
-
             CREATE TABLE IF NOT EXISTS scope_pics (
                 id SERIAL PRIMARY KEY,
                 scope_id INT REFERENCES scopes(id) ON DELETE CASCADE,
@@ -806,9 +1259,45 @@ async function initDB() {
                 UNIQUE(scope_id, member_id)
             );
         `);
-        console.log('Tables created');
+        console.log('Attendance tables created');
 
-        // 2. ADD COLUMNS (each one separate, with error catching)
+        // 2. CREATE TABLES — Panel Tracking (new)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS m_panel (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(200) NOT NULL,
+                project_name VARCHAR(300) DEFAULT '',
+                customer VARCHAR(200) DEFAULT '',
+                customer_location VARCHAR(300) DEFAULT '',
+                pic VARCHAR(200) DEFAULT '',
+                status VARCHAR(50) DEFAULT 'pending',
+                start_date DATE,
+                end_date DATE,
+                remark TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS m_material (
+                id SERIAL PRIMARY KEY,
+                part_no VARCHAR(100) NOT NULL,
+                brand VARCHAR(200) DEFAULT '',
+                description VARCHAR(300) DEFAULT '',
+                serial_no VARCHAR(100) UNIQUE NOT NULL,
+                yom VARCHAR(20) DEFAULT '',
+                vendor VARCHAR(200) DEFAULT '',
+                vendor_po_no VARCHAR(100) DEFAULT '',
+                panel_no VARCHAR(200) DEFAULT '',
+                install_date DATE,
+                category VARCHAR(100) DEFAULT '',
+                unit VARCHAR(20) DEFAULT 'pc',
+                unit_price NUMERIC(12,2) DEFAULT 0,
+                qty NUMERIC(12,2) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+        console.log('Panel Tracking tables created');
+
+        // 3. ADD COLUMNS — Attendance (existing)
         const alterStatements = [
             "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS project_id INT REFERENCES projects(id) ON DELETE SET NULL",
             "ALTER TABLE attendance ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''",
@@ -822,19 +1311,37 @@ async function initDB() {
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS category_id INT REFERENCES scopes(id) ON DELETE SET NULL",
             "ALTER TABLE sub_scopes ADD COLUMN IF NOT EXISTS scope_id INTEGER REFERENCES scopes(id) ON DELETE SET NULL",
             "ALTER TABLE worklist ADD COLUMN IF NOT EXISTS scope_id INTEGER REFERENCES scopes(id) ON DELETE SET NULL",
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS customer VARCHAR(200) DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS location VARCHAR(300) DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS install_date DATE",
+            "ALTER TABLE projects ADD CONSTRAINT IF NOT EXISTS projects_name_cat_unique UNIQUE (name, category_id)",
         ];
 
         for (const sql of alterStatements) {
-            try {
-                await pool.query(sql);
-            } catch (e) {
-                // Column might already exist, that's ok
+            try { await pool.query(sql); } catch (e) {
                 console.log('ALTER skip:', e.message.substring(0, 80));
             }
         }
-        console.log('Columns added');
+        console.log('Attendance columns ensured');
 
-        // 3. INDEXES
+        // 4. ADD COLUMNS — Panel Tracking (existing DB migration)
+        const ptAlterStatements = [
+            "ALTER TABLE m_material ADD COLUMN IF NOT EXISTS yom VARCHAR(20) DEFAULT ''",
+            "ALTER TABLE m_material ADD COLUMN IF NOT EXISTS vendor VARCHAR(200) DEFAULT ''",
+            "ALTER TABLE m_material ADD COLUMN IF NOT EXISTS vendor_po_no VARCHAR(100) DEFAULT ''",
+            "ALTER TABLE m_material ADD COLUMN IF NOT EXISTS panel_no VARCHAR(200) DEFAULT ''",
+            "ALTER TABLE m_material ADD COLUMN IF NOT EXISTS install_date DATE",
+            "ALTER TABLE m_material ADD COLUMN IF NOT EXISTS qty NUMERIC(12,2) DEFAULT 0",
+        ];
+
+        for (const sql of ptAlterStatements) {
+            try { await pool.query(sql); } catch (e) {
+                console.log('PT ALTER skip:', e.message.substring(0, 80));
+            }
+        }
+        console.log('Panel Tracking columns ensured');
+
+        // 5. INDEXES
         await pool.query(`
             CREATE INDEX IF NOT EXISTS idx_salaries_member ON salaries(member_id);
             CREATE INDEX IF NOT EXISTS idx_salaries_month ON salaries(month);
@@ -845,7 +1352,7 @@ async function initDB() {
         `);
         console.log('Indexes created');
 
-        // 4. DEFAULT ADMIN
+        // 6. DEFAULT ADMIN (shared — used by both modules)
         await pool.query(`
             INSERT INTO users (username, password, role)
             VALUES ('adminMTA', 'admin00000', 'admin')

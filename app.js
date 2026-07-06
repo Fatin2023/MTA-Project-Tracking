@@ -213,12 +213,38 @@ async function handleLogin(e) {
     const err = document.getElementById('login-error');
     if (!u || !p) { err.textContent = 'Please enter username and password'; return; }
     try {
-        localStorage.setItem('multitrade_session', JSON.stringify(currentUser));
         currentUser = await api('/login', { method: 'POST', body: { username: u, password: p } });
         err.textContent = '';
         localStorage.setItem('multitrade_session', JSON.stringify(currentUser));
-        await loadDB();
-        showPage(currentUser.role === 'admin' ? 'admin-layout' : 'employee-layout');
+
+        if (selectedModule === 'panel') {
+            if (currentUser.role !== 'admin' && currentUser.role !== 'viewer') {
+                err.textContent = 'Panel Tracking is for admin only';
+                currentUser = null;
+                localStorage.removeItem('multitrade_session');
+                return;
+            }
+            localStorage.setItem('multitrade_module', 'panel');
+            document.querySelectorAll('.auth-page,.app-layout').forEach(function(p) { p.classList.remove('active'); });
+            document.getElementById('panel-layout').classList.add('active');
+            var initial = currentUser.username.charAt(0).toUpperCase();
+            document.getElementById('pt-avatar').textContent = initial;
+            document.getElementById('pt-user-name').textContent = currentUser.username;
+            await ptLoadDB();
+            ptNav('pt-dashboard');
+        } else {
+            localStorage.setItem('multitrade_module', 'attendance');
+            await loadDB();
+            document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
+            if (currentUser.role === 'admin') {
+                document.getElementById('admin-layout').classList.add('active');
+                adminNav('projects');
+            } else {
+                document.getElementById('employee-layout').classList.add('active');
+                empNav('attendance');
+            }
+            updateAvatars();
+        }
     } catch (ex) {
         err.textContent = ex.message;
     }
@@ -266,17 +292,21 @@ function doLogout() {
     localStorage.removeItem('multitrade_session');
     localStorage.removeItem('multitrade_admin_page');
     localStorage.removeItem('multitrade_emp_page');
+    localStorage.removeItem('multitrade_pt_page');
+    localStorage.removeItem('multitrade_module');
     currentUser = null;
-    hideModal();
     document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
     document.getElementById('login-page').classList.add('active');
-}
-
-
-function doLogout() {
-    localStorage.removeItem('multitrade_session');
+    selectedModule = 'attendance';
     window.location.href = window.location.pathname;
+    hideModal();
 }
+
+
+// function doLogout() {
+//     localStorage.removeItem('multitrade_session');
+//     window.location.href = window.location.pathname;
+// }
 
 
 
@@ -384,51 +414,6 @@ document.addEventListener('touchmove', function(e) {
     }
 }, { passive: true });
 
-// ===== INITIALIZATION =====
-(async function(){
-    const saved = localStorage.getItem('multitrade_session');
-    if (saved) {
-        try {
-            currentUser = JSON.parse(saved);
-            await loadDB();
-            document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
-
-            if (currentUser.role === 'admin') {
-                document.getElementById('admin-layout').classList.add('active');
-                var page = localStorage.getItem('multitrade_admin_page') || 'projects';
-                var navItems = document.querySelectorAll('#admin-nav .nav-item');
-                navItems.forEach(n => n.classList.remove('active'));
-                navItems.forEach(n => {
-                    if (n.getAttribute('onclick') && n.getAttribute('onclick').indexOf("'" + page + "'") !== -1) {
-                        n.classList.add('active');
-                    }
-                });
-                await adminNav(page);
-            } else {
-                document.getElementById('employee-layout').classList.add('active');
-                var page = localStorage.getItem('multitrade_emp_page') || 'attendance';
-                var navItems = document.querySelectorAll('#emp-nav .nav-item');
-                navItems.forEach(n => n.classList.remove('active'));
-                navItems.forEach(n => {
-                    if (n.getAttribute('onclick') && n.getAttribute('onclick').indexOf("'" + page + "'") !== -1) {
-                        n.classList.add('active');
-                    }
-                });
-                await empNav(page);
-            }
-            updateAvatars();
-            return;
-        } catch (e) {
-            localStorage.removeItem('multitrade_session');
-            localStorage.removeItem('multitrade_admin_page');
-            localStorage.removeItem('multitrade_emp_page');
-            currentUser = null;
-        }
-    }
-    document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
-    document.getElementById('login-page').classList.add('active');
-})();
-
 
 
 
@@ -471,20 +456,18 @@ document.addEventListener('mousedown', function(e) {
         closeCatMenu();
     }
 });
+
 function renderMainScope() {
     const view = document.getElementById('admin-projects');
 
-    // All tab
     const allCount = DB.projects.length;
     const allTab = '<div class="tab-item' + (!activeCategoryId ? ' active' : '') + '" onclick="switchScopeTab(null)">All <span class="tab-count">' + allCount + '</span></div>';
 
-    // Category tabs
     const tabs = DB.scopes.map(function(s) {
         const count = DB.projects.filter(function(p) { return p.categoryId === s.id; }).length;
         return '<div class="tab-item' + (activeCategoryId === s.id ? ' active' : '') + '" onclick="switchScopeTab(' + s.id + ')">' + esc(s.name) + ' <span class="tab-count">' + count + '</span></div>';
     }).join('');
 
-    // 三点按钮
     const activeScope = activeCategoryId ? DB.scopes.find(function(s) { return s.id === activeCategoryId; }) : null;
     var dotsHtml = activeScope
         ? '<div style="position:relative;display:inline-flex;align-items:center">' +
@@ -512,7 +495,11 @@ function renderMainScope() {
             <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
                 <input class="input" id="item-search" placeholder="Search ID/Name..." value="${esc(itemSearchQuery)}" oninput="itemSearchChanged()" style="max-width:320px;padding:8px 12px;font-size:.85rem">
                 <span id="item-count" style="font-size:.82rem;color:var(--main-text3)"></span>
-                <div style="margin-left:auto">
+                <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+                    ${activeCategoryId ?
+                        '<a class="btn btn-ghost btn-sm" href="/api/template/projects/' + activeCategoryId + '" style="text-decoration:none">Template Download</a>' +
+                        '<label class="btn btn-blue btn-sm" style="cursor:pointer">Import Excel<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="adminHandleItemImport(this)"></label>'
+                    : ''}
                     <button class="btn btn-green" onclick="showAddItem()">+ Add Item</button>
                 </div>
             </div>
@@ -520,6 +507,91 @@ function renderMainScope() {
         </div>`;
 
     renderItemsTable();
+}
+
+// ========== Admin Item Import ==========
+var adminImportBase64 = null;
+var adminImportFilename = '';
+
+function adminHandleItemImport(input) {
+    var file = input.files[0];
+    if (!file) return;
+
+    var catId = activeCategoryId || 0;
+    var catName = activeCategoryId ? (DB.scopes.find(function(s) { return s.id === activeCategoryId; }) || {}).name : 'All';
+
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            var data = new Uint8Array(e.target.result);
+            var wb = XLSX.read(data, { type: 'array' });
+            var ws = wb.Sheets[wb.SheetNames[0]];
+            var rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+            if (rows.length === 0) {
+                alert('File is empty');
+                input.value = '';
+                return;
+            }
+
+            var headers = Object.keys(rows[0]);
+            var previewRows = rows.slice(0, 5);
+
+            var previewHtml = '<div style="margin-top:10px;font-size:.85rem;color:var(--main-text3)">Preview (' + rows.length + ' rows total) — Category: <strong>' + esc(catName) + '</strong></div>' +
+                '<div class="import-preview"><table><thead><tr>' + headers.map(function(h) { return '<th>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+                previewRows.map(function(row) { return '<tr>' + headers.map(function(h) { return '<td>' + esc(String(row[h])) + '</td>'; }).join('') + '</tr>'; }).join('') +
+                (rows.length > 5 ? '<tr><td colspan="' + headers.length + '" style="text-align:center;color:var(--main-text3)">... ' + (rows.length - 5) + ' more</td></tr>' : '') +
+                '</tbody></table></div>';
+
+            // Convert to base64
+            var bytes = new Uint8Array(e.target.result);
+            var binary = '';
+            for (var i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            adminImportBase64 = btoa(binary);
+            adminImportFilename = file.name;
+
+            showModal('<h3>Import Items</h3>' +
+                previewHtml +
+                '<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">' +
+                    '<button class="btn btn-ghost" onclick="hideModal();adminImportBase64=null">Cancel</button>' +
+                    '<button class="btn btn-accent" onclick="adminDoItemImport()">Import ' + rows.length + ' Rows</button>' +
+                '</div>');
+        } catch (err) {
+            alert('Error reading file: ' + err.message);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+    input.value = '';
+}
+
+async function adminDoItemImport() {
+    if (!adminImportBase64) return;
+    var catId = activeCategoryId || 0;
+    try {
+        var result = await api('/import/projects', {
+            method: 'POST',
+            body: {
+                filename: adminImportFilename,
+                data: adminImportBase64,
+                categoryId: catId
+            }
+        });
+        hideModal();
+        adminImportBase64 = null;
+
+        var msg = 'Imported: ' + result.inserted + ', Skipped: ' + result.skipped;
+        if (result.errors && result.errors.length > 0) {
+            msg += '\n\n' + result.errors.join('\n');
+        }
+        alert(msg);
+
+        await loadDB();
+        renderMainScope();
+    } catch (e) {
+        alert('Import failed: ' + e.message);
+    }
 }
 
 function switchScopeTab(catId) {
@@ -550,7 +622,6 @@ function renderItemsTable() {
     const countEl = document.getElementById('item-count');
     if (countEl) countEl.textContent = allItems.length + ' item' + (allItems.length !== 1 ? 's' : '');
 
-    // Pagination
     const totalPages = Math.ceil(allItems.length / itemPageSize) || 1;
     if (itemCurrentPage > totalPages) itemCurrentPage = totalPages;
     if (itemCurrentPage < 1) itemCurrentPage = 1;
@@ -560,7 +631,7 @@ function renderItemsTable() {
 
     let rows = '';
     if (allItems.length === 0) {
-        rows = '<tr><td colspan="7" style="text-align:center;color:var(--main-text3);padding:30px">No items found</td></tr>';
+        rows = '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No items found</td></tr>';
     } else {
         rows = pageData.map((p, idx) => {
             const cat = p.categoryId ? DB.scopes.find(s => s.id === p.categoryId) : null;
@@ -590,6 +661,7 @@ function renderItemsTable() {
             return `<tr>
                 <td style="font-family:var(--font-m);color:var(--main-text3);width:50px">${startIdx + idx + 1}</td>
                 <td><div style="font-weight:600;cursor:pointer" onclick="showEditItem(${p.id})">${esc(p.name)}</div></td>
+                <td>${esc(p.customer || '—')}</td>
                 <td>${cat ? '<span class="badge badge-scope">' + esc(cat.name) + '</span>' : '<span style="color:var(--main-text3)">—</span>'}</td>
                 <td>${cdHtml}</td>
                 <td>${memberAvatars}</td>
@@ -602,7 +674,6 @@ function renderItemsTable() {
         }).join('');
     }
 
-    // Pagination HTML
     let paginationHtml = '';
     if (allItems.length > 0) {
         const showFrom = startIdx + 1;
@@ -639,6 +710,7 @@ function renderItemsTable() {
             '<thead><tr>' +
                 '<th style="width:50px">No</th>' +
                 '<th>ID / Name</th>' +
+                '<th>Customer</th>' +
                 '<th style="width:130px">Category</th>' +
                 '<th style="width:100px">Countdown</th>' +
                 '<th>Members</th>' +
@@ -776,6 +848,7 @@ function showAddItem() {
     showModal(`<h3>Add Item</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="field"><label>ID / Name</label><input class="input" id="inp-item-name" placeholder="e.g. PLC-001 Panel"></div>
+        <div class="field"><label>Customer</label><input class="input" id="inp-item-customer" placeholder="e.g. Petronas"></div>
         <div class="field"><label>Category</label><select class="input" id="inp-item-cat"><option value="">-- None --</option>${catOpts}</select></div>
         <div class="field"><label>Start Date</label><input class="input" id="inp-item-start" type="date"></div>
         <div class="field"><label>End Date</label><input class="input" id="inp-item-end" type="date"></div>
@@ -788,18 +861,24 @@ function showAddItem() {
 async function doAddItem() {
     const errEl = document.getElementById('item-error');
     const name = document.getElementById('inp-item-name').value.trim();
+    const customer = document.getElementById('inp-item-customer').value.trim();
     const catId = document.getElementById('inp-item-cat').value;
     const startDate = document.getElementById('inp-item-start').value || null;
     const endDate = document.getElementById('inp-item-end').value || null;
     if (!name) { errEl.textContent = 'ID / Name is required'; return; }
     try {
-        await api('/projects', { method: 'POST', body: { name, categoryId: catId ? parseInt(catId) : null, startDate, endDate } });
+        await api('/projects', { method: 'POST', body: {
+            name: name,
+            categoryId: catId ? parseInt(catId) : null,
+            startDate: startDate,
+            endDate: endDate,
+            customer: customer || ''
+        }});
         hideModal(); await loadDB(); renderMainScope();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
 // ---- Edit Item + Assign Members ----
-
 function showEditItem(pid) {
     const proj = DB.projects.find(p => p.id === pid);
     if (!proj) return;
@@ -809,11 +888,9 @@ function showEditItem(pid) {
         return `<option value="${s.id}" ${sel}>${esc(s.name)}</option>`;
     }).join('');
 
-    // Assigned members
     const assignedMembers = getProjectMembers(pid);
     const assignedIds = assignedMembers.map(m => m.id);
 
-    // Available members
     const seen = new Set();
     const available = DB.members.filter(m => {
         if (assignedIds.includes(m.id)) return false;
@@ -822,7 +899,6 @@ function showEditItem(pid) {
         return true;
     });
 
-    // Assigned list
     let assignedHtml = '';
     if (assignedMembers.length === 0) {
         assignedHtml = '<div style="color:var(--main-text3);font-size:.85rem;padding:16px;text-align:center">No members assigned</div>';
@@ -840,7 +916,6 @@ function showEditItem(pid) {
         }).join('');
     }
 
-    // Available checkboxes
     let availableHtml = '';
     if (available.length === 0) {
         availableHtml = '<div style="color:var(--main-text3);font-size:.85rem;padding:16px;text-align:center">All members assigned</div>';
@@ -863,7 +938,6 @@ function showEditItem(pid) {
         </div>`;
     }
 
-    // Countdown
     const cd = getProjectCountdown(proj);
     let cdHtml = '—';
     if (cd !== null) {
@@ -881,6 +955,7 @@ function showEditItem(pid) {
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="field"><label>ID / Name</label><input class="input" id="inp-item-edit" value="${esc(proj.name)}"></div>
+        <div class="field"><label>Customer</label><input class="input" id="inp-item-customer-edit" value="${esc(proj.customer || '')}" placeholder="e.g. Petronas"></div>
         <div class="field"><label>Category</label><select class="input" id="inp-item-cat-edit"><option value="">-- None --</option>${catOpts}</select></div>
         <div class="field"><label>Start Date</label><input class="input" id="inp-item-start-edit" type="date" value="${proj.startDate || ''}"></div>
         <div class="field"><label>End Date</label><input class="input" id="inp-item-end-edit" type="date" value="${proj.endDate || ''}"></div>
@@ -910,15 +985,10 @@ function showEditItem(pid) {
     setTimeout(() => { const el = document.getElementById('inp-item-edit'); el.focus(); el.select(); }, 100);
 }
 
-async function doRemoveFromEdit(pid, memberId) {
-    await api('/assignments', { method: 'DELETE', body: { projectId: pid, memberId: memberId } });
-    await loadDB();
-    showEditItem(pid);
-}
-
 async function doEditItemFull(pid) {
     const errEl = document.getElementById('item-error');
     const name = document.getElementById('inp-item-edit').value.trim();
+    const customer = document.getElementById('inp-item-customer-edit').value.trim();
     const catId = document.getElementById('inp-item-cat-edit').value;
     const startDate = document.getElementById('inp-item-start-edit').value || null;
     const endDate = document.getElementById('inp-item-end-edit').value || null;
@@ -928,7 +998,13 @@ async function doEditItemFull(pid) {
     try {
         await api('/projects/' + pid, {
             method: 'PUT',
-            body: { name, categoryId: catId ? parseInt(catId) : null, startDate, endDate }
+            body: {
+                name: name,
+                categoryId: catId ? parseInt(catId) : null,
+                startDate: startDate,
+                endDate: endDate,
+                customer: customer || ''
+            }
         });
 
         const checkboxes = document.querySelectorAll('#assign-new-list input[type=checkbox]:checked');
@@ -943,6 +1019,13 @@ async function doEditItemFull(pid) {
         hideModal(); await loadDB(); renderMainScope();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
+
+async function doRemoveFromEdit(pid, memberId) {
+    await api('/assignments', { method: 'DELETE', body: { projectId: pid, memberId: memberId } });
+    await loadDB();
+    showEditItem(pid);
+}
+
 
 function confirmDeleteItem(pid) {
     const p = DB.projects.find(x => x.id === pid);
@@ -1415,7 +1498,7 @@ function showAddUser() {
     var posOpts = DB.positions.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
     var deptOpts = DB.departments.map(function(d) { return '<option value="' + d.id + '">' + esc(d.name) + '</option>'; }).join('');
     showModal('<h3>Add User</h3>' +
-        '<div class="field"><label>Role</label><select class="input" id="adduser-role" onchange="toggleAddUserFields()"><option value="employee">Employee</option><option value="admin">Admin</option></select></div>' +
+        '<div class="field"><label>Role</label><select class="input" id="adduser-role" onchange="toggleAddUserFields()"><option value="employee">Employee</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></div>' +
         '<div id="emp-fields">' +
             '<div class="field"><label>Full Name</label><input class="input" id="adduser-name" placeholder="e.g. John Smith"></div>' +
             '<div class="field"><label>Position</label><select class="input" id="adduser-pos"><option value="">None</option>' + posOpts + '</select></div>' +
@@ -1431,7 +1514,7 @@ function showAddUser() {
 
 function toggleAddUserFields() {
     var role = document.getElementById('adduser-role').value;
-    document.getElementById('emp-fields').style.display = role === 'employee' ? '' : 'none';
+    document.getElementById('emp-fields').style.display = (role === 'employee' || role === 'viewer') ? '' : 'none';
 }
 
 async function doAddUser() {
@@ -1479,7 +1562,7 @@ function showEditUser(userId) {
     var deptOpts = DB.departments.map(function(d) { var sel = member && member.departmentId === d.id ? 'selected' : ''; return '<option value="' + d.id + '" ' + sel + '>' + esc(d.name) + '</option>'; }).join('');
 
     var html = '<h3>Edit — ' + esc(user.username) + '</h3>';
-    if (user.role === 'employee' && member) {
+    if (user.role !== 'admin' && member) {
         var curSal = latestSalary(member);
         html += '<div class="field"><label>Full Name</label><input class="input" id="edituser-name" value="' + esc(member.name) + '"></div>' +
             '<div class="field"><label>Position</label><select class="input" id="edituser-pos"><option value="">None</option>' + posOpts + '</select></div>' +
@@ -1488,7 +1571,7 @@ function showEditUser(userId) {
         }
     html += '<div class="field"><label>Username</label><input class="input" id="edituser-user" value="' + esc(user.username) + '"></div>' +
         '<div class="field"><label>New Password (blank = keep)</label><input class="input" id="edituser-pass" type="password" placeholder="Leave blank"></div>' +
-        '<div class="field"><label>Role</label><select class="input" id="edituser-role"><option value="employee" ' + (user.role === 'employee' ? 'selected' : '') + '>Employee</option><option value="admin" ' + (user.role === 'admin' ? 'selected' : '') + '>Admin</option></select></div>' +
+        '<div class="field"><label>Role</label><select class="input" id="edituser-role"><option value="admin" ' + (user.role === 'admin' ? 'selected' : '') + '>Admin</option><option value="viewer" ' + (user.role === 'viewer' ? 'selected' : '') + '>Viewer</option><option value="employee" ' + (user.role === 'employee' ? 'selected' : '') + '>Employee</option></select></div>' +
         '<p class="auth-error" id="edituser-error"></p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditUser(' + user.id + ')">Save</button></div>';
     showModal(html);
@@ -1904,7 +1987,14 @@ function renderEmployeeProjects() {
                     else cdHtml = '<span style="color:var(--danger);font-weight:600">' + Math.abs(cd) + ' days overdue</span>';
                 }
                 var fmtDate = function(d) { return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; };
-                return { id: p.id, name: esc(p.name), timeline: fmtDate(p.startDate) + ' — ' + fmtDate(p.endDate), team: mc + ' member' + (mc !== 1 ? 's' : ''), cdHtml: cdHtml };
+                return {
+                    id: p.id,
+                    name: esc(p.name),
+                    customer: esc(p.customer || '—'),
+                    timeline: fmtDate(p.startDate) + ' — ' + fmtDate(p.endDate),
+                    team: mc + ' member' + (mc !== 1 ? 's' : ''),
+                    cdHtml: cdHtml
+                };
             });
 
             empScopePages[scopeId] = { page: 1, pageSize: 5, data: itemsData, isPic: isPic, scopeId: scopeId };
@@ -1921,12 +2011,15 @@ function renderEmployeeProjects() {
                     '</div>' +
                 '</div>' +
                 '<div class="collapse-content" id="scope-' + scopeId + '-content" style="display:none;padding-top:8px">' +
-                    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
-                        '<input class="input" id="scope-search-' + scopeId + '" placeholder="Search ID/Name..." value="' + esc(empScopeSearch[scopeId] || '') + '" oninput="scopeSearchChanged(' + scopeId + ')" style="max-width:260px;padding:7px 10px;font-size:.82rem">' +
-                        (isPic ? '<button class="btn btn-green btn-sm" style="margin-left:auto" onclick="empShowAddItem(' + scopeId + ')">+ Add Item</button>' : '') +
+                    '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">' +
+                        '<input class="input" id="scope-search-' + scopeId + '" placeholder="Search ID/Name..." value="' + esc(empScopeSearch[scopeId] || '') + '" oninput="scopeSearchChanged(' + scopeId + ')" style="max-width:260px;padding:7px 10px;font-size:.82rem;margin-right:auto">' +
+                        (isPic ? '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+                            '<a class="btn btn-ghost btn-sm" href="/api/template/projects/' + scopeId + '" style="text-decoration:none">Template Download</a>' +
+                            '<label class="btn btn-blue btn-sm" style="cursor:pointer">Import Excel<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="empHandleScopeImport(' + scopeId + ',this)"></label>' +
+                            '<button class="btn btn-green btn-sm" onclick="empShowAddItem(' + scopeId + ')">+ Add Item</button>' +
+                        '</div>' : '') +
                     '</div>' +
-                    '<div id="scope-items-table-' + scopeId + '"></div>' +
-                '</div>' +
+                '<div id="scope-items-table-' + scopeId + '"></div>' +  
             '</div>';
         });
     }
@@ -1969,15 +2062,103 @@ function scopeSearchChanged(scopeId) {
     renderScopeItemsTable(scopeId);
 }
 
-/* ---------- Employee PIC Item CRUD ---------- */
+// ========== Employee PIC Import ==========
+var empImportScopeId = null;
 
-function empShowAddItem(scopeId) {
+
+async function empHandleScopeImport(scopeId, input) {
+    var file = input.files[0];
+    if (!file) return;
+    empImportScopeId = scopeId;
+
     var scope = DB.scopes.find(function(s) { return s.id === scopeId; });
     var scopeName = scope ? scope.name : '';
 
+    var reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            // e.target.result is ArrayBuffer from readAsArrayBuffer
+            var data = new Uint8Array(e.target.result);
+            var wb = XLSX.read(data, { type: 'array' });
+            var ws = wb.Sheets[wb.SheetNames[0]];
+            var rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+            if (rows.length === 0) {
+                alert('File is empty');
+                input.value = '';
+                return;
+            }
+
+            var headers = Object.keys(rows[0]);
+            var previewRows = rows.slice(0, 5);
+
+            var previewHtml = '<div style="margin-top:10px;font-size:.85rem;color:var(--main-text3)">Preview (' + rows.length + ' rows total)</div>' +
+                '<div class="import-preview"><table><thead><tr>' + headers.map(function(h) { return '<th>' + esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+                previewRows.map(function(row) { return '<tr>' + headers.map(function(h) { return '<td>' + esc(String(row[h])) + '</td>'; }).join('') + '</tr>'; }).join('') +
+                (rows.length > 5 ? '<tr><td colspan="' + headers.length + '" style="text-align:center;color:var(--main-text3)">... ' + (rows.length - 5) + ' more</td></tr>' : '') +
+                '</tbody></table></div>';
+
+            // Convert ArrayBuffer to base64
+            var bytes = new Uint8Array(e.target.result);
+            var binary = '';
+            for (var i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            empImportBase64 = btoa(binary);
+            empImportFilename = file.name;
+
+            showModal('<h3>Import to ' + esc(scopeName) + '</h3>' +
+                previewHtml +
+                '<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">' +
+                    '<button class="btn btn-ghost" onclick="hideModal();empImportBase64=null">Cancel</button>' +
+                    '<button class="btn btn-accent" onclick="empDoScopeImport(' + scopeId + ')">Import ' + rows.length + ' Rows</button>' +
+                '</div>');
+        } catch (err) {
+            alert('Error reading file: ' + err.message);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+    input.value = '';
+}
+
+var empImportBase64 = null;
+var empImportFilename = '';
+
+async function empDoScopeImport(scopeId) {
+    if (!empImportBase64) return;
+    try {
+        var result = await api('/import/projects', {
+            method: 'POST',
+            body: {
+                filename: empImportFilename,
+                data: empImportBase64,
+                categoryId: scopeId
+            }
+        });
+        hideModal();
+        empImportBase64 = null;
+
+        var msg = 'Imported: ' + result.inserted + ', Skipped: ' + result.skipped;
+        if (result.errors && result.errors.length > 0) {
+            msg += '\n\n' + result.errors.join('\n');
+        }
+        alert(msg);
+
+        await loadDB();
+        renderEmployeeProjects();
+    } catch (e) {
+        alert('Import failed: ' + e.message);
+    }
+}
+
+/* ---------- Employee PIC Item CRUD ---------- */
+function empShowAddItem(scopeId) {
+    var scope = DB.scopes.find(function(s) { return s.id === scopeId; });
+    var scopeName = scope ? scope.name : '';
     showModal('<h3>Add Item to ' + esc(scopeName) + '</h3>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-            '<div class="field"><label>ID / Name</label><input class="input" id="emp-inp-item-name" placeholder="e.g. PLC-001 Panel"></div><br>' +
+            '<div class="field"><label>ID / Name</label><input class="input" id="emp-inp-item-name" placeholder="e.g. PLC-001 Panel"></div>' +
+            '<div class="field"><label>Customer</label><input class="input" id="emp-inp-customer" placeholder="e.g. Petronas"></div>' +
             '<div class="field"><label>Start Date</label><input class="input" id="emp-inp-item-start" type="date"></div>' +
             '<div class="field"><label>End Date</label><input class="input" id="emp-inp-item-end" type="date"></div>' +
         '</div>' +
@@ -1989,11 +2170,15 @@ function empShowAddItem(scopeId) {
 async function empDoAddItem(scopeId) {
     var errEl = document.getElementById('emp-item-error');
     var name = document.getElementById('emp-inp-item-name').value.trim();
+    var customerName = document.getElementById('emp-inp-customer').value.trim();
     var startDate = document.getElementById('emp-inp-item-start').value || null;
     var endDate = document.getElementById('emp-inp-item-end').value || null;
     if (!name) { errEl.textContent = 'ID / Name is required'; return; }
     try {
-        await api('/projects', { method: 'POST', body: { name: name, categoryId: scopeId, startDate: startDate, endDate: endDate } });
+        await api('/projects', { method: 'POST', body: {
+            name: name, categoryId: scopeId, startDate: startDate, endDate: endDate,
+            customer: customerName || null
+        }});
         hideModal(); await loadDB(); renderEmployeeProjects();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
@@ -2001,7 +2186,6 @@ async function empDoAddItem(scopeId) {
 function empShowEditItem(pid) {
     var proj = DB.projects.find(function(p) { return p.id === pid; });
     if (!proj) return;
-
     var cd = getProjectCountdown(proj);
     var cdHtml = '—';
     if (cd !== null) {
@@ -2011,10 +2195,10 @@ function empShowEditItem(pid) {
         else if (cd === 0) cdHtml = '<span style="color:var(--warning)">Due today</span>';
         else cdHtml = '<span style="color:var(--danger)">' + Math.abs(cd) + ' days overdue</span>';
     }
-
     showModal('<h3>Edit Item</h3>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-            '<div class="field"><label>ID / Name</label><input class="input" id="emp-inp-item-edit" value="' + esc(proj.name) + '"></div><br>' +
+            '<div class="field"><label>ID / Name</label><input class="input" id="emp-inp-item-edit" value="' + esc(proj.name) + '"></div>' +
+            '<div class="field"><label>Customer</label><input class="input" id="emp-inp-customer-edit" value="' + esc(proj.customer || '') + '"></div>' +
             '<div class="field"><label>Start Date</label><input class="input" id="emp-inp-item-start-edit" type="date" value="' + (proj.startDate || '') + '"></div>' +
             '<div class="field"><label>End Date</label><input class="input" id="emp-inp-item-end-edit" type="date" value="' + (proj.endDate || '') + '"></div>' +
             '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase">Countdown</span><span style="font-size:.9rem">' + cdHtml + '</span></div>' +
@@ -2028,14 +2212,16 @@ async function empDoEditItem(pid) {
     var errEl = document.getElementById('emp-item-error');
     var proj = DB.projects.find(function(p) { return p.id === pid; });
     var name = document.getElementById('emp-inp-item-edit').value.trim();
+    var customerName = document.getElementById('emp-inp-customer-edit').value.trim();
     var startDate = document.getElementById('emp-inp-item-start-edit').value || null;
     var endDate = document.getElementById('emp-inp-item-end-edit').value || null;
     if (!name) { errEl.textContent = 'ID / Name is required'; return; }
     try {
-        await api('/projects/' + pid, {
-            method: 'PUT',
-            body: { name: name, categoryId: proj ? proj.categoryId : null, startDate: startDate, endDate: endDate }
-        });
+        await api('/projects/' + pid, { method: 'PUT', body: {
+            name: name, categoryId: proj ? proj.categoryId : null,
+            startDate: startDate, endDate: endDate,
+            customer: customerName || null
+        }});
         hideModal(); await loadDB(); renderEmployeeProjects();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
@@ -2150,14 +2336,12 @@ function changeEmpItemSummaryPageSize(size) {
 }
 
 /* ---------- Scope Items Table ---------- */
-
 function renderScopeItemsTable(scopeId) {
     var sp = empScopePages[scopeId];
     if (!sp) return;
     var isPic = sp.isPic;
     var query = empScopeSearch[scopeId] || '';
 
-    // Filter
     var data = query
         ? sp.data.filter(function(r) { return r.name.toLowerCase().indexOf(query) !== -1; })
         : sp.data;
@@ -2171,7 +2355,7 @@ function renderScopeItemsTable(scopeId) {
     var actionsCol = isPic ? '<th style="width:80px">Actions</th>' : '';
     var rows = '';
     if (data.length === 0) {
-        var colCount = isPic ? 4 : 3;
+        var colCount = isPic ? 5 : 4;
         rows = '<tr><td colspan="' + colCount + '" style="text-align:center;color:var(--main-text3);padding:30px">' +
             (query ? 'No items matching "' + esc(query) + '"' : 'No items. ' + (isPic ? 'Click "+ Add Item" to create one.' : '')) +
             '</td></tr>';
@@ -2183,6 +2367,7 @@ function renderScopeItemsTable(scopeId) {
             '</div></td>' : '';
             return '<tr>' +
                 '<td><div style="font-family:var(--font-d);font-size:1rem">' + r.name + '</div></td>' +
+                '<td>' + r.customer + '</td>' +
                 '<td style="font-family:var(--font-m);font-size:.85rem">' + r.timeline + '</td>' +
                 '<td>' + r.cdHtml + '</td>' +
                 actionCell +
@@ -2190,7 +2375,7 @@ function renderScopeItemsTable(scopeId) {
         }).join('');
     }
 
-    // Pagination
+    // Pagination (不变)
     var paginationHtml = '';
     if (data.length > 0) {
         var showFrom = startIdx + 1;
@@ -2222,7 +2407,7 @@ function renderScopeItemsTable(scopeId) {
 
     document.getElementById('scope-items-table-' + scopeId).innerHTML =
         '<div class="table-wrap"><table>' +
-            '<thead><tr><th>Work Category Id/Name</th><th>Timeline</th><th>Countdown</th>' + actionsCol + '</tr></thead>' +
+            '<thead><tr><th>Work Category Id/Name</th><th>Customer</th><th>Timeline</th><th>Countdown</th>' + actionsCol + '</tr></thead>' +
             '<tbody>' + rows + '</tbody>' +
         '</table></div>' + paginationHtml;
 }
@@ -4519,15 +4704,960 @@ function changeRptEmpPageSize(size) {
 
 /*BOM Panel Material Tracking Part */
 
+/* ==========================================================
+   Role and Permission
+   ========================================================== */
+function getUserRole() {
+    return currentUser ? currentUser.role : '';
+}
 
+function canEdit() {
+    return getUserRole() === 'admin';
+}
+
+/* ==========================================================
+   PANEL TRACKING MODULE
+   ========================================================== */
+
+let selectedModule = 'attendance';
+
+function selectModule(mod, el) {
+    selectedModule = mod;
+    document.querySelectorAll('.login-tab').forEach(function(t) { t.classList.remove('active'); });
+    if (el) el.classList.add('active');
+    document.getElementById('login-subtitle').textContent =
+        mod === 'attendance' ? 'Project Salary Management' : 'Panel Tracking System';
+}
+
+function ptLogout() {
+    showModal('<h3>Sign Out</h3><p style="color:var(--main-text2);line-height:1.6">Are you sure you want to sign out?</p><div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="ptDoLogout()">Sign Out</button></div>');
+}
+
+function ptDoLogout() {
+    localStorage.removeItem('multitrade_session');
+    localStorage.removeItem('multitrade_pt_page');
+    localStorage.removeItem('multitrade_module');
+    currentUser = null;
+    document.querySelectorAll('.auth-page,.app-layout').forEach(function(p) { p.classList.remove('active'); });
+    document.getElementById('login-page').classList.add('active');
+    document.getElementById('login-user').value = '';
+    document.getElementById('login-pass').value = '';
+    document.getElementById('login-error').textContent = '';
+    selectedModule = 'attendance';
+    document.querySelectorAll('.login-tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelector('.login-tab').classList.add('active');
+    document.getElementById('login-subtitle').textContent = 'Project Salary Management';
+    hideModal();
+}
+
+function ptOpenModal(id) { document.getElementById(id).classList.add('active'); }
+function ptCloseModal(id) { document.getElementById(id).classList.remove('active'); }
+
+document.querySelectorAll('#panel-layout .modal-overlay, [id^="modal-pt-"]').forEach(function(o) {
+    o.addEventListener('click', function(e) { if (e.target === o) o.classList.remove('active'); });
+});
+
+// ========================================
+// PAGINATION HELPER
+// ========================================
+var ptPageSize = 10;
+
+function ptPagination(totalItems, currentPage, pageSize, onPageChange, sizeChangeFunc) {
+    if (totalItems === 0) return '';
+    var totalPages = Math.ceil(totalItems / pageSize) || 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+    var startIdx = (currentPage - 1) * pageSize;
+    var endIdx = Math.min(startIdx + pageSize, totalItems);
+    var showFrom = startIdx + 1;
+    var showTo = endIdx;
+
+    var maxVisible = 5;
+    var startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+    var endPage = Math.min(totalPages, startPage + maxVisible - 1);
+    if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
+
+    var pageButtons = '';
+    pageButtons += '<button onclick="' + onPageChange + '(1)" ' + (currentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
+    pageButtons += '<button onclick="' + onPageChange + '(' + (currentPage - 1) + ')" ' + (currentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
+    for (var p = startPage; p <= endPage; p++) {
+        pageButtons += '<button onclick="' + onPageChange + '(' + p + ')" class="' + (p === currentPage ? 'active' : '') + '">' + p + '</button>';
+    }
+    pageButtons += '<button onclick="' + onPageChange + '(' + (currentPage + 1) + ')" ' + (currentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
+    pageButtons += '<button onclick="' + onPageChange + '(' + totalPages + ')" ' + (currentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
+
+    return '<div class="pagination">' +
+        '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + totalItems + '</div>' +
+        '<div style="display:flex;align-items:center;gap:20px">' +
+            '<div class="pagination-size"><label>Show</label>' +
+                '<select onchange="' + sizeChangeFunc + '(this.value)">' +
+                    '<option value="5"' + (pageSize === 5 ? ' selected' : '') + '>5</option>' +
+                    '<option value="10"' + (pageSize === 10 ? ' selected' : '') + '>10</option>' +
+                    '<option value="25"' + (pageSize === 25 ? ' selected' : '') + '>25</option>' +
+                    '<option value="50"' + (pageSize === 50 ? ' selected' : '') + '>50</option>' +
+                    '<option value="100"' + (pageSize === 100 ? ' selected' : '') + '>100</option>' +
+                '</select></div>' +
+            '<div class="pagination-controls">' + pageButtons + '</div>' +
+        '</div></div>';
+}
+
+
+// ========================================
+//panel load db
+// ========================================
+let ptDB = { panels: [], materials: [], users: [], dashboard: {}, panelIds: [] };
+
+async function ptLoadDB() {
+    try {
+        var results = await Promise.all([
+            api('/m-dashboard'), api('/m-panels'), api('/m-materials'), api('/m-panel-ids')
+        ]);
+        ptDB.dashboard = results[0];
+        ptDB.panels = results[1];
+        ptDB.materials = results[2];
+        ptDB.panelIds = results[3];
+    } catch (e) {
+        console.error('Panel Tracking load error:', e);
+    }
+    await ptLoadAllUsers();
+}
+
+function ptNav(tab, el) {
+    localStorage.setItem('multitrade_pt_page', tab);
+    document.querySelectorAll('#panel-layout .page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('#pt-nav .nav-item').forEach(n => n.classList.remove('active'));
+    var target = document.getElementById('page-' + tab);
+    if (target) target.classList.add('active');
+    if (el) el.classList.add('active');
+    else {
+        var match = document.querySelector('#pt-nav .nav-item[data-page="' + tab + '"]');
+        if (match) match.classList.add('active');
+    }
+    if (tab === 'pt-dashboard') ptRenderDashboard();
+    else if (tab === 'pt-panel') ptRenderPanel();
+    else if (tab === 'pt-material') ptRenderMaterial();
+    else if (tab === 'pt-users') { loadDB().then(function() { ptRenderUsers(); }); }
+    else if (tab === 'pt-import') ptRenderImport();
+    window.scrollTo(0, 0);
+}
+
+function ptStatusBadge(s) {
+    if (s === 'complete') return '<span class="badge b-green">Complete</span>';
+    if (s === 'in_progress') return '<span class="badge b-yellow">In Progress</span>';
+    return '<span class="badge b-red">Pending</span>';
+}
+
+// ---------- DASHBOARD ----------
+var dashCurrentPage = 1;
+var dashPageSize = 10;
+
+function ptRenderDashboard() {
+    var d = ptDB.dashboard;
+    var el = document.getElementById('pt-dashboard-content');
+    var allPanels = ptDB.panelIds || [];
+
+    // Pagination
+    var totalPages = Math.ceil(allPanels.length / dashPageSize) || 1;
+    if (dashCurrentPage > totalPages) dashCurrentPage = totalPages;
+    if (dashCurrentPage < 1) dashCurrentPage = 1;
+    var startIdx = (dashCurrentPage - 1) * dashPageSize;
+    var pageData = allPanels.slice(startIdx, startIdx + dashPageSize);
+
+    el.innerHTML =
+        '<div class="stats">' +
+            '<div class="stat"><div class="label">Total Panels</div><div class="value">' + d.total_panels + '</div></div>' +
+            '<div class="stat"><div class="label">Total Materials</div><div class="value">' + d.total_materials + '</div></div>' +
+        '</div>' +
+        '<div class="section-head"><h3>All Panels</h3></div>' +
+        (allPanels.length === 0
+            ? '<div class="empty-msg">No panels yet.</div>'
+            : '<div class="table-wrap"><table><thead><tr><th>No</th><th>Panel ID</th><th>Customer</th><th>Start Date</th><th>End Date</th></tr></thead><tbody>' +
+              pageData.map(function(p, i) {
+                  return '<tr><td>' + (startIdx + i + 1) + '</td><td><strong>' + esc(p.name) + '</strong></td><td>' + esc(p.customer || '—') + '</td><td>' + (p.start_date ? p.start_date.slice(0, 10) : '—') + '</td><td>' + (p.end_date ? p.end_date.slice(0, 10) : '—') + '</td></tr>';
+              }).join('') + '</tbody></table></div>' +
+              ptPagination(allPanels.length, dashCurrentPage, dashPageSize, 'goDashPage', 'changeDashPageSize'));
+}
+
+function goDashPage(page) {
+    dashCurrentPage = page;
+    ptRenderDashboard();
+}
+function changeDashPageSize(size) {
+    dashPageSize = parseInt(size);
+    dashCurrentPage = 1;
+    ptRenderDashboard();
+}
+
+// ---------- PANELS ----------
+var panelCurrentPage = 1;
+var panelPageSize = 10;
+
+function ptRenderPanel() {
+    var el = document.getElementById('pt-panel-content');
+    var addBtn = canEdit() ? '<button class="btn btn-accent btn-sm" onclick="ptOpenAddPanel()">+ Add Panel</button>' : '';
+    el.innerHTML =
+        '<div class="filter">' +
+            '<input class="input" type="text" placeholder="Search..." id="pt-panel-search" oninput="ptFilterPanels()" style="max-width:320px">' +
+            '<button class="btn btn-ghost btn-sm" onclick="ptResetPanelFilter()">Reset</button>' +
+            '<div style="flex:1"></div>' +
+            addBtn +
+        '</div>' +
+        '<div class="section-head"><h3>All Panels</h3></div>' +
+        '<div id="pt-panel-table-area"></div>';
+    ptFilterPanels();
+}
+
+function ptFilterPanels() {
+    var search = (document.getElementById('pt-panel-search').value || '').toLowerCase();
+    var filtered = (ptDB.panelIds || []).filter(function(p) {
+        if (!search) return true;
+        var haystack = [
+            p.name, p.customer, p.start_date, p.end_date, p.install_date
+        ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
+        return haystack.indexOf(search) !== -1;
+    });
+
+    var totalPages = Math.ceil(filtered.length / panelPageSize) || 1;
+    if (panelCurrentPage > totalPages) panelCurrentPage = totalPages;
+    if (panelCurrentPage < 1) panelCurrentPage = 1;
+    var startIdx = (panelCurrentPage - 1) * panelPageSize;
+    var pageData = filtered.slice(startIdx, startIdx + panelPageSize);
+
+    var area = document.getElementById('pt-panel-table-area');
+    if (filtered.length === 0) { area.innerHTML = '<div class="empty-msg">No panels found</div>'; return; }
+    area.innerHTML =
+        '<div class="table-wrap"><table><thead><tr><th>No</th><th>Panel ID</th><th>Customer</th><th>Start Date</th><th>End Date</th><th>Install Date</th><th>Actions</th></tr></thead><tbody>' +
+        pageData.map(function(p, i) {
+            return '<tr>' +
+                '<td>' + (startIdx + i + 1) + '</td>' +
+                '<td><strong>' + esc(p.name) + '</strong></td>' +
+                '<td>' + esc(p.customer || '—') + '</td>' +
+                '<td>' + (p.start_date ? p.start_date.slice(0, 10) : '—') + '</td>' +
+                '<td>' + (p.end_date ? p.end_date.slice(0, 10) : '—') + '</td>' +
+                '<td>' + (p.install_date ? p.install_date.slice(0, 10) : '—') + '</td>' +
+                '<td>' + (canEdit()
+                ? '<div style="display:flex;gap:4px">' +
+                    '<button class="btn btn-ghost btn-sm" onclick="ptShowEditPanel(' + p.id + ')">Edit</button>' +
+                    '<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ptDeletePanel(' + p.id + ')">&#10005;</button>' +
+                '</div>'
+                : '<span style="color:var(--main-text3);font-size:.82rem">View only</span>') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        ptPagination(filtered.length, panelCurrentPage, panelPageSize, 'goPanelPage', 'changePanelPageSize');
+}
+
+function ptResetPanelFilter() {
+    document.getElementById('pt-panel-search').value = '';
+    panelCurrentPage = 1;
+    ptFilterPanels();
+}
+
+function goPanelPage(page) {
+    panelCurrentPage = page;
+    ptFilterPanels();
+}
+function changePanelPageSize(size) {
+    panelPageSize = parseInt(size);
+    panelCurrentPage = 1;
+    ptFilterPanels();
+}
+
+
+function ptOpenAddPanel() {
+    document.getElementById('pt-ap-name').value = '';
+    document.getElementById('pt-ap-customer').value = '';
+    document.getElementById('pt-ap-start').value = '';
+    document.getElementById('pt-ap-end').value = '';
+    document.getElementById('pt-ap-instdate').value = '';
+    document.getElementById('pt-ap-error').textContent = '';
+    ptOpenModal('modal-pt-add-panel');
+}
+
+async function ptDoAddPanel() {
+    var name = document.getElementById('pt-ap-name').value.trim();
+    var errEl = document.getElementById('pt-ap-error');
+    errEl.textContent = '';
+    if (!name) { errEl.textContent = 'Enter a panel ID/name'; return; }
+    try {
+        var scopeRes = await api('/scopes');
+        var panelScope = scopeRes.find(function(s) { return s.name.toLowerCase().indexOf('panel build') !== -1; });
+        if (!panelScope) { errEl.textContent = 'Panel Build scope not found'; return; }
+        await api('/projects', { method: 'POST', body: {
+            name: name,
+            categoryId: panelScope.id,
+            startDate: document.getElementById('pt-ap-start').value || null,
+            endDate: document.getElementById('pt-ap-end').value || null,
+            customer: document.getElementById('pt-ap-customer').value.trim(),
+            installDate: document.getElementById('pt-ap-instdate').value || null
+        }});
+        ptCloseModal('modal-pt-add-panel');
+        await ptLoadDB();
+        ptRenderPanel();
+    } catch (e) { errEl.textContent = e.message; }
+}
+
+function ptShowEditPanel(id) {
+    var p = (ptDB.panelIds || []).find(function(x) { return x.id === id; });
+    if (!p) return;
+    document.getElementById('pt-ep-id').value = p.id;
+    document.getElementById('pt-ep-name').value = p.name;
+    document.getElementById('pt-ep-customer').value = p.customer || '';
+    document.getElementById('pt-ep-start').value = p.start_date ? p.start_date.slice(0, 10) : '';
+    document.getElementById('pt-ep-end').value = p.end_date ? p.end_date.slice(0, 10) : '';
+    document.getElementById('pt-ep-instdate').value = p.install_date ? p.install_date.slice(0, 10) : '';
+    document.getElementById('pt-ep-error').textContent = '';
+    ptOpenModal('modal-pt-edit-panel');
+}
+
+async function ptDoEditPanel() {
+    var id = document.getElementById('pt-ep-id').value;
+    var name = document.getElementById('pt-ep-name').value.trim();
+    var errEl = document.getElementById('pt-ep-error');
+    errEl.textContent = '';
+    if (!name) { errEl.textContent = 'Enter a panel name'; return; }
+    try {
+        var scopeRes = await api('/scopes');
+        var panelScope = scopeRes.find(function(s) { return s.name.toLowerCase().indexOf('panel build') !== -1; });
+        await api('/projects/' + id, { method: 'PUT', body: {
+            name: name,
+            categoryId: panelScope ? panelScope.id : null,
+            startDate: document.getElementById('pt-ep-start').value || null,
+            endDate: document.getElementById('pt-ep-end').value || null,
+            customer: document.getElementById('pt-ep-customer').value.trim(),
+            installDate: document.getElementById('pt-ep-instdate').value || null
+        }});
+        ptCloseModal('modal-pt-edit-panel');
+        await ptLoadDB();
+        ptRenderPanel();
+    } catch (e) { errEl.textContent = e.message; }
+}
+
+function ptDeletePanel(id) {
+    var p = (ptDB.panelIds || []).find(function(x) { return x.id === id; });
+    if (!p) return;
+    showModal('<h3>Delete Panel</h3><p style="color:var(--main-text2);line-height:1.6">Are you sure you want to delete <strong style="color:var(--main-text)">' + esc(p.name) + '</strong>?</p><div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="ptDoDeletePanel(' + id + ')">Delete</button></div>');
+}
+
+async function ptDoDeletePanel(id) {
+    hideModal();
+    try {
+        await api('/projects/' + id, { method: 'DELETE' });
+        await ptLoadDB();
+        ptRenderPanel();
+    } catch (e) { alert(e.message); }
+}
+
+// ---------- MATERIALS ----------
+var matCurrentPage = 1;
+var matPageSize = 10;
+
+function ptRenderMaterial() {
+    var el = document.getElementById('pt-material-content');
+    var addBtn = canEdit() ? '<button class="btn btn-accent btn-sm" onclick="ptOpenAddMaterial()">+ Add Material</button>' : '';
+    el.innerHTML =
+        '<div class="filter">' +
+            '<input class="input" type="text" placeholder="Search..." id="pt-mat-search" oninput="ptFilterMaterials()" style="max-width:320px">' +
+            '<button class="btn btn-ghost btn-sm" onclick="ptResetMatFilter()">Reset</button>' +
+            '<div style="flex:1"></div>' +
+            addBtn +
+        '</div>' +
+        '<div class="section-head"><h3>All Materials</h3></div>' +
+        '<div id="pt-mat-table-area"></div>';
+    ptFilterMaterials();
+}
+
+function ptFilterMaterials() {
+    var search = (document.getElementById('pt-mat-search').value || '').toLowerCase();
+    var filtered = ptDB.materials.filter(function(m) {
+        if (!search) return true;
+        var haystack = [
+            m.part_no, m.brand, m.description, m.serial_no, m.yom,
+            m.vendor, m.vendor_po_no, m.panel_no, m.install_date,
+            m.category, m.unit, m.unit_price
+        ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
+        return haystack.indexOf(search) !== -1;
+    });
+
+    var totalPages = Math.ceil(filtered.length / matPageSize) || 1;
+    if (matCurrentPage > totalPages) matCurrentPage = totalPages;
+    if (matCurrentPage < 1) matCurrentPage = 1;
+    var startIdx = (matCurrentPage - 1) * matPageSize;
+    var pageData = filtered.slice(startIdx, startIdx + matPageSize);
+
+    var area = document.getElementById('pt-mat-table-area');
+    if (filtered.length === 0) { area.innerHTML = '<div class="empty-msg">No materials found</div>'; return; }
+    area.innerHTML =
+        '<div class="table-wrap"><table><thead><tr><th>No</th><th>Part No</th><th>Description</th><th>Brand</th><th>Serial No</th><th>Vendor PO</th><th>Vendor</th><th>Panel ID</th><th>YOM</th><th>Category</th><th>Unit</th><th>Price</th><th>Install Date</th><th>Actions</th></tr></thead><tbody>' +
+        pageData.map(function(m, i) {
+            return '<tr>' +
+                '<td>' + (startIdx + i + 1) + '</td>' +
+                '<td><strong>' + esc(m.part_no) + '</strong></td>' +
+                '<td>' + esc(m.description || '—') + '</td>' +
+                '<td>' + esc(m.brand) + '</td>' +
+                '<td>' + esc(m.serial_no || '—') + '</td>' +
+                '<td>' + esc(m.vendor_po_no || '—') + '</td>' +
+                '<td>' + esc(m.vendor || '—') + '</td>' +
+                '<td>' + esc(m.panel_no || '—') + '</td>' +
+                '<td>' + esc(m.yom || '—') + '</td>' +
+                '<td>' + esc(m.category || '—') + '</td>' +
+                '<td>' + esc(m.unit || '—') + '</td>' +
+                '<td>' + (m.unit_price != null ? parseFloat(m.unit_price).toLocaleString('en-MY', { maximumFractionDigits: 2 }) : '—') + '</td>' +
+                '<td>' + (m.install_date ? m.install_date.slice(0, 10) : '—') + '</td>' +
+                '<td>' + (canEdit()
+                ? '<div style="display:flex;gap:4px">' +
+                    '<button class="btn btn-ghost btn-sm" onclick="ptShowEditMaterial(' + m.id + ')">Edit</button>' +
+                    '<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ptDeleteMaterial(' + m.id + ')">&#10005;</button>' +
+                '</div>'
+                : '<span style="color:var(--main-text3);font-size:.82rem">View only</span>') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        ptPagination(filtered.length, matCurrentPage, matPageSize, 'goMatPage', 'changeMatPageSize');
+}
+
+function ptResetMatFilter() {
+    document.getElementById('pt-mat-search').value = '';
+    matCurrentPage = 1;
+    ptFilterMaterials();
+}
+
+function goMatPage(page) {
+    matCurrentPage = page;
+    ptFilterMaterials();
+}
+function changeMatPageSize(size) {
+    matPageSize = parseInt(size);
+    matCurrentPage = 1;
+    ptFilterMaterials();
+}
+
+function ptOpenAddMaterial() {
+    var sel = document.getElementById('pt-am-panelno');
+    sel.innerHTML = '<option value="">— Select Panel ID —</option>' +
+        (ptDB.panelIds || []).map(function(p) {
+            return '<option value="' + esc(p.name) + '">' + esc(p.name) + '</option>';
+        }).join('');
+    ['pt-am-partno', 'pt-am-brand', 'pt-am-serial', 'pt-am-desc', 'pt-am-yom', 'pt-am-vendor', 'pt-am-vpo', 'pt-am-price', 'pt-am-cat', 'pt-am-unit'].forEach(function(id) { document.getElementById(id).value = ''; });
+    document.getElementById('pt-am-instdate').value = '';
+    document.getElementById('pt-am-error').textContent = '';
+    ptOpenModal('modal-pt-add-material');
+}
+
+function ptShowEditMaterial(id) {
+    var m = ptDB.materials.find(function(x) { return x.id === id; });
+    if (!m) return;
+    document.getElementById('pt-em-panelno').innerHTML = '<option value="">— Select Panel ID —</option>' +
+        (ptDB.panelIds || []).map(function(p) {
+            var selected = (p.name === m.panel_no) ? ' selected' : '';
+            return '<option value="' + esc(p.name) + '"' + selected + '>' + esc(p.name) + '</option>';
+        }).join('');
+    document.getElementById('pt-em-id').value = m.id;
+    document.getElementById('pt-em-partno').value = m.part_no;
+    document.getElementById('pt-em-brand').value = m.brand;
+    document.getElementById('pt-em-desc').value = m.description || '';
+    document.getElementById('pt-em-serial').value = m.serial_no || '';
+    document.getElementById('pt-em-yom').value = m.yom || '';
+    document.getElementById('pt-em-vendor').value = m.vendor || '';
+    document.getElementById('pt-em-vpo').value = m.vendor_po_no || '';
+    document.getElementById('pt-em-instdate').value = m.install_date ? m.install_date.slice(0, 10) : '';
+    document.getElementById('pt-em-cat').value = m.category || '';
+    document.getElementById('pt-em-unit').value = m.unit || '';
+    document.getElementById('pt-em-price').value = m.unit_price || '';
+    document.getElementById('pt-em-error').textContent = '';
+    ptOpenModal('modal-pt-edit-material');
+}
+
+async function ptDoAddMaterial() {
+    var partNo = document.getElementById('pt-am-partno').value.trim();
+    var errEl = document.getElementById('pt-am-error');
+    errEl.textContent = '';
+    if (!partNo) { errEl.textContent = 'Enter a part number'; return; }
+    try {
+        await api('/m-materials', { method: 'POST', body: {
+            part_no: partNo, brand: document.getElementById('pt-am-brand').value.trim(),
+            serial_no: document.getElementById('pt-am-serial').value.trim(),
+            description: document.getElementById('pt-am-desc').value.trim(),
+            yom: document.getElementById('pt-am-yom').value.trim(),
+            vendor: document.getElementById('pt-am-vendor').value.trim(),
+            vendor_po_no: document.getElementById('pt-am-vpo').value.trim(),
+            panel_no: document.getElementById('pt-am-panelno').value,
+            install_date: document.getElementById('pt-am-instdate').value || null,
+            category: document.getElementById('pt-am-cat').value.trim(),
+            unit: document.getElementById('pt-am-unit').value.trim(),
+            unit_price: parseFloat(document.getElementById('pt-am-price').value) || 0
+        }});
+        ptCloseModal('modal-pt-add-material');
+        await ptLoadDB();
+        ptRenderMaterial();
+    } catch (e) { errEl.textContent = e.message; }
+}
+
+async function ptDoEditMaterial() {
+    var id = document.getElementById('pt-em-id').value;
+    var partNo = document.getElementById('pt-em-partno').value.trim();
+    var errEl = document.getElementById('pt-em-error');
+    errEl.textContent = '';
+    if (!partNo) { errEl.textContent = 'Enter a part number'; return; }
+    try {
+        await api('/m-materials/' + id, { method: 'PUT', body: {
+            part_no: partNo, brand: document.getElementById('pt-em-brand').value.trim(),
+            serial_no: document.getElementById('pt-em-serial').value.trim(),
+            description: document.getElementById('pt-em-desc').value.trim(),
+            yom: document.getElementById('pt-em-yom').value.trim(),
+            vendor: document.getElementById('pt-em-vendor').value.trim(),
+            vendor_po_no: document.getElementById('pt-em-vpo').value.trim(),
+            panel_no: document.getElementById('pt-em-panelno').value,
+            install_date: document.getElementById('pt-em-instdate').value || null,
+            category: document.getElementById('pt-em-cat').value.trim(),
+            unit: document.getElementById('pt-em-unit').value.trim(),
+            unit_price: parseFloat(document.getElementById('pt-em-price').value) || 0
+        }});
+        ptCloseModal('modal-pt-edit-material');
+        await ptLoadDB();
+        ptRenderMaterial();
+    } catch (e) { errEl.textContent = e.message; }
+}
+
+function ptDeleteMaterial(id) {
+    var m = ptDB.materials.find(function(x) { return x.id === id; });
+    if (!m) return;
+    showModal('<h3>Delete Material</h3><p style="color:var(--main-text2);line-height:1.6">Are you sure you want to delete <strong style="color:var(--main-text)">' + esc(m.part_no) + '</strong>?</p><div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="ptDoDeleteMaterial(' + id + ')">Delete</button></div>');
+}
+
+async function ptDoDeleteMaterial(id) {
+    hideModal();
+    try {
+        await api('/m-materials/' + id, { method: 'DELETE' });
+        await ptLoadDB();
+        ptRenderMaterial();
+    } catch (e) { alert(e.message); }
+}
+
+
+// ---------- IMPORT ----------
+var ptImportPanelFile = null;
+var ptImportMaterialFile = null;
+
+function ptRenderImport() {
+    var el = document.getElementById('pt-import-content');
+    if (!canEdit()) {
+        el.innerHTML = '<div class="empty-msg" style="padding:40px">Import is available for admin only.</div>';
+        return;
+    }
+    el.innerHTML =
+        '<div class="import-section">' +
+            '<h3>Import Panels</h3>' +
+            '<div class="section-desc">Upload an Excel file (.xlsx, .xls, .csv)</div>' +
+            '<a class="template-btn" href="/api/m-template/panels">&#8681; Download Panel Template</a>' +
+            '<div class="drop-zone" id="pt-panel-drop-zone"><div class="drop-icon">&#128196;</div><div class="drop-text">Drag & drop Panel Excel here</div><div class="drop-hint">or click to browse</div><input type="file" class="file-input" id="pt-panel-file-input" accept=".xlsx,.xls,.csv" onchange="ptHandlePanelFile(this)"></div>' +
+            '<div id="pt-panel-file-info"></div><div id="pt-panel-preview"></div><div id="pt-panel-import-result"></div>' +
+            '<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end" id="pt-panel-import-actions"></div>' +
+        '</div>' +
+        '<div class="import-section">' +
+            '<h3>Import Materials</h3>' +
+            '<div class="section-desc">Upload an Excel file (.xlsx, .xls, .csv)</div>' +
+            '<a class="template-btn" href="/api/m-template/materials">&#8681; Download Material Template</a>' +
+            '<div class="drop-zone" id="pt-material-drop-zone"><div class="drop-icon">&#128196;</div><div class="drop-text">Drag & drop Material Excel here</div><div class="drop-hint">or click to browse</div><input type="file" class="file-input" id="pt-material-file-input" accept=".xlsx,.xls,.csv" onchange="ptHandleMaterialFile(this)"></div>' +
+            '<div id="pt-material-file-info"></div><div id="pt-material-preview"></div><div id="pt-material-import-result"></div>' +
+            '<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end" id="pt-material-import-actions"></div>' +
+        '</div>';
+    ptSetupDropZone('pt-panel-drop-zone','pt-panel-file-input');
+    ptSetupDropZone('pt-material-drop-zone','pt-material-file-input');
+}
+
+function ptSetupDropZone(zoneId, inputId) {
+    var zone = document.getElementById(zoneId);
+    if (!zone) return;
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', e => { e.preventDefault(); zone.classList.remove('drag-over'); });
+    zone.addEventListener('drop', e => {
+        e.preventDefault(); zone.classList.remove('drag-over');
+        var input = document.getElementById(inputId);
+        input.files = e.dataTransfer.files;
+        if (inputId === 'pt-panel-file-input') ptHandlePanelFile(input);
+        else ptHandleMaterialFile(input);
+    });
+}
+
+function ptHandlePanelFile(input) {
+    var file = input.files[0]; if (!file) return;
+    ptImportPanelFile = file;
+    ptShowFileInfo('pt-panel-file-info', file);
+    ptPreviewFile(file, 'pt-panel-preview', 'pt-panel-import-actions', 'ptDoPanelImport()');
+    document.getElementById('pt-panel-import-result').innerHTML = '';
+}
+
+function ptHandleMaterialFile(input) {
+    var file = input.files[0]; if (!file) return;
+    ptImportMaterialFile = file;
+    ptShowFileInfo('pt-material-file-info', file);
+    ptPreviewFile(file, 'pt-material-preview', 'pt-material-import-actions', 'ptDoMaterialImport()');
+    document.getElementById('pt-material-import-result').innerHTML = '';
+}
+
+function ptShowFileInfo(containerId, file) {
+    var size = file.size < 1024 ? file.size + ' B' : file.size < 1048576 ? (file.size/1024).toFixed(1) + ' KB' : (file.size/1048576).toFixed(1) + ' MB';
+    document.getElementById(containerId).innerHTML = '<div class="file-ready"><div class="file-icon">&#128196;</div><div class="file-info"><div class="file-name">'+esc(file.name)+'</div><div class="file-size">'+size+'</div></div><button class="btn btn-ghost btn-sm" onclick="ptRemoveFile(\''+containerId+'\')">&#10005;</button></div>';
+}
+
+function ptRemoveFile(containerId) {
+    var prefix = containerId.replace('-file-info','');
+    ptImportPanelFile = null; ptImportMaterialFile = null;
+    document.getElementById(prefix+'-file-input').value = '';
+    document.getElementById(prefix+'-preview').innerHTML = '';
+    document.getElementById(prefix+'-import-result').innerHTML = '';
+    document.getElementById(prefix+'-import-actions').innerHTML = '';
+    document.getElementById(containerId).innerHTML = '';
+}
+
+function ptPreviewFile(file, previewId, actionsId, onImport) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            var wb = XLSX.read(e.target.result, { type: 'array' });
+            var ws = wb.Sheets[wb.SheetNames[0]];
+            var data = XLSX.utils.sheet_to_json(ws, { defval: '' });
+            if (data.length === 0) { document.getElementById(previewId).innerHTML = '<div class="empty-msg" style="margin-top:12px">File is empty</div>'; return; }
+            var headers = Object.keys(data[0]);
+            var previewRows = data.slice(0,10);
+            document.getElementById(previewId).innerHTML =
+                '<div style="margin-top:14px;font-size:.85rem;color:var(--main-text3)">Preview (' + data.length + ' rows)</div>' +
+                '<div class="import-preview"><table><thead><tr>' + headers.map(h => '<th>'+esc(h)+'</th>').join('') + '</tr></thead><tbody>' +
+                previewRows.map(row => '<tr>' + headers.map(h => '<td>'+esc(String(row[h]))+'</td>').join('') + '</tr>').join('') +
+                (data.length > 10 ? '<tr><td colspan="'+headers.length+'" style="text-align:center;color:var(--main-text3)">... '+(data.length-10)+' more</td></tr>' : '') +
+                '</tbody></table></div>';
+            document.getElementById(actionsId).innerHTML = '<button class="btn btn-ghost btn-sm" onclick="ptRemoveFile(\''+actionsId.replace('-import-actions','-file-info')+'\')">Clear</button><button class="btn btn-accent" onclick="'+onImport+'">Import '+data.length+' Rows</button>';
+        } catch(err) { document.getElementById(previewId).innerHTML = '<div class="error-msg" style="margin-top:12px">'+esc(err.message)+'</div>'; }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+async function ptDoPanelImport() {
+    if (!ptImportPanelFile) return;
+    var resultEl = document.getElementById('pt-panel-import-result');
+    resultEl.innerHTML = '<div style="text-align:center;padding:16px;color:var(--main-text3)">Importing...</div>';
+    try {
+        var base64 = await ptFileToBase64(ptImportPanelFile);
+        var resp = await api('/m-import/panels', { method: 'POST', body: { filename: ptImportPanelFile.name, data: base64 } });
+        ptShowImportResult('pt-panel-import-result', resp);
+        ptImportPanelFile = null;
+        document.getElementById('pt-panel-file-input').value = '';
+        document.getElementById('pt-panel-file-info').innerHTML = '';
+        document.getElementById('pt-panel-preview').innerHTML = '';
+        document.getElementById('pt-panel-import-actions').innerHTML = '';
+        await ptLoadDB();
+    } catch (e) { resultEl.innerHTML = '<div class="error-msg" style="margin-top:12px">' + esc(e.message) + '</div>'; }
+}
+
+async function ptDoMaterialImport() {
+    if (!ptImportMaterialFile) return;
+    var resultEl = document.getElementById('pt-material-import-result');
+    resultEl.innerHTML = '<div style="text-align:center;padding:16px;color:var(--main-text3)">Importing...</div>';
+    try {
+        var base64 = await ptFileToBase64(ptImportMaterialFile);
+        var resp = await api('/m-import/materials', { method: 'POST', body: { filename: ptImportMaterialFile.name, data: base64 } });
+        ptShowImportResult('pt-material-import-result', resp);
+        ptImportMaterialFile = null;
+        document.getElementById('pt-material-file-input').value = '';
+        document.getElementById('pt-material-file-info').innerHTML = '';
+        document.getElementById('pt-material-preview').innerHTML = '';
+        document.getElementById('pt-material-import-actions').innerHTML = '';
+        await ptLoadDB();
+    } catch (e) { resultEl.innerHTML = '<div class="error-msg" style="margin-top:12px">' + esc(e.message) + '</div>'; }
+}
+
+function ptFileToBase64(file) {
+    return new Promise(function(resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function() {
+            var base64 = reader.result.split(',')[1];
+            resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function ptShowImportResult(containerId, data) {
+    document.getElementById(containerId).innerHTML =
+        '<div class="import-result">' +
+            '<div class="result-row"><span class="label">Total Rows</span><span class="value">' + data.total + '</span></div>' +
+            '<div class="result-row"><span class="label">Inserted</span><span class="value" style="color:var(--green)">' + data.inserted + '</span></div>' +
+            '<div class="result-row"><span class="label">Skipped</span><span class="value" style="color:var(--yellow)">' + data.skipped + '</span></div>' +
+            (data.errors && data.errors.length > 0 ? '<div class="errors-list">' + data.errors.map(function(e) { return '<div>&#8226; ' + esc(e) + '</div>'; }).join('') + '</div>' : '') +
+        '</div>';
+}
+
+
+// ---------- USERS ----------
+var usersCurrentPage = 1;
+var usersPageSize = 10;
+
+async function ptLoadAllUsers() {
+    try {
+        ptDB.allUsers = await api('/users');
+    } catch (e) {
+        console.error('Load all users error:', e);
+        ptDB.allUsers = [];
+    }
+}
+
+function ptRenderUsers() {
+    var el = document.getElementById('pt-users-content');
+    el.innerHTML =
+        '<div class="filter">' +
+            '<input class="input" type="text" placeholder="Search..." id="pt-users-search" oninput="ptFilterUsers()" style="max-width:280px">' +
+            '<button class="btn btn-ghost btn-sm" onclick="ptResetUsersFilter()">Reset</button>' +
+            '<div style="flex:1"></div>' +
+            (canEdit() ? '<button class="btn btn-accent btn-sm" onclick="ptShowAddUser()">+ Add User</button>' : '') +
+        '</div>' +
+        '<div class="section-head"><h3>All Users</h3></div>' +
+        '<div id="pt-users-table-area"></div>';
+    ptFilterUsers();
+}
+
+function ptFilterUsers() {
+    var search = (document.getElementById('pt-users-search').value || '').toLowerCase();
+    var filtered = (ptDB.allUsers || []).filter(function(u) {
+        if (!search) return true;
+        var member = u.memberId ? DB.members.find(function(m) { return m.id === u.memberId; }) : null;
+        var posName = member ? getPositionName(member.positionId) : '';
+        var deptName = member ? getDeptName(member.departmentId) : '';
+        var sal = member ? latestSalary(member) : 0;
+        var haystack = [
+            u.username, u.role, u.memberName,
+            posName, deptName, sal
+        ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
+        return haystack.indexOf(search) !== -1;
+    });
+
+    var totalPages = Math.ceil(filtered.length / usersPageSize) || 1;
+    if (usersCurrentPage > totalPages) usersCurrentPage = totalPages;
+    if (usersCurrentPage < 1) usersCurrentPage = 1;
+    var startIdx = (usersCurrentPage - 1) * usersPageSize;
+    var pageData = filtered.slice(startIdx, startIdx + usersPageSize);
+
+    var area = document.getElementById('pt-users-table-area');
+    if (filtered.length === 0) { area.innerHTML = '<div class="empty-msg">No users found</div>'; return; }
+    area.innerHTML =
+        '<div class="table-wrap"><table><thead><tr><th style="width:50px">No</th><th>Username</th><th>Name</th><th>Position</th><th>Department</th><th>Salary</th><th>Role</th><th style="width:100px">Actions</th></tr></thead><tbody>' +
+        pageData.map(function(u, i) {
+            var member = u.memberId ? DB.members.find(function(m) { return m.id === u.memberId; }) : null;
+            var posName = member ? getPositionName(member.positionId) : '—';
+            var deptName = member ? getDeptName(member.departmentId) : '—';
+            var sal = member ? latestSalary(member) : null;
+            var roleBadge = u.role === 'admin' ? '<span class="badge badge-admin">Admin</span>'
+                : u.role === 'viewer' ? '<span class="badge badge-viewer">Viewer</span>'
+                : '<span class="badge badge-employee">Employee</span>';
+            return '<tr>' +
+                '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + i + 1) + '</td>' +
+                '<td><strong>' + esc(u.username) + '</strong></td>' +
+                '<td>' + esc(u.memberName || '—') + '</td>' +
+                '<td>' + esc(posName) + '</td>' +
+                '<td>' + esc(deptName) + '</td>' +
+                '<td>' + (sal != null && sal > 0 ? '<span class="salary-val">' + fmt(sal) + '</span>' : '<span class="salary-na">Not set</span>') + '</td>' +
+                '<td>' + roleBadge + '</td>' +
+                '<td>' + (canEdit()
+                    ? '<div style="display:flex;gap:4px">' +
+                        '<button class="btn btn-ghost btn-sm" onclick="ptShowEditUser(' + u.id + ')">Edit</button>' +
+                        (u.username !== 'adminMTA' ? '<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ptDeleteUser(' + u.id + ')">&#10005;</button>' : '') +
+                      '</div>'
+                    : '<span style="color:var(--main-text3);font-size:.82rem">View only</span>') + '</td>' +
+            '</tr>';
+        }).join('') + '</tbody></table></div>' +
+        ptPagination(filtered.length, usersCurrentPage, usersPageSize, 'goUsersPage', 'changeUsersPageSize');
+}
+
+function ptResetUsersFilter() {
+    document.getElementById('pt-users-search').value = '';
+    usersCurrentPage = 1;
+    ptFilterUsers();
+}
+function goUsersPage(page) { usersCurrentPage = page; ptFilterUsers(); }
+function changeUsersPageSize(size) { usersPageSize = parseInt(size); usersCurrentPage = 1; ptFilterUsers(); }
+
+// ---- Add User ----
+function ptShowAddUser() {
+    var posOpts = DB.positions.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
+    var deptOpts = DB.departments.map(function(d) { return '<option value="' + d.id + '">' + esc(d.name) + '</option>'; }).join('');
+    showModal('<h3>Add User</h3>' +
+        '<div class="field"><label>Role</label><select class="input" id="pt-adduser-role" onchange="ptToggleAddUserFields()"><option value="employee">Employee</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></div>' +
+        '<div id="pt-emp-fields">' +
+            '<div class="field"><label>Full Name</label><input class="input" id="pt-adduser-name" placeholder="e.g. John Smith"></div>' +
+            '<div class="field"><label>Position</label><select class="input" id="pt-adduser-pos"><option value="">None</option>' + posOpts + '</select></div>' +
+            '<div class="field"><label>Department</label><select class="input" id="pt-adduser-dept"><option value="">None</option>' + deptOpts + '</select></div>' +
+            '<div class="field"><label>Monthly Salary</label><input class="input input-mono" id="pt-adduser-salary" type="number" placeholder="e.g. 15000.00"></div>' +
+        '</div>' +
+        '<div class="field"><label>Username</label><input class="input" id="pt-adduser-user" placeholder="Login username"></div>' +
+        '<div class="field"><label>Password</label><input class="input" id="pt-adduser-pass" type="password" placeholder="Min. 6 characters"></div>' +
+        '<p class="auth-error" id="pt-adduser-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="ptDoAddUser()">Create</button></div>');
+    setTimeout(function() { var el = document.getElementById('pt-adduser-name'); if (el) el.focus(); }, 100);
+}
+
+function ptToggleAddUserFields() {
+    var role = document.getElementById('pt-adduser-role').value;
+    document.getElementById('pt-emp-fields').style.display = (role === 'employee' || role === 'viewer') ? '' : 'none';
+}
+
+async function ptDoAddUser() {
+    var errEl = document.getElementById('pt-adduser-error');
+    var role = document.getElementById('pt-adduser-role').value;
+    var name = document.getElementById('pt-adduser-name').value.trim();
+    var username = document.getElementById('pt-adduser-user').value.trim();
+    var password = document.getElementById('pt-adduser-pass').value;
+    var posId = document.getElementById('pt-adduser-pos').value;
+    var deptId = document.getElementById('pt-adduser-dept').value;
+    var salary = document.getElementById('pt-adduser-salary').value;
+
+    if (!username) { errEl.textContent = 'Username is required'; return; }
+    if (!password || password.length < 6) { errEl.textContent = 'Password must be at least 6 characters'; return; }
+
+    if (role === 'admin') {
+        try {
+            await api('/users', { method: 'POST', body: { username: username, password: password, role: 'admin' }});
+            hideModal(); await ptLoadAllUsers(); ptRenderUsers();
+        } catch (e) { errEl.textContent = e.message; }
+    } else {
+        if (!name) { errEl.textContent = 'Full name is required'; return; }
+        try {
+            var memberResult = await api('/members', {
+                method: 'POST',
+                body: { name: name, positionId: posId ? parseInt(posId) : null, departmentId: deptId ? parseInt(deptId) : null }
+            });
+            var memberId = memberResult.id;
+            await api('/users', {
+                method: 'POST',
+                body: { username: username, password: password, role: role, memberId: memberId }
+            });
+            if (salary && parseFloat(salary) > 0) {
+                var now = new Date().toISOString().slice(0, 7);
+                await api('/salaries', { method: 'PUT', body: { memberId: memberId, month: now, amount: parseFloat(salary) } });
+            }
+            hideModal(); await ptLoadAllUsers(); await loadDB(); ptRenderUsers();
+        } catch (e) { errEl.textContent = e.message; }
+    }
+}
+
+// ---- Edit User ----
+function ptShowEditUser(userId) {
+    var user = (ptDB.allUsers || []).find(function(u) { return u.id === userId; });
+    if (!user) return;
+    var member = user.memberId ? DB.members.find(function(m) { return m.id === user.memberId; }) : null;
+    var posOpts = DB.positions.map(function(p) { var sel = member && member.positionId === p.id ? 'selected' : ''; return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>'; }).join('');
+    var deptOpts = DB.departments.map(function(d) { var sel = member && member.departmentId === d.id ? 'selected' : ''; return '<option value="' + d.id + '" ' + sel + '>' + esc(d.name) + '</option>'; }).join('');
+
+    var html = '<h3>Edit — ' + esc(user.username) + '</h3>';
+    if (user.role !== 'admin' && member) {
+        var curSal = latestSalary(member);
+        html += '<div class="field"><label>Full Name</label><input class="input" id="pt-edituser-name" value="' + esc(member.name) + '"></div>' +
+            '<div class="field"><label>Position</label><select class="input" id="pt-edituser-pos"><option value="">None</option>' + posOpts + '</select></div>' +
+            '<div class="field"><label>Department</label><select class="input" id="pt-edituser-dept"><option value="">None</option>' + deptOpts + '</select></div>' +
+            '<div class="field"><label>Monthly Salary</label><input class="input input-mono" id="pt-edituser-salary" type="number" value="' + (curSal > 0 ? curSal : '') + '" placeholder="e.g. 15000.00"></div>';
+    }
+    html += '<div class="field"><label>Username</label><input class="input" id="pt-edituser-user" value="' + esc(user.username) + '"></div>' +
+        '<div class="field"><label>New Password (blank = keep)</label><input class="input" id="pt-edituser-pass" type="password" placeholder="Leave blank"></div>' +
+        '<div class="field"><label>Role</label><select class="input" id="pt-edituser-role"><option value="admin" ' + (user.role === 'admin' ? 'selected' : '') + '>Admin</option><option value="viewer" ' + (user.role === 'viewer' ? 'selected' : '') + '>Viewer</option><option value="employee" ' + (user.role === 'employee' ? 'selected' : '') + '>Employee</option></select></div>' +
+        '<p class="auth-error" id="pt-edituser-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="ptDoEditUser(' + user.id + ')">Save</button></div>';
+    showModal(html);
+}
+
+async function ptDoEditUser(userId) {
+    var user = (ptDB.allUsers || []).find(function(u) { return u.id === userId; });
+    if (!user) return;
+    var errEl = document.getElementById('pt-edituser-error');
+    var newUsername = document.getElementById('pt-edituser-user').value.trim();
+    var newPass = document.getElementById('pt-edituser-pass').value;
+    var newRole = document.getElementById('pt-edituser-role').value;
+    if (!newUsername) { errEl.textContent = 'Username cannot be empty'; return; }
+    if (newPass && newPass.length < 6) { errEl.textContent = 'Min 6 characters'; return; }
+
+    await api('/users/' + userId, {
+        method: 'PUT',
+        body: { username: newUsername, password: newPass || null, role: newRole }
+    });
+
+    if (user.memberId) {
+        var nameEl = document.getElementById('pt-edituser-name');
+        var posEl = document.getElementById('pt-edituser-pos');
+        var deptEl = document.getElementById('pt-edituser-dept');
+        var salEl = document.getElementById('pt-edituser-salary');
+        var name = nameEl ? nameEl.value.trim() : null;
+        var posId = posEl ? (posEl.value ? parseInt(posEl.value) : null) : undefined;
+        var deptId = deptEl ? (deptEl.value ? parseInt(deptEl.value) : null) : undefined;
+
+        if (name || posId !== undefined || deptId !== undefined) {
+            var member = DB.members.find(function(m) { return m.id === user.memberId; });
+            if (member) {
+                await api('/members/' + user.memberId, {
+                    method: 'PUT',
+                    body: {
+                        name: name || member.name,
+                        positionId: posId !== undefined ? posId : member.positionId,
+                        departmentId: deptId !== undefined ? deptId : member.departmentId
+                    }
+                });
+            }
+        }
+
+        if (salEl) {
+            var rawVal = salEl.value.trim();
+            var val = parseFloat(rawVal);
+            var now = new Date().toISOString().slice(0, 7);
+            if (rawVal !== '' && !isNaN(val) && val > 0) {
+                await api('/salaries', { method: 'PUT', body: { memberId: user.memberId, month: now, amount: val } });
+            } else {
+                await api('/salaries', { method: 'PUT', body: { memberId: user.memberId, month: now, amount: 0 } });
+            }
+        }
+    }
+
+    hideModal(); await ptLoadAllUsers(); await loadDB(); ptRenderUsers();
+}
+
+function ptDeleteUser(id) {
+    var u = (ptDB.allUsers || []).find(function(x) { return x.id === id; });
+    if (!u) return;
+    showModal('<h3>Delete User</h3><p style="color:var(--main-text2);line-height:1.6">Are you sure you want to delete <strong style="color:var(--main-text)">' + esc(u.username) + '</strong>?</p><div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="ptDoDeleteUser(' + id + ')">Delete</button></div>');
+}
+
+async function ptDoDeleteUser(id) {
+    hideModal();
+    try {
+        await api('/users/' + id, { method: 'DELETE' });
+        await ptLoadAllUsers();
+        await loadDB();
+        ptRenderUsers();
+    } catch (e) { alert(e.message); }
+}
+
+/* ==========================================================
+   Role and Permission
+   ========================================================== */
+async function api(path, opts) {
+    opts = opts || {};
+    var url = '/api' + path;
+    var options = {
+        method: opts.method || 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-User-Role': currentUser ? currentUser.role : '',
+            'X-Member-Id': currentUser && currentUser.memberId ? String(currentUser.memberId) : ''
+        }
+    };
+    if (opts.body) options.body = JSON.stringify(opts.body);
+    var res = await fetch(url, options);
+    var data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    return data;
+}
 
 /* ==========================================================
    Pre-load data on page load
    ========================================================== */
 
 // Pre-load data on page load
+// ===== INITIALIZATION =====
 (async function(){
-    const saved = localStorage.getItem('multitrade_session');
+    var saved = localStorage.getItem('multitrade_session');
 
     function activateNav(navId, page) {
         document.querySelectorAll('#' + navId + ' .nav-item').forEach(function(n) {
@@ -4535,37 +5665,62 @@ function changeRptEmpPageSize(size) {
         });
     }
 
-    function showLogin() {
+    if (!saved) {
         document.querySelectorAll('.auth-page,.app-layout').forEach(function(p) { p.classList.remove('active'); });
         document.getElementById('login-page').classList.add('active');
+        return;
     }
 
-    if (saved) {
-        try {
-            currentUser = JSON.parse(saved);
-            await loadDB();
-            document.querySelectorAll('.auth-page,.app-layout').forEach(function(p) { p.classList.remove('active'); });
+    try {
+        currentUser = JSON.parse(saved);
+    } catch(e) {
+        localStorage.removeItem('multitrade_session');
+        document.querySelectorAll('.auth-page,.app-layout').forEach(function(p) { p.classList.remove('active'); });
+        document.getElementById('login-page').classList.add('active');
+        return;
+    }
 
+    var savedModule = localStorage.getItem('multitrade_module') || 'attendance';
+    selectedModule = savedModule;
+
+    document.querySelectorAll('.auth-page,.app-layout').forEach(function(p) { p.classList.remove('active'); });
+
+    if (savedModule === 'panel') {
+        try {
+            await ptLoadDB();
+            document.getElementById('panel-layout').classList.add('active');
+            document.getElementById('pt-avatar').textContent = currentUser.username.charAt(0).toUpperCase();
+            document.getElementById('pt-user-name').textContent = currentUser.username;
+            var page = localStorage.getItem('multitrade_pt_page') || 'pt-dashboard';
+            activateNav('pt-nav', page);
+            ptNav(page);
+        } catch(e) {
+            console.error('Panel load error:', e);
+            document.getElementById('panel-layout').classList.add('active');
+            document.getElementById('pt-avatar').textContent = currentUser.username.charAt(0).toUpperCase();
+            document.getElementById('pt-user-name').textContent = currentUser.username;
+            ptNav('pt-dashboard');
+        }
+    } else {
+        try {
+            await loadDB();
             if (currentUser.role === 'admin') {
-                var page = localStorage.getItem('multitrade_admin_page') || 'projects';
                 document.getElementById('admin-layout').classList.add('active');
+                var page = localStorage.getItem('multitrade_admin_page') || 'projects';
                 activateNav('admin-nav', page);
                 await adminNav(page);
             } else {
-                var page = localStorage.getItem('multitrade_emp_page') || 'myprojects';
                 document.getElementById('employee-layout').classList.add('active');
+                var page = localStorage.getItem('multitrade_emp_page') || 'myprojects';
                 activateNav('emp-nav', page);
                 await empNav(page);
             }
-
             updateAvatars();
-            return;
-        } catch (e) {
-            localStorage.removeItem('multitrade_session');
-            localStorage.removeItem('multitrade_admin_page');
-            localStorage.removeItem('multitrade_emp_page');
+        } catch(e) {
+            console.error('Attendance load error:', e);
+            document.getElementById('login-page').classList.add('active');
         }
     }
-
-    showLogin();
 })();
+
+// ← 文件结束，下面什么都不要有

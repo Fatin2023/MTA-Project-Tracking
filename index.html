@@ -8,24 +8,31 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
 <!-- ===== LOGIN ===== -->
-<div id="login-page" class="auth-page">
+<div id="login-page" class="auth-page active">
   <div class="auth-card">
     <div class="login-logo"><h1>Multi<span>trade</span></h1></div>
-    <p class="subtitle">Project Salary Management</p>
+
+    <!-- Module Selection Tabs -->
+    <div class="login-tabs">
+      <button class="login-tab active" onclick="selectModule('attendance',this)">Project Management</button>
+      <button class="login-tab" onclick="selectModule('panel',this)">Panel Tracking</button>
+    </div>
+
+    <p class="subtitle" id="login-subtitle">Project Salary Management</p>
     <form onsubmit="handleLogin(event)">
       <div class="field"><label>Username</label>
         <input class="input" id="login-user" placeholder="Enter username" autocomplete="off"></div>
       <div class="field"><label>Password</label>
         <input class="input" id="login-pass" type="password" placeholder="Enter password"></div>
-      <button class="btn btn-accent" type="submit">Sign In</button>
+      <button class="btn btn-accent" type="submit" style="width:100%;justify-content:center;padding:14px;margin-top:8px;font-size:.95rem">Sign In</button>
       <p class="auth-error" id="login-error"></p>
     </form>
-    <p class="auth-link">Don't have an account? <a onclick="showPage('register-page')">Register here</a></p>
-    <!-- <div class="auth-hint"><strong>Demo:</strong> <code>admin</code> / <code>admin123</code></div> -->
+    <!-- <p class="auth-link">Don't have an account? <a onclick="showPage('register-page')">Register here</a></p> -->
   </div>
 </div>
 
@@ -178,9 +185,154 @@
   <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
 
 
+  <!-- ===== PANEL TRACKING LAYOUT ===== -->
+<div id="panel-layout" class="app-layout">
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <h1>Multi<span>trade</span></h1>
+      <div class="brand-sub">Panel Tracking</div>
+    </div>
+    <div class="sidebar-nav" id="pt-nav">
+      <div class="nav-section">Main</div>
+      <div class="nav-item active" data-page="pt-dashboard" onclick="ptNav('pt-dashboard',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Dashboard</span></div>
+      <div class="nav-item" data-page="pt-panel" onclick="ptNav('pt-panel',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Panel</span></div>
+      <div class="nav-item" data-page="pt-material" onclick="ptNav('pt-material',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Material</span></div>
+      <div class="nav-section">Tools</div>
+      <div class="nav-item" data-page="pt-import" onclick="ptNav('pt-import',this)"><span class="nav-icon">&#9660;</span><span class="nav-label">Import Excel</span></div>
+      <div class="nav-section">Settings</div>
+      <div class="nav-item" data-page="pt-users" onclick="ptNav('pt-users',this)"><span class="nav-icon">&#128100;</span><span class="nav-label">Users</span></div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="avatar" id="pt-avatar">A</div>
+        <div class="user-info">
+          <div class="user-name" id="pt-user-name">Admin</div>
+          <div class="user-role">Admin</div>
+        </div>
+      </div>
+      <button class="logout-btn" onclick="ptLogout()">&#8592; Sign Out</button>
+    </div>
+  </div>
+  <div class="app-main">
+    <div id="page-pt-dashboard" class="page">
+      <div class="app-header"><h2>Dashboard</h2><div class="header-sub">Panel tracking overview</div></div>
+      <div class="app-body" id="pt-dashboard-content"></div>
+    </div>
+    <div id="page-pt-panel" class="page">
+      <div class="app-header"><h2>Panel</h2><div class="header-sub">Manage all panels</div></div>
+      <div class="app-body" id="pt-panel-content"></div>
+    </div>
+    <div id="page-pt-material" class="page">
+      <div class="app-header"><h2>Material</h2><div class="header-sub">All materials</div></div>
+      <div class="app-body" id="pt-material-content"></div>
+    </div>
+    <div id="page-pt-customer" class="page">
+      <div class="app-header"><h2>Customer</h2><div class="header-sub">Manage customer information</div></div>
+      <div class="app-body" id="pt-customer-content"></div>
+    </div>
+    <div id="page-pt-import" class="page">
+      <div class="app-header"><h2>Import Excel</h2><div class="header-sub">Bulk import panels or materials</div></div>
+      <div class="app-body" id="pt-import-content"></div>
+    </div>
+    <div id="page-pt-users" class="page">
+      <div class="app-header"><h2>Users</h2><div class="header-sub">Manage panel tracking accounts</div></div>
+      <div class="app-body" id="pt-users-content"></div>
+    </div>
+  </div>
+</div>
+
+
 <!-- ===== MODAL ===== -->
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal" id="modal-box"></div>
+</div>
+
+<!-- ===== PANEL TRACKING MODALS ===== -->
+
+<!-- Add Panel -->
+<div class="modal-overlay" id="modal-pt-add-panel">
+    <div class="modal">
+        <h3>Add Panel</h3>
+        <div class="field"><label>Panel ID / Name *</label><input class="input" id="pt-ap-name" placeholder="e.g. P10093"></div>
+        <div class="field"><label>Customer</label><input class="input" id="pt-ap-customer" placeholder="e.g. Petronas"></div>
+        <div class="field"><label>Start Date</label><input class="input" id="pt-ap-start" type="date"></div>
+        <div class="field"><label>End Date</label><input class="input" id="pt-ap-end" type="date"></div>
+        <div class="field"><label>Install Date</label><input class="input" id="pt-ap-instdate" type="date"></div>
+        <p class="error-msg" id="pt-ap-error"></p>
+        <div class="btns"><button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-add-panel')">Cancel</button><button class="btn btn-accent" onclick="ptDoAddPanel()">Create</button></div>
+    </div>
+</div>
+
+<!-- Edit Panel -->
+<div class="modal-overlay" id="modal-pt-edit-panel">
+    <div class="modal">
+        <h3>Edit Panel</h3>
+        <input type="hidden" id="pt-ep-id">
+        <div class="field"><label>Panel ID / Name *</label><input class="input" id="pt-ep-name"></div>
+        <div class="field"><label>Customer</label><input class="input" id="pt-ep-customer"></div>
+        <div class="field"><label>Start Date</label><input class="input" id="pt-ep-start" type="date"></div>
+        <div class="field"><label>End Date</label><input class="input" id="pt-ep-end" type="date"></div>
+        <div class="field"><label>Install Date</label><input class="input" id="pt-ep-instdate" type="date"></div>
+        <p class="error-msg" id="pt-ep-error"></p>
+        <div class="btns"><button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-edit-panel')">Cancel</button><button class="btn btn-accent" onclick="ptDoEditPanel()">Save</button></div>
+    </div>
+</div>
+
+
+<!-- Add Material -->
+<div class="modal-overlay" id="modal-pt-add-material">
+    <div class="modal">
+        <h3>Add Material</h3>
+        <div class="field"><label>Part No *</label><input class="input" id="pt-am-partno" placeholder="e.g. CB-MCCB100"></div>
+        <div class="field"><label>Brand</label><input class="input" id="pt-am-brand" placeholder="e.g. Schneider"></div>
+        <div class="field"><label>Description</label><input class="input" id="pt-am-desc" placeholder="e.g. MCCB 100A 3P"></div>
+        <div class="field"><label>Serial No</label><input class="input" id="pt-am-serial" placeholder="e.g. SN-20240001"></div>
+        <div class="field"><label>YOM</label><input class="input" id="pt-am-yom" placeholder="e.g. 2024"></div>
+        <div class="field"><label>Vendor</label><input class="input" id="pt-am-vendor" placeholder="e.g. Supplier Sdn Bhd"></div>
+        <div class="field"><label>Vendor PO No</label><input class="input" id="pt-am-vpo" placeholder="e.g. PO-2024-001"></div>
+        <div class="field"><label>Panel ID</label><select class="input" id="pt-am-panelno"><option value="">— Select Panel ID —</option></select></div>
+        <div class="field"><label>Install Date</label><input class="input" id="pt-am-instdate" type="date"></div>
+        <div class="field"><label>Category</label><input class="input" id="pt-am-cat" placeholder="e.g. Breaker"></div>
+        <div class="field"><label>Unit</label><input class="input" id="pt-am-unit" placeholder="e.g. pc" value="pc"></div>
+        <div class="field"><label>Unit Price</label><input class="input input-mono" id="pt-am-price" type="number" step="0.01" placeholder="e.g. 250.00"></div>
+        <p class="error-msg" id="pt-am-error"></p>
+        <div class="btns"><button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-add-material')">Cancel</button><button class="btn btn-accent" onclick="ptDoAddMaterial()">Create</button></div>
+    </div>
+</div>
+
+<!-- Edit Material -->
+<div class="modal-overlay" id="modal-pt-edit-material">
+    <div class="modal">
+        <h3>Edit Material</h3>
+        <input type="hidden" id="pt-em-id">
+        <div class="field"><label>Part No *</label><input class="input" id="pt-em-partno"></div>
+        <div class="field"><label>Brand</label><input class="input" id="pt-em-brand"></div>
+        <div class="field"><label>Description</label><input class="input" id="pt-em-desc"></div>
+        <div class="field"><label>Serial No</label><input class="input" id="pt-em-serial"></div>
+        <div class="field"><label>YOM</label><input class="input" id="pt-em-yom"></div>
+        <div class="field"><label>Vendor</label><input class="input" id="pt-em-vendor"></div>
+        <div class="field"><label>Vendor PO No</label><input class="input" id="pt-em-vpo"></div>
+        <div class="field"><label>Panel ID</label><select class="input" id="pt-em-panelno"><option value="">— Select Panel ID —</option></select></div>
+        <div class="field"><label>Install Date</label><input class="input" id="pt-em-instdate" type="date"></div>
+        <div class="field"><label>Category</label><input class="input" id="pt-em-cat"></div>
+        <div class="field"><label>Unit</label><input class="input" id="pt-em-unit"></div>
+        <div class="field"><label>Unit Price</label><input class="input input-mono" id="pt-em-price" type="number" step="0.01"></div>
+        <p class="error-msg" id="pt-em-error"></p>
+        <div class="btns"><button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-edit-material')">Cancel</button><button class="btn btn-accent" onclick="ptDoEditMaterial()">Save</button></div>
+    </div>
+</div>
+
+
+<!-- Confirm Logout -->
+<div class="modal-overlay" id="modal-pt-confirm-logout">
+    <div class="modal" style="max-width:380px">
+        <h3>Sign Out</h3>
+        <p style="color:var(--main-text2);font-size:.9rem;margin:8px 0 16px">Are you sure you want to sign out?</p>
+        <div class="btns">
+            <button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-confirm-logout')">Cancel</button>
+            <button class="btn btn-red" onclick="ptCloseModal('modal-pt-confirm-logout');ptDoLogout()">Sign Out</button>
+        </div>
+    </div>
 </div>
 
 <script src="app.js"></script>
