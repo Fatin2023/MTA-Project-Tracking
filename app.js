@@ -4917,13 +4917,13 @@ var panelPageSize = 10;
 
 function ptRenderPanel() {
     var el = document.getElementById('pt-panel-content');
-    var addBtn = canEdit() ? '<button class="btn btn-accent btn-sm" onclick="ptOpenAddPanel()">+ Add Panel</button>' : '';
+    var addBtn = canEdit() ? '<button class="btn btn-green btn-sm" onclick="ptOpenAddPanel()">+ Add Panel</button>' : '';
     el.innerHTML =
         '<div class="filter">' +
             '<input class="input" type="text" placeholder="Search..." id="pt-panel-search" oninput="ptFilterPanels()" style="max-width:320px">' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetPanelFilter()">Reset</button>' +
             '<div style="flex:1"></div>' +
-            '<button class="btn btn-blue btn-sm" onclick="ptExportPanelsExcel()">Export Excel</button>' +
+            '<button class="btn btn-blue btn-sm" onclick="ptExportPanelsExcel()">&#128196; Export Excel</button>' +
             addBtn +
         '</div>' +
         '<div class="section-head"><h3>All Panels</h3></div>' +
@@ -5094,13 +5094,13 @@ var matPageSize = 10;
 
 function ptRenderMaterial() {
     var el = document.getElementById('pt-material-content');
-    var addBtn = canEdit() ? '<button class="btn btn-accent btn-sm" onclick="ptOpenAddMaterial()">+ Add Material</button>' : '';
+    var addBtn = canEdit() ? '<button class="btn btn-green btn-sm" onclick="ptOpenAddMaterial()">+ Add Material</button>' : '';
     el.innerHTML =
         '<div class="filter">' +
             '<input class="input" type="text" placeholder="Search..." id="pt-mat-search" oninput="ptFilterMaterials()" style="max-width:320px">' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetMatFilter()">Reset</button>' +
             '<div style="flex:1"></div>' +
-            '<button class="btn btn-blue btn-sm" onclick="ptExportMaterialsExcel()">Export Excel</button>' +
+            '<button class="btn btn-blue btn-sm" onclick="ptExportMaterialsExcel()">&#128196; Export Excel</button>' +
             addBtn +
         '</div>' +
         '<div class="section-head"><h3>All Materials</h3></div>' +
@@ -5474,7 +5474,7 @@ function ptRenderUsers() {
             '<input class="input" type="text" placeholder="Search..." id="pt-users-search" oninput="ptFilterUsers()" style="max-width:280px">' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetUsersFilter()">Reset</button>' +
             '<div style="flex:1"></div>' +
-            (canEdit() ? '<button class="btn btn-accent btn-sm" onclick="ptShowAddUser()">+ Add User</button>' : '') +
+            (canEdit() ? '<button class="btn btn-green btn-sm" onclick="ptShowAddUser()">+ Add User</button>' : '') +
         '</div>' +
         '<div class="section-head"><h3>All Users</h3></div>' +
         '<div id="pt-users-table-area"></div>';
