@@ -2840,6 +2840,12 @@ function entryScopeChanged() {
         ? DB.projects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
         : DB.projects;
 
+    filtered.sort(function(a, b) {
+        if (a.name.toLowerCase() === 'other') return -1;
+        if (b.name.toLowerCase() === 'other') return 1;
+        return a.name.localeCompare(b.name);
+    });
+
     projSelect.innerHTML = '<option value="">-- Select ID/Name --</option>' +
         filtered.map(function(p) {
             return '<option value="' + p.id + '">' + esc(p.name) + '</option>';
@@ -2855,6 +2861,12 @@ function entryScopeChangedEdit() {
     var filtered = scopeId
         ? DB.projects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
         : DB.projects;
+
+    filtered.sort(function(a, b) {
+        if (a.name.toLowerCase() === 'other') return -1;
+        if (b.name.toLowerCase() === 'other') return 1;
+        return a.name.localeCompare(b.name);
+    });
 
     projSelect.innerHTML = '<option value="">-- Select ID/Name --</option>' +
         filtered.map(function(p) {
@@ -3659,6 +3671,13 @@ function adminAttItemChanged() {
     var filtered = scopeId
         ? DB.projects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
         : DB.projects;
+
+    filtered.sort(function(a, b) {
+        if (a.name.toLowerCase() === 'other') return -1;
+        if (b.name.toLowerCase() === 'other') return 1;
+        return a.name.localeCompare(b.name);
+    });
+
     itemSelect.innerHTML = '<option value="">-- Select ID/Name --</option>' +
         filtered.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
 }
@@ -3719,10 +3738,18 @@ function showAdminEditAttendance(id) {
             return '<option value="' + s.id + '" ' + sel + '>' + esc(s.name) + '</option>';
         }).join('');
 
+        // 显示该 scope 下所有 project
     var scopeItems = currentScopeId
         ? DB.projects.filter(function(p) { return p.categoryId === currentScopeId; })
         : DB.projects;
-    var itemOpts = scopeItems.map(function(p) {
+
+    scopeItems.sort(function(a, b) {
+        if (a.name.toLowerCase() === 'other') return -1;
+        if (b.name.toLowerCase() === 'other') return 1;
+        return a.name.localeCompare(b.name);
+    });
+
+    var projectOpts = scopeItems.map(function(p) {
         var sel = entry.projectId === p.id ? 'selected' : '';
         return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>';
     }).join('');
@@ -3737,7 +3764,7 @@ function showAdminEditAttendance(id) {
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
         '<div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="' + entry.date + '"></div><br>' +
         '<div class="field"><label>Category</label><select class="input" id="att-scope-filter" onchange="adminAttScopeChangedEdit()">' + scopeOptions + '</select></div>' +
-        '<div class="field"><label>ID/Names</label><select class="input" id="att-item"><option value="">-- Select ID/Name --</option>' + itemOpts + '</select></div>' +
+        '<div class="field"><label>ID/Names</label><select class="input" id="att-item"><option value="">-- Select ID/Name --</option>' + projectOpts + '</select></div>' +
         '<div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- Select Category First --</option></select></div>' +
         '<div class="field" style="display:none"><label>Detail</label><select class="input" id="att-detail">' + detailOpts(entry.detailId) + '</select></div>' +
         '<div class="field"><label>Work Plan</label><select class="input" id="att-workplan"><option value="">-- Select Category First --</option></select></div>' +
@@ -3774,6 +3801,13 @@ function adminAttItemChangedEdit() {
     var filtered = scopeId
         ? DB.projects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
         : DB.projects;
+
+    filtered.sort(function(a, b) {
+        if (a.name.toLowerCase() === 'other') return -1;
+        if (b.name.toLowerCase() === 'other') return 1;
+        return a.name.localeCompare(b.name);
+    });
+
     itemSelect.innerHTML = '<option value="">-- Select ID/Name --</option>' +
         filtered.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
 }
