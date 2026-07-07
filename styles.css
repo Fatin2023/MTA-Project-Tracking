@@ -246,28 +246,26 @@ tbody tr:last-child td{border-bottom:none}
     right: 0;
     z-index: 2;
     background: var(--main-bg);
-    /* 右边加一个阴影，让人知道右边还有内容 */
     box-shadow: -4px 0 8px rgba(0, 0, 0, 0.08);
+    -webkit-tap-highlight-color: transparent;
 }
 
-/* thead 背景色要和原来一致 */
 .table-wrap table thead th:last-child {
-    background: var(--main-surface);
+    background: var(--main-surface2);
+    z-index: 3;
 }
 
-/* ===== 让一些列更紧凑 ===== */
-.table-wrap table th,
-.table-wrap table td {
-    white-space: nowrap;
+/* 滑动/触摸时不变色 */
+.table-wrap table tbody tr:hover td:last-child,
+.table-wrap table tbody tr:active td:last-child {
+    background: var(--main-bg) !important;
+    -webkit-tap-highlight-color: transparent;
+    opacity: 1;
 }
 
-/* Description 列可以换行，不要占太多宽度 */
-.table-wrap table th:nth-child(9),
-.table-wrap table tbody td:nth-child(9) {
-    max-width: 150px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+/* stripe 行保持一致 */
+.table-wrap table tbody tr:nth-child(even) td:last-child {
+    background: var(--main-bg);
 }
 
 /* ========== DETAIL ========== */
@@ -369,6 +367,11 @@ tbody tr:last-child td{border-bottom:none}
 .mobile-logout-bar{display:none}
 
 /* ========== RESPONSIVE ========== */
+@media (max-width: 768px) {
+    input, select, textarea {
+        font-size: 16px !important;
+    }
+}
 @media(max-width:860px){
   /* Sidebar — use LEFT instead of transform (transform breaks fixed on mobile) */
   .sidebar{
