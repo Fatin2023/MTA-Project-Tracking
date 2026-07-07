@@ -1415,9 +1415,9 @@ function renderUsersTable() {
 
     var rows = '';
     if (filtered.length === 0) {
-        rows = '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No users found</td></tr>';
+        rows = '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No users found</td></tr>';
     } else {
-        rows = pageData.map(function(u) {
+        rows = pageData.map(function(u, idx) {
             var member = u.memberId ? DB.members.find(function(m) { return m.id === u.memberId; }) : null;
             var mName = member ? member.name : '—';
             var pos = member && member.positionId ? getPositionName(member.positionId) : '—';
@@ -1425,8 +1425,9 @@ function renderUsersTable() {
             var sal = member ? latestSalary(member) : null;
             var projs = member ? getMemberProjects(member.id) : [];
             var projHtml = projs.length ? projs.map(function(p) { return '<span class="badge badge-employee" style="margin:1px">' + esc(p.name) + '</span>'; }).join(' ') : '<span style="color:var(--main-text3)">None</span>';
-            var roleClass = u.role === 'admin' ? 'badge-admin' : 'badge-employee';
+            var roleClass = u.role === 'admin' ? 'badge-admin' : u.role === 'viewer' ? 'badge-viewer' : 'badge-employee';
             return '<tr>' +
+                '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
                 '<td style="font-family:var(--font-m)">' + esc(u.username) + '</td>' +
                 '<td>' + esc(mName) + '</td>' +
                 '<td><span class="badge ' + roleClass + '">' + u.role + '</span></td>' +
@@ -1471,12 +1472,11 @@ function renderUsersTable() {
                 '<div class="pagination-controls">' + pageButtons + '</div>' +
             '</div></div>';
     }
-
     document.getElementById('users-table-area').innerHTML =
-        '<div class="table-wrap"><table><thead><tr>' +
-            '<th>Username</th><th>Name</th><th>Role</th><th>Position</th><th>Department</th><th>Salary</th><th>Projects</th><th style="width:90px">Actions</th>' +
-        '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
-        paginationHtml;
+    '<div class="table-wrap"><table><thead><tr>' +
+        '<th style="width:50px">No</th><th>Username</th><th>Name</th><th>Role</th><th>Position</th><th>Department</th><th>Salary</th><th>Projects</th><th style="width:90px">Actions</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    paginationHtml;
 }
 
 function goUsrPage(page) {
@@ -2290,10 +2290,11 @@ function renderEmpItemSummaryTable() {
 
     var rows = '';
     if (data.length === 0) {
-        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>';
+        rows = '<tr><td colspan="5" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>';
     } else {
-        rows = pageData.map(function(r) {
-            return '<tr><td>' + r.label +
+        rows = pageData.map(function(r, idx) {
+            return '<tr><td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
+                '<td>' + r.label +
                 '</td><td style="text-align:right;font-family:var(--font-m)">' + r.entries +
                 '</td><td style="text-align:right;font-family:var(--font-m)">' + formatDuration(r.hours) +
                 '</td><td style="text-align:right;font-family:var(--font-m)">' + fmtCost(r.cost) + '</td></tr>';
@@ -2313,7 +2314,7 @@ function renderEmpItemSummaryTable() {
             '</div>' +
             '<div class="collapse-content" id="emp-summary-content" style="display:block;padding-top:8px">' +
                 '<div class="table-wrap"><table>' +
-                    '<thead><tr><th>Work Category &rarr; ID/Name</th><th style="text-align:right">Records</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
+                    '<thead><tr><th style="width:50px">No</th><th>Work Category &rarr; ID/Name</th><th style="text-align:right">Records</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
                     '<tbody>' + rows + '</tbody>' +
                 '</table></div>' +
                 paginationHtml +
@@ -2355,17 +2356,18 @@ function renderScopeItemsTable(scopeId) {
     var actionsCol = isPic ? '<th style="width:80px">Actions</th>' : '';
     var rows = '';
     if (data.length === 0) {
-        var colCount = isPic ? 5 : 4;
+        var colCount = isPic ? 6 : 5;
         rows = '<tr><td colspan="' + colCount + '" style="text-align:center;color:var(--main-text3);padding:30px">' +
             (query ? 'No items matching "' + esc(query) + '"' : 'No items. ' + (isPic ? 'Click "+ Add Item" to create one.' : '')) +
             '</td></tr>';
     } else {
-        rows = pageData.map(function(r) {
+        rows = pageData.map(function(r, idx) {
             var actionCell = isPic ? '<td><div class="actions-cell">' +
                 '<button class="btn-icon" onclick="empShowEditItem(' + r.id + ')" title="Edit">&#9998;</button>' +
                 '<button class="btn-icon danger" onclick="empConfirmDeleteItem(' + r.id + ')" title="Delete">&#10005;</button>' +
             '</div></td>' : '';
             return '<tr>' +
+                '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
                 '<td><div style="font-family:var(--font-d);font-size:1rem">' + r.name + '</div></td>' +
                 '<td>' + r.customer + '</td>' +
                 '<td style="font-family:var(--font-m);font-size:.85rem">' + r.timeline + '</td>' +
@@ -2375,7 +2377,6 @@ function renderScopeItemsTable(scopeId) {
         }).join('');
     }
 
-    // Pagination (不变)
     var paginationHtml = '';
     if (data.length > 0) {
         var showFrom = startIdx + 1;
@@ -2407,7 +2408,7 @@ function renderScopeItemsTable(scopeId) {
 
     document.getElementById('scope-items-table-' + scopeId).innerHTML =
         '<div class="table-wrap"><table>' +
-            '<thead><tr><th>Work Category Id/Name</th><th>Customer</th><th>Timeline</th><th>Countdown</th>' + actionsCol + '</tr></thead>' +
+            '<thead><tr><th style="width:50px">No</th><th>Work Category Id/Name</th><th>Customer</th><th>Timeline</th><th>Countdown</th>' + actionsCol + '</tr></thead>' +
             '<tbody>' + rows + '</tbody>' +
         '</table></div>' + paginationHtml;
 }
@@ -2653,9 +2654,9 @@ function renderEmpAttendancePage() {
 
     let rows = '';
     if (filtered.length === 0) {
-        rows = '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No time entries found</td></tr>';
+        rows = '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No time entries found</td></tr>';
     } else {
-        rows = pageData.map(r => {
+        rows = pageData.map((r, idx) => {
             var proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
             var scope = proj && proj.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
             var dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '—';
@@ -2672,6 +2673,7 @@ function renderEmpAttendancePage() {
             var wd = r.work_done_id ? DB.worklist.find(function(w) { return w.id === r.work_done_id; }) : null;
 
             return '<tr>' +
+                '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
                 '<td style="font-family:var(--font-m)">' + r.date + '</td>' +
                 '<td>' + itemDisplay + '</td>' +
                 '<td>' + (wp ? esc(wp.title) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
@@ -2722,7 +2724,7 @@ function renderEmpAttendancePage() {
     tableArea.innerHTML =
         '<div class="table-wrap">' +
             '<table><thead><tr>' +
-                '<th>Date</th><th>Category &rarr; ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th>' +
+                '<th style="width:50px">No</th><th>Date</th><th>Category &rarr; ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th>' +
             '</tr></thead><tbody>' + rows + '</tbody></table>' +
         '</div>' +
         paginationHtml;
@@ -3535,26 +3537,27 @@ function renderAdminAttPage() {
     var pageData = filtered.slice(startIdx, endIdx);
 
     var rows = '';
-    if (filtered.length === 0) {
-        rows = '<tr><td colspan="11" style="text-align:center;color:var(--main-text3);padding:30px">No attendance records found</td></tr>';
-    } else {
-        rows = pageData.map(function(r) {
-            var emp = DB.members.find(function(m) { return m.id === r.memberId; });
-            var dept = emp && emp.departmentId ? getDeptName(emp.departmentId) : '';
-            var proj = r.projectId ? DB.projects.find(function(p) { return p.id === r.projectId; }) : null;
-            var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
-            var dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '—';
-            var startParts = r.clockIn ? r.clockIn.split('T') : [];
-            var endParts = r.clockOut ? r.clockOut.split('T') : [];
-            var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '—';
-            var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '—';
-            var itemDisplay = '—';
-            if (proj) {
-                itemDisplay = scope ? esc(scope.name) + ' &rarr; ' + esc(proj.name) : esc(proj.name);
-            }
-            var wp = r.work_plan_id ? DB.worklist.find(function(w) { return w.id === r.work_plan_id; }) : null;
-            var wd = r.work_done_id ? DB.worklist.find(function(w) { return w.id === r.work_done_id; }) : null;
+        if (filtered.length === 0) {
+            rows = '<tr><td colspan="12" style="text-align:center;color:var(--main-text3);padding:30px">No attendance records found</td></tr>';
+        } else {
+            rows = pageData.map(function(r, idx) {
+        var emp = DB.members.find(function(m) { return m.id === r.memberId; });
+        var dept = emp && emp.departmentId ? getDeptName(emp.departmentId) : '';
+        var proj = r.projectId ? DB.projects.find(function(p) { return p.id === r.projectId; }) : null;
+        var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
+        var dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '—';
+        var startParts = r.clockIn ? r.clockIn.split('T') : [];
+        var endParts = r.clockOut ? r.clockOut.split('T') : [];
+        var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '—';
+        var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '—';
+        var itemDisplay = '—';
+        if (proj) {
+            itemDisplay = scope ? esc(scope.name) + ' &rarr; ' + esc(proj.name) : esc(proj.name);
+        }
+        var wp = r.work_plan_id ? DB.worklist.find(function(w) { return w.id === r.work_plan_id; }) : null;
+        var wd = r.work_done_id ? DB.worklist.find(function(w) { return w.id === r.work_done_id; }) : null;
             return '<tr>' +
+                '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
                 '<td style="font-family:var(--font-m)">' + r.date + '</td>' +
                 '<td>' + (dept ? esc(dept) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
                 '<td>' + (emp ? esc(emp.name) : '?') + '</td>' +
@@ -3604,7 +3607,7 @@ function renderAdminAttPage() {
 
     document.getElementById('admin-att-table-area').innerHTML =
         '<div class="table-wrap"><table>' +
-            '<thead><tr><th>Date</th><th>Department</th><th>Employee</th><th>Category &rarr; ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th></tr></thead>' +
+            '<thead><tr><th style="width:50px">No</th><th>Date</th><th>Department</th><th>Employee</th><th>Category &rarr; ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th></tr></thead>' +
             '<tbody>' + rows + '</tbody></table></div>' +
         paginationHtml;
 }
@@ -4636,7 +4639,7 @@ function renderRptItemTable(data) {
 
     document.getElementById('rpt-item-table-area').innerHTML =
         '<div class="table-wrap"><table>' +
-            '<thead><tr><th>Scope &rarr; Item</th><th>Countdown</th><th style="text-align:right">Members</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
+            '<thead><tr><th>Category &rarr; ID/Name</th><th>Countdown</th><th style="text-align:right">Members</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
             '<tbody>' + rows + '</tbody>' +
         '</table></div>' +
         buildRptPagination(data.length, rptItemPage, rptItemPageSize, 'goRptItemPage', 'changeRptItemPageSize');
@@ -5245,7 +5248,7 @@ function ptRenderImport() {
         '<div class="import-section">' +
             '<h3>Import Panels</h3>' +
             '<div class="section-desc">Upload an Excel file (.xlsx, .xls, .csv)</div>' +
-            '<a class="template-btn" href="/api/m-template/panels">&#8681; Download Panel Template</a>' +
+            '<div style="margin-bottom:14px"><a class="btn btn-accent btn-sm" href="/api/m-template/panels" style="text-decoration:none">&#8681; Download Panel Template</a></div>' +
             '<div class="drop-zone" id="pt-panel-drop-zone"><div class="drop-icon">&#128196;</div><div class="drop-text">Drag & drop Panel Excel here</div><div class="drop-hint">or click to browse</div><input type="file" class="file-input" id="pt-panel-file-input" accept=".xlsx,.xls,.csv" onchange="ptHandlePanelFile(this)"></div>' +
             '<div id="pt-panel-file-info"></div><div id="pt-panel-preview"></div><div id="pt-panel-import-result"></div>' +
             '<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end" id="pt-panel-import-actions"></div>' +
@@ -5253,7 +5256,7 @@ function ptRenderImport() {
         '<div class="import-section">' +
             '<h3>Import Materials</h3>' +
             '<div class="section-desc">Upload an Excel file (.xlsx, .xls, .csv)</div>' +
-            '<a class="template-btn" href="/api/m-template/materials">&#8681; Download Material Template</a>' +
+            '<div style="margin-bottom:14px"><a class="btn btn-accent btn-sm" href="/api/m-template/materials" style="text-decoration:none">&#8681; Download Material Template</a></div>' +
             '<div class="drop-zone" id="pt-material-drop-zone"><div class="drop-icon">&#128196;</div><div class="drop-text">Drag & drop Material Excel here</div><div class="drop-hint">or click to browse</div><input type="file" class="file-input" id="pt-material-file-input" accept=".xlsx,.xls,.csv" onchange="ptHandleMaterialFile(this)"></div>' +
             '<div id="pt-material-file-info"></div><div id="pt-material-preview"></div><div id="pt-material-import-result"></div>' +
             '<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end" id="pt-material-import-actions"></div>' +
