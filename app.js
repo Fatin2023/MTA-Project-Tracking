@@ -497,7 +497,7 @@ function renderMainScope() {
                 <span id="item-count" style="font-size:.82rem;color:var(--main-text3)"></span>
                 <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
                     ${activeCategoryId ?
-                        '<a class="btn btn-ghost btn-sm" href="/api/template/projects/' + activeCategoryId + '" style="text-decoration:none">Template Download</a>' +
+                        '<a class="btn btn-accent btn-sm" href="/api/template/projects/' + activeCategoryId + '" style="text-decoration:none">Template Download</a>' +
                         '<label class="btn btn-blue btn-sm" style="cursor:pointer">Import Excel<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="adminHandleItemImport(this)"></label>'
                     : ''}
                     <button class="btn btn-green" onclick="showAddItem()">+ Add Item</button>
@@ -2014,7 +2014,7 @@ function renderEmployeeProjects() {
                     '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">' +
                         '<input class="input" id="scope-search-' + scopeId + '" placeholder="Search ID/Name..." value="' + esc(empScopeSearch[scopeId] || '') + '" oninput="scopeSearchChanged(' + scopeId + ')" style="max-width:260px;padding:7px 10px;font-size:.82rem;margin-right:auto">' +
                         (isPic ? '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
-                            '<a class="btn btn-ghost btn-sm" href="/api/template/projects/' + scopeId + '" style="text-decoration:none">Template Download</a>' +
+                            '<a class="btn btn-accent btn-sm" href="/api/template/projects/' + scopeId + '" style="text-decoration:none">Template Download</a>' +
                             '<label class="btn btn-blue btn-sm" style="cursor:pointer">Import Excel<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="empHandleScopeImport(' + scopeId + ',this)"></label>' +
                             '<button class="btn btn-green btn-sm" onclick="empShowAddItem(' + scopeId + ')">+ Add Item</button>' +
                         '</div>' : '') +
