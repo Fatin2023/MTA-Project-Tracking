@@ -4718,6 +4718,26 @@ function canEdit() {
     return getUserRole() === 'admin';
 }
 
+function ptDateOnly(value) {
+    return value ? String(value).slice(0, 10) : '';
+}
+
+function ptExportRowsToExcel(rows, sheetName, filePrefix) {
+    if (!rows || rows.length === 0) {
+        alert('No data to export');
+        return;
+    }
+    if (typeof XLSX === 'undefined') {
+        alert('Excel library is not loaded');
+        return;
+    }
+
+    var wb = XLSX.utils.book_new();
+    var ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, filePrefix + '_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+}
+
 /* ==========================================================
    PANEL TRACKING MODULE
    ========================================================== */
@@ -4903,6 +4923,7 @@ function ptRenderPanel() {
             '<input class="input" type="text" placeholder="Search..." id="pt-panel-search" oninput="ptFilterPanels()" style="max-width:320px">' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetPanelFilter()">Reset</button>' +
             '<div style="flex:1"></div>' +
+            '<button class="btn btn-blue btn-sm" onclick="ptExportPanelsExcel()">Export Excel</button>' +
             addBtn +
         '</div>' +
         '<div class="section-head"><h3>All Panels</h3></div>' +
@@ -4910,15 +4931,19 @@ function ptRenderPanel() {
     ptFilterPanels();
 }
 
-function ptFilterPanels() {
+function ptGetFilteredPanels() {
     var search = (document.getElementById('pt-panel-search').value || '').toLowerCase();
-    var filtered = (ptDB.panelIds || []).filter(function(p) {
+    return (ptDB.panelIds || []).filter(function(p) {
         if (!search) return true;
         var haystack = [
             p.name, p.customer, p.start_date, p.end_date, p.install_date
         ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
         return haystack.indexOf(search) !== -1;
     });
+}
+
+function ptFilterPanels() {
+    var filtered = ptGetFilteredPanels();
 
     var totalPages = Math.ceil(filtered.length / panelPageSize) || 1;
     if (panelCurrentPage > totalPages) panelCurrentPage = totalPages;
@@ -4962,6 +4987,20 @@ function changePanelPageSize(size) {
     panelPageSize = parseInt(size);
     panelCurrentPage = 1;
     ptFilterPanels();
+}
+
+function ptExportPanelsExcel() {
+    var rows = ptGetFilteredPanels().map(function(p, i) {
+        return {
+            No: i + 1,
+            'Panel ID': p.name || '',
+            Customer: p.customer || '',
+            'Start Date': ptDateOnly(p.start_date),
+            'End Date': ptDateOnly(p.end_date),
+            'Install Date': ptDateOnly(p.install_date)
+        };
+    });
+    ptExportRowsToExcel(rows, 'Panels', 'panels');
 }
 
 
@@ -5061,6 +5100,7 @@ function ptRenderMaterial() {
             '<input class="input" type="text" placeholder="Search..." id="pt-mat-search" oninput="ptFilterMaterials()" style="max-width:320px">' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetMatFilter()">Reset</button>' +
             '<div style="flex:1"></div>' +
+            '<button class="btn btn-blue btn-sm" onclick="ptExportMaterialsExcel()">Export Excel</button>' +
             addBtn +
         '</div>' +
         '<div class="section-head"><h3>All Materials</h3></div>' +
@@ -5068,9 +5108,9 @@ function ptRenderMaterial() {
     ptFilterMaterials();
 }
 
-function ptFilterMaterials() {
+function ptGetFilteredMaterials() {
     var search = (document.getElementById('pt-mat-search').value || '').toLowerCase();
-    var filtered = ptDB.materials.filter(function(m) {
+    return ptDB.materials.filter(function(m) {
         if (!search) return true;
         var haystack = [
             m.part_no, m.brand, m.description, m.serial_no, m.yom,
@@ -5079,6 +5119,10 @@ function ptFilterMaterials() {
         ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
         return haystack.indexOf(search) !== -1;
     });
+}
+
+function ptFilterMaterials() {
+    var filtered = ptGetFilteredMaterials();
 
     var totalPages = Math.ceil(filtered.length / matPageSize) || 1;
     if (matCurrentPage > totalPages) matCurrentPage = totalPages;
@@ -5129,6 +5173,27 @@ function changeMatPageSize(size) {
     matPageSize = parseInt(size);
     matCurrentPage = 1;
     ptFilterMaterials();
+}
+
+function ptExportMaterialsExcel() {
+    var rows = ptGetFilteredMaterials().map(function(m, i) {
+        return {
+            No: i + 1,
+            'Part No': m.part_no || '',
+            Description: m.description || '',
+            Brand: m.brand || '',
+            'Serial No': m.serial_no || '',
+            'Vendor PO': m.vendor_po_no || '',
+            Vendor: m.vendor || '',
+            'Panel ID': m.panel_no || '',
+            YOM: m.yom || '',
+            Category: m.category || '',
+            Unit: m.unit || '',
+            Price: m.unit_price != null ? Number(m.unit_price) : 0,
+            'Install Date': ptDateOnly(m.install_date)
+        };
+    });
+    ptExportRowsToExcel(rows, 'Materials', 'materials');
 }
 
 function ptOpenAddMaterial() {
