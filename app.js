@@ -1,3 +1,55 @@
+function toggleMobileMenu(layoutId) {
+    var layout = document.getElementById(layoutId || getActiveLayout());
+    if (!layout) return;
+    var sidebar = layout.querySelector('.sidebar');
+    var overlay = layout.querySelector('.mobile-overlay');
+    if (sidebar) sidebar.classList.toggle('open');
+    if (overlay) overlay.classList.toggle('active');
+    document.body.classList.toggle('menu-open');
+}
+
+function closeMobileMenu(layoutId) {
+    var layout = document.getElementById(layoutId || getActiveLayout());
+    if (!layout) return;
+    var sidebar = layout.querySelector('.sidebar');
+    var overlay = layout.querySelector('.mobile-overlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.classList.remove('active');
+    document.body.classList.remove('menu-open');
+}
+
+function getActiveLayout() {
+    var layouts = document.querySelectorAll('.app-layout.active');
+    if (layouts.length > 0) return layouts[0].id;
+    return null;
+}
+
+function initTheme() {
+    var saved = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', saved);
+    updateThemeUI(saved);
+}
+
+function toggleTheme() {
+    var current = document.documentElement.getAttribute('data-theme') || 'light';
+    var next = current === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+    updateThemeUI(next);
+}
+
+function updateThemeUI(theme) {
+    var icons = document.querySelectorAll('.theme-icon');
+    var labels = document.querySelectorAll('.theme-label');
+    icons.forEach(function(icon) {
+        icon.innerHTML = theme === 'dark' ? '&#9788;' : '&#9790;';
+    });
+    labels.forEach(function(label) {
+        label.textContent = theme === 'dark' ? 'Light Mode' : 'Dark Mode';
+    });
+}
+
+initTheme();
 /* ==========================================================
    MULTITRADE — Project Salary Management (PostgreSQL version)
    ========================================================== */
