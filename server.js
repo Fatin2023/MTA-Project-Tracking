@@ -643,11 +643,15 @@ app.get('/api/scopes', async (req, res) => {
             const pics = await pool.query(
                 'SELECT member_id FROM scope_pics WHERE scope_id = $1', [s.id]
             );
+            const departments = await pool.query(
+                'SELECT department_id FROM scope_departments WHERE scope_id = $1', [s.id]
+            );
             return {
                 id: s.id,
                 name: s.name,
                 createdAt: s.created_at,
-                picMemberIds: pics.rows.map(r => r.member_id)
+                picMemberIds: pics.rows.map(r => r.member_id),
+                departmentIds: departments.rows.map(r => r.department_id)
             };
         }));
         res.json(scopes);
@@ -656,7 +660,7 @@ app.get('/api/scopes', async (req, res) => {
 
 // POST /api/scopes — 带 picMemberIds
 app.post('/api/scopes', async (req, res) => {
-    const { name, picMemberIds } = req.body;
+    const { name, picMemberIds, departmentIds } = req.body;
     try {
         const result = await pool.query(
             'INSERT INTO scopes (name) VALUES ($1) RETURNING id', [name]
@@ -670,13 +674,21 @@ app.post('/api/scopes', async (req, res) => {
                 );
             }
         }
+        if (departmentIds && departmentIds.length > 0) {
+            for (const did of departmentIds) {
+                await pool.query(
+                    'INSERT INTO scope_departments (scope_id, department_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                    [scopeId, did]
+                );
+            }
+        }
         res.json({ id: scopeId });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // PUT /api/scopes/:id — 带 picMemberIds
 app.put('/api/scopes/:id', async (req, res) => {
-    const { name, picMemberIds } = req.body;
+    const { name, picMemberIds, departmentIds } = req.body;
     try {
         await pool.query('UPDATE scopes SET name = $1 WHERE id = $2', [name, req.params.id]);
         await pool.query('DELETE FROM scope_pics WHERE scope_id = $1', [req.params.id]);
@@ -685,6 +697,15 @@ app.put('/api/scopes/:id', async (req, res) => {
                 await pool.query(
                     'INSERT INTO scope_pics (scope_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
                     [req.params.id, mid]
+                );
+            }
+        }
+        await pool.query('DELETE FROM scope_departments WHERE scope_id = $1', [req.params.id]);
+        if (departmentIds && departmentIds.length > 0) {
+            for (const did of departmentIds) {
+                await pool.query(
+                    'INSERT INTO scope_departments (scope_id, department_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+                    [req.params.id, did]
                 );
             }
         }
@@ -1257,6 +1278,12 @@ async function initDB() {
                 scope_id INT REFERENCES scopes(id) ON DELETE CASCADE,
                 member_id INT REFERENCES members(id) ON DELETE CASCADE,
                 UNIQUE(scope_id, member_id)
+            );
+            CREATE TABLE IF NOT EXISTS scope_departments (
+                id SERIAL PRIMARY KEY,
+                scope_id INT REFERENCES scopes(id) ON DELETE CASCADE,
+                department_id INT REFERENCES departments(id) ON DELETE CASCADE,
+                UNIQUE(scope_id, department_id)
             );
         `);
         console.log('Attendance tables created');

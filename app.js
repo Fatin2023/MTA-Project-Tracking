@@ -754,15 +754,28 @@ function showAddCategory() {
             '<input type="checkbox" value="' + m.id + '" style="accent-color:var(--accent);width:15px;height:15px">' +
             esc(m.name) + ' <span style="color:var(--main-text3);font-size:.76rem">(' + esc(getPositionName(m.positionId)) + ' · ' + esc(getDeptName(m.departmentId)) + ')</span></label>';
     }).join('');
+    var deptList = DB.departments.map(function(d) {
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;font-size:.84rem;border-bottom:1px solid var(--main-border)">' +
+            '<input type="checkbox" value="' + d.id + '" style="accent-color:var(--accent);width:15px;height:15px">' +
+            esc(d.name) + '</label>';
+    }).join('');
 
     showModal('<h3>New Category</h3>' +
         '<div class="field"><label>Category Name</label><input class="input" id="inp-cat-name" placeholder="e.g. Electrical, Mechanical"></div>' +
-        '<div style="margin-top:8px"><label style="font-size:.85rem;display:block;margin-bottom:6px">PIC (Person In Charge)</label>' +
+        '<div style="margin-top:8px"><label style="font-size:.85rem;display:block;margin-bottom:6px">PIC (Person In Charge - Can update the detials)</label>' +
             '<div style="display:flex;gap:6px;margin-bottom:6px">' +
                 '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#pic-list-add input\').forEach(function(c){c.checked=true})">All</button>' +
                 '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#pic-list-add input\').forEach(function(c){c.checked=false})">Clear</button>' +
             '</div>' +
             '<div id="pic-list-add" style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">' + picList + '</div>' +
+        '</div>' +
+        '<div style="margin-top:12px"><label style="font-size:.85rem;display:block;margin-bottom:6px">Department can view this category</label>' +
+            '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+                '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#dept-list-add input\').forEach(function(c){c.checked=true})">All</button>' +
+                '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#dept-list-add input\').forEach(function(c){c.checked=false})">Clear</button>' +
+            '</div>' +
+            '<div id="dept-list-add" style="max-height:150px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">' + deptList + '</div>' +
+            '<div style="font-size:.76rem;color:var(--main-text3);margin-top:5px">Clear means all departments can view.</div>' +
         '</div>' +
         '<p class="auth-error" id="cat-error"></p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddCategory()">Create</button></div>');
@@ -777,8 +790,12 @@ async function doAddCategory() {
     document.querySelectorAll('#pic-list-add input:checked').forEach(function(c) {
         picMemberIds.push(parseInt(c.value));
     });
+    var departmentIds = [];
+    document.querySelectorAll('#dept-list-add input:checked').forEach(function(c) {
+        departmentIds.push(parseInt(c.value));
+    });
     try {
-        await api('/scopes', { method: 'POST', body: { name: name, picMemberIds: picMemberIds } });
+        await api('/scopes', { method: 'POST', body: { name: name, picMemberIds: picMemberIds, departmentIds: departmentIds } });
         hideModal(); await loadDB(); renderMainScope();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
@@ -787,6 +804,7 @@ function showEditCategory(sid) {
     var scope = DB.scopes.find(function(s) { return s.id === sid; });
     if (!scope) return;
     var currentPics = scope.picMemberIds || [];
+    var currentDepartments = scope.departmentIds || [];
 
     var picList = DB.members.map(function(m) {
         var checked = currentPics.indexOf(m.id) !== -1 ? 'checked' : '';
@@ -795,14 +813,29 @@ function showEditCategory(sid) {
             esc(m.name) + ' <span style="color:var(--main-text3);font-size:.76rem">(' + esc(getPositionName(m.positionId)) + ' · ' + esc(getDeptName(m.departmentId)) + ')</span></label>';
     }).join('');
 
+    var deptList = DB.departments.map(function(d) {
+        var checked = currentDepartments.indexOf(d.id) !== -1 ? 'checked' : '';
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;font-size:.84rem;border-bottom:1px solid var(--main-border)">' +
+            '<input type="checkbox" value="' + d.id + '" ' + checked + ' style="accent-color:var(--accent);width:15px;height:15px">' +
+            esc(d.name) + '</label>';
+    }).join('');
+
     showModal('<h3>Edit Category</h3>' +
         '<div class="field"><label>Category Name</label><input class="input" id="inp-cat-edit" value="' + esc(scope.name) + '"></div>' +
-        '<div style="margin-top:8px"><label style="font-size:.85rem;display:block;margin-bottom:6px">PIC (Person In Charge)</label>' +
+        '<div style="margin-top:8px"><label style="font-size:.85rem;display:block;margin-bottom:6px">PIC (Person In Charge - Can update the detials)</label>' +
             '<div style="display:flex;gap:6px;margin-bottom:6px">' +
                 '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#pic-list-edit input\').forEach(function(c){c.checked=true})">All</button>' +
                 '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#pic-list-edit input\').forEach(function(c){c.checked=false})">Clear</button>' +
             '</div>' +
             '<div id="pic-list-edit" style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">' + picList + '</div>' +
+        '</div>' +
+        '<div style="margin-top:12px"><label style="font-size:.85rem;display:block;margin-bottom:6px">Department can view this category</label>' +
+            '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+                '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#dept-list-edit input\').forEach(function(c){c.checked=true})">All</button>' +
+                '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#dept-list-edit input\').forEach(function(c){c.checked=false})">Clear</button>' +
+            '</div>' +
+            '<div id="dept-list-edit" style="max-height:150px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">' + deptList + '</div>' +
+            '<div style="font-size:.76rem;color:var(--main-text3);margin-top:5px">Clear means all departments can view.</div>' +
         '</div>' +
         '<p class="auth-error" id="cat-error"></p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditCategory(' + sid + ')">Save</button></div>');
@@ -817,8 +850,12 @@ async function doEditCategory(sid) {
     document.querySelectorAll('#pic-list-edit input:checked').forEach(function(c) {
         picMemberIds.push(parseInt(c.value));
     });
+    var departmentIds = [];
+    document.querySelectorAll('#dept-list-edit input:checked').forEach(function(c) {
+        departmentIds.push(parseInt(c.value));
+    });
     try {
-        await api('/scopes/' + sid, { method: 'PUT', body: { name: name, picMemberIds: picMemberIds } });
+        await api('/scopes/' + sid, { method: 'PUT', body: { name: name, picMemberIds: picMemberIds, departmentIds: departmentIds } });
         hideModal(); await loadDB(); renderMainScope();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
@@ -2448,6 +2485,26 @@ function getEmployeeProjects(memberId) {
         .filter(Boolean);
 }
 
+function canMemberViewScope(member, scope) {
+    if (!scope) return true;
+    var departmentIds = scope.departmentIds || [];
+    if (departmentIds.length === 0) return true;
+    return !!member && !!member.departmentId && departmentIds.indexOf(member.departmentId) !== -1;
+}
+
+function getEmployeeVisibleScopes(member, extraScopeId) {
+    return DB.scopes.filter(function(s) {
+        return s.id === extraScopeId || canMemberViewScope(member, s);
+    });
+}
+
+function getEmployeeVisibleProjects(member, extraProjectId) {
+    var visibleScopeIds = getEmployeeVisibleScopes(member).map(function(s) { return s.id; });
+    return DB.projects.filter(function(p) {
+        return p.id === extraProjectId || !p.categoryId || visibleScopeIds.indexOf(p.categoryId) !== -1;
+    });
+}
+
 function renderEmployeeAttendance() {
     if (!currentUser || !currentUser.memberId) return;
     const member = DB.members.find(m => m.id === currentUser.memberId);
@@ -2747,9 +2804,11 @@ function changeEmpAttPageSize(size) {
 
 function showAddTimeEntry() {
     try {
+        var member = currentUser && currentUser.memberId ? DB.members.find(function(m) { return m.id === currentUser.memberId; }) : null;
+        var visibleScopes = getEmployeeVisibleScopes(member);
         var today = todayStr();
         var scopeOptions = '<option value="">-- Select Category --</option>' +
-            DB.scopes.map(function(s) {
+            visibleScopes.map(function(s) {
                 return '<option value="' + s.id + '">' + esc(s.name) + '</option>';
             }).join('');
 
@@ -2780,18 +2839,21 @@ function showEditTimeEntry(entryId) {
 
     var currentProj = entry.projectId ? DB.projects.find(function(p) { return p.id === entry.projectId; }) : null;
     var currentScopeId = currentProj && currentProj.categoryId ? currentProj.categoryId : '';
+    var member = currentUser && currentUser.memberId ? DB.members.find(function(m) { return m.id === currentUser.memberId; }) : null;
+    var visibleScopes = getEmployeeVisibleScopes(member, currentScopeId);
 
     // 显示所有 scope
     var scopeOptions = '<option value="">-- Select Category --</option>' +
-        DB.scopes.map(function(s) {
+        visibleScopes.map(function(s) {
             var sel = currentScopeId === s.id ? 'selected' : '';
             return '<option value="' + s.id + '" ' + sel + '>' + esc(s.name) + '</option>';
         }).join('');
 
     // 显示该 scope 下所有 project
+    var visibleProjects = getEmployeeVisibleProjects(member, entry.projectId);
     var scopeItems = currentScopeId
-        ? DB.projects.filter(function(p) { return p.categoryId === currentScopeId; })
-        : DB.projects;
+        ? visibleProjects.filter(function(p) { return p.categoryId === currentScopeId; })
+        : visibleProjects;
     var projectOpts = scopeItems.map(function(p) {
         var sel = entry.projectId === p.id ? 'selected' : '';
         return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>';
@@ -2835,10 +2897,12 @@ function showEditTimeEntry(entryId) {
 function entryScopeChanged() {
     var scopeId = document.getElementById('entry-scope-filter').value;
     var projSelect = document.getElementById('entry-project');
+    var member = currentUser && currentUser.memberId ? DB.members.find(function(m) { return m.id === currentUser.memberId; }) : null;
+    var visibleProjects = getEmployeeVisibleProjects(member);
 
     var filtered = scopeId
-        ? DB.projects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
-        : DB.projects;
+        ? visibleProjects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
+        : visibleProjects;
 
     filtered.sort(function(a, b) {
         if (a.name.toLowerCase() === 'other') return -1;
@@ -2857,10 +2921,13 @@ function entryScopeChanged() {
 function entryScopeChangedEdit() {
     var scopeId = document.getElementById('entry-scope-filter').value;
     var projSelect = document.getElementById('entry-project');
+    var currentProjectId = parseInt(projSelect.value || '0') || null;
+    var member = currentUser && currentUser.memberId ? DB.members.find(function(m) { return m.id === currentUser.memberId; }) : null;
+    var visibleProjects = getEmployeeVisibleProjects(member, currentProjectId);
 
     var filtered = scopeId
-        ? DB.projects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
-        : DB.projects;
+        ? visibleProjects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
+        : visibleProjects;
 
     filtered.sort(function(a, b) {
         if (a.name.toLowerCase() === 'other') return -1;

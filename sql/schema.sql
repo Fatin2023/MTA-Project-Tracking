@@ -69,7 +69,6 @@ CREATE TABLE IF NOT EXISTS attendance (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-
 -- New tables
 CREATE TABLE IF NOT EXISTS sub_scopes (
     id          SERIAL PRIMARY KEY,
@@ -108,6 +107,13 @@ CREATE TABLE IF NOT EXISTS scope_pics (
     scope_id INT REFERENCES scopes(id) ON DELETE CASCADE,
     member_id INT REFERENCES members(id) ON DELETE CASCADE,
     UNIQUE(scope_id, member_id)
+);
+
+CREATE TABLE IF NOT EXISTS scope_departments (
+    id SERIAL PRIMARY KEY,
+    scope_id INT REFERENCES scopes(id) ON DELETE CASCADE,
+    department_id INT REFERENCES departments(id) ON DELETE CASCADE,
+    UNIQUE(scope_id, department_id)
 );
 
 ALTER TABLE attendance ADD COLUMN work_plan_id INTEGER REFERENCES worklist(id) ON DELETE SET NULL;
