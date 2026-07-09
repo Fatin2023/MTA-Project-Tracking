@@ -5049,8 +5049,14 @@ function ptRenderDashboard() {
             ? '<div class="empty-msg">No panels yet.</div>'
             : '<div class="table-wrap"><table><thead><tr><th>No</th><th>Panel ID</th><th>Customer</th><th>Start Date</th><th>End Date</th></tr></thead><tbody>' +
               pageData.map(function(p, i) {
-                  return '<tr><td>' + (startIdx + i + 1) + '</td><td><strong>' + esc(p.name) + '</strong></td><td>' + esc(p.customer || '—') + '</td><td>' + (p.start_date ? p.start_date.slice(0, 10) : '—') + '</td><td>' + (p.end_date ? p.end_date.slice(0, 10) : '—') + '</td></tr>';
-              }).join('') + '</tbody></table></div>' +
+                return '<tr style="cursor:pointer" onclick="ptOpenDrawer(' + p.id + ')">' +
+                    '<td>' + (startIdx + i + 1) + '</td>' +
+                    '<td><strong>' + esc(p.name) + '</strong></td>' +
+                    '<td>' + esc(p.customer || '—') + '</td>' +
+                    '<td>' + (p.start_date ? p.start_date.slice(0, 10) : '—') + '</td>' +
+                    '<td>' + (p.end_date ? p.end_date.slice(0, 10) : '—') + '</td>' +
+                '</tr>';
+            }).join('') + '</tbody></table></div>' +
               ptPagination(allPanels.length, dashCurrentPage, dashPageSize, 'goDashPage', 'changeDashPageSize'));
 }
 
@@ -5109,14 +5115,14 @@ function ptFilterPanels() {
     area.innerHTML =
         '<div class="table-wrap"><table><thead><tr><th>No</th><th>Panel ID</th><th>Customer</th><th>Start Date</th><th>End Date</th><th>Install Date</th><th>Actions</th></tr></thead><tbody>' +
         pageData.map(function(p, i) {
-            return '<tr>' +
+            return '<tr style="cursor:pointer" onclick="ptOpenDrawer(' + p.id + ')">' +
                 '<td>' + (startIdx + i + 1) + '</td>' +
                 '<td><strong>' + esc(p.name) + '</strong></td>' +
                 '<td>' + esc(p.customer || '—') + '</td>' +
                 '<td>' + (p.start_date ? p.start_date.slice(0, 10) : '—') + '</td>' +
                 '<td>' + (p.end_date ? p.end_date.slice(0, 10) : '—') + '</td>' +
                 '<td>' + (p.install_date ? p.install_date.slice(0, 10) : '—') + '</td>' +
-                '<td>' + (canEdit()
+                '<td onclick="event.stopPropagation()">' + (canEdit()
                 ? '<div style="display:flex;gap:4px">' +
                     '<button class="btn btn-ghost btn-sm" onclick="ptShowEditPanel(' + p.id + ')">Edit</button>' +
                     '<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ptDeletePanel(' + p.id + ')">&#10005;</button>' +
@@ -5241,6 +5247,228 @@ async function ptDoDeletePanel(id) {
     } catch (e) { alert(e.message); }
 }
 
+
+// ---------- DRAWER ----------
+var drawerPanelMatPage = 1;
+var drawerPanelMatPageSize = 5;
+var drawerSiblingsPage = 1;
+var drawerSiblingsPageSize = 5;
+var drawerCurrentPanelId = null;
+var drawerCurrentMatId = null;
+
+function ptOpenDrawer(panelId) {
+    drawerPanelMatPage = 1;
+    drawerCurrentPanelId = panelId;
+    drawerCurrentMatId = null;
+    ptRenderDrawerPanel();
+}
+
+function ptRenderDrawerPanel() {
+    var panelId = drawerCurrentPanelId;
+    var panel = (ptDB.panelIds || []).find(function(p) { return p.id === panelId; });
+    if (!panel) return;
+
+    var overlay = document.getElementById('pt-drawer-overlay');
+    var drawer = document.getElementById('pt-drawer');
+    var title = document.getElementById('pt-drawer-title');
+    var body = document.getElementById('pt-drawer-body');
+
+    title.textContent = panel.name || 'Panel Details';
+
+    var materials = (ptDB.materials || []).filter(function(m) {
+        return m.panel_no === panel.name;
+    });
+
+    var matTotalPages = Math.ceil(materials.length / drawerPanelMatPageSize) || 1;
+    if (drawerPanelMatPage > matTotalPages) drawerPanelMatPage = matTotalPages;
+    if (drawerPanelMatPage < 1) drawerPanelMatPage = 1;
+    var matStartIdx = (drawerPanelMatPage - 1) * drawerPanelMatPageSize;
+    var matPageData = materials.slice(matStartIdx, matStartIdx + drawerPanelMatPageSize);
+
+    var matRows = '';
+    if (materials.length === 0) {
+        matRows = '<div style="text-align:center;padding:24px;color:var(--main-text3);font-size:.88rem">No materials assigned</div>';
+    } else {
+        matRows = '<div class="table-wrap"><table><thead><tr>' +
+            '<th style="width:40px">No</th><th>Part No</th><th>Brand</th><th>Description</th><th>Serial No</th><th>Vendor</th><th>Vendor PO</th><th>YOM</th><th>Unit</th><th style="text-align:right">Price</th>' +
+            '</tr></thead><tbody>' +
+            matPageData.map(function(m, i) {
+                return '<tr style="cursor:pointer" onclick="ptCloseDrawer();setTimeout(function(){ptOpenMaterialDrawer(' + m.id + ')},220)">' +
+                    '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (matStartIdx + i + 1) + '</td>' +
+                    '<td><strong>' + esc(m.part_no) + '</strong></td>' +
+                    '<td>' + esc(m.brand || '—') + '</td>' +
+                    '<td>' + esc(m.description || '—') + '</td>' +
+                    '<td style="font-family:var(--font-m)">' + esc(m.serial_no || '—') + '</td>' +
+                    '<td>' + esc(m.vendor || '—') + '</td>' +
+                    '<td>' + esc(m.vendor_po_no || '—') + '</td>' +
+                    '<td style="font-family:var(--font-m)">' + esc(m.yom || '—') + '</td>' +
+                    '<td>' + esc(m.unit || '—') + '</td>' +
+                    '<td style="text-align:right;font-family:var(--font-m)">' + (m.unit_price != null && m.unit_price > 0 ? parseFloat(m.unit_price).toLocaleString('en-MY', { maximumFractionDigits: 2 }) : '—') + '</td>' +
+                '</tr>';
+            }).join('') +
+            '</tbody></table></div>' +
+            ptPagination(materials.length, drawerPanelMatPage, drawerPanelMatPageSize, 'goDrawerPanelMatPage', 'changeDrawerPanelMatPageSize');
+    }
+
+    var totalCost = materials.reduce(function(sum, m) {
+        return sum + (parseFloat(m.unit_price) || 0) * (parseFloat(m.qty) || 1);
+    }, 0);
+
+    body.innerHTML =
+        '<div class="pt-drawer-section">' +
+            '<h4>Panel Information</h4>' +
+            '<div class="pt-info-grid">' +
+                '<div class="pt-info-item"><span class="pt-info-label">Panel ID</span><span class="pt-info-value">' + esc(panel.name) + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Customer</span><span class="pt-info-value">' + esc(panel.customer || '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Start Date</span><span class="pt-info-value mono">' + (panel.start_date ? panel.start_date.slice(0, 10) : '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">End Date</span><span class="pt-info-value mono">' + (panel.end_date ? panel.end_date.slice(0, 10) : '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Install Date</span><span class="pt-info-value mono">' + (panel.install_date ? panel.install_date.slice(0, 10) : '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Materials Count</span><span class="pt-info-value mono">' + materials.length + '</span></div>' +
+            '</div>' +
+        '</div>' +
+
+        (totalCost > 0 ?
+        '<div class="pt-drawer-section">' +
+            '<h4>Cost Summary</h4>' +
+            '<div class="pt-info-grid">' +
+                '<div class="pt-info-item"><span class="pt-info-label">Total Material Cost</span><span class="pt-info-value" style="color:var(--accent);font-family:var(--font-m);font-size:1.1rem">RM ' + totalCost.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '</span></div>' +
+            '</div>' +
+        '</div>' : '') +
+
+        '<div class="pt-drawer-section">' +
+            '<h4>Materials (' + materials.length + ')</h4>' +
+            matRows +
+        '</div>';
+
+    overlay.classList.add('active');
+    drawer.classList.add('active');
+}
+
+function goDrawerPanelMatPage(page) {
+    drawerPanelMatPage = page;
+    ptRenderDrawerPanel();
+}
+
+function changeDrawerPanelMatPageSize(size) {
+    drawerPanelMatPageSize = parseInt(size);
+    drawerPanelMatPage = 1;
+    ptRenderDrawerPanel();
+}
+
+function ptCloseDrawer() {
+    document.getElementById('pt-drawer-overlay').classList.remove('active');
+    document.getElementById('pt-drawer').classList.remove('active');
+}
+
+function ptOpenMaterialDrawer(matId) {
+    drawerSiblingsPage = 1;
+    drawerCurrentMatId = matId;
+    drawerCurrentPanelId = null;
+    ptRenderDrawerMaterial();
+}
+
+function ptRenderDrawerMaterial() {
+    var matId = drawerCurrentMatId;
+    var m = ptDB.materials.find(function(x) { return x.id === matId; });
+    if (!m) return;
+
+    var overlay = document.getElementById('pt-drawer-overlay');
+    var drawer = document.getElementById('pt-drawer');
+    var title = document.getElementById('pt-drawer-title');
+    var body = document.getElementById('pt-drawer-body');
+
+    title.textContent = m.part_no || 'Material Details';
+
+    var panel = m.panel_no ? (ptDB.panelIds || []).find(function(p) { return p.name === m.panel_no; }) : null;
+
+    var siblings = m.panel_no
+        ? ptDB.materials.filter(function(x) { return x.panel_no === m.panel_no && x.id !== m.id; })
+        : [];
+
+    var sibTotalPages = Math.ceil(siblings.length / drawerSiblingsPageSize) || 1;
+    if (drawerSiblingsPage > sibTotalPages) drawerSiblingsPage = sibTotalPages;
+    if (drawerSiblingsPage < 1) drawerSiblingsPage = 1;
+    var sibStartIdx = (drawerSiblingsPage - 1) * drawerSiblingsPageSize;
+    var sibPageData = siblings.slice(sibStartIdx, sibStartIdx + drawerSiblingsPageSize);
+
+    var sibRows = '';
+    if (siblings.length > 0) {
+        sibRows = '<div class="pt-drawer-section">' +
+            '<h4>Other Materials in ' + esc(m.panel_no) + ' (' + siblings.length + ')</h4>' +
+            '<div class="table-wrap"><table><thead><tr>' +
+                '<th style="width:40px">No</th><th>Part No</th><th>Brand</th><th>Description</th><th>Serial No</th><th>Vendor</th><th>Vendor PO</th><th>YOM</th><th>Unit</th><th style="text-align:right">Price</th>' +
+            '</tr></thead><tbody>' +
+            sibPageData.map(function(s, i) {
+                return '<tr style="cursor:pointer" onclick="ptCloseDrawer();setTimeout(function(){ptOpenMaterialDrawer(' + s.id + ')},220)">' +
+                    '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (sibStartIdx + i + 1) + '</td>' +
+                    '<td><strong>' + esc(s.part_no) + '</strong></td>' +
+                    '<td>' + esc(s.brand || '—') + '</td>' +
+                    '<td>' + esc(s.description || '—') + '</td>' +
+                    '<td style="font-family:var(--font-m)">' + esc(s.serial_no || '—') + '</td>' +
+                    '<td>' + esc(s.vendor || '—') + '</td>' +
+                    '<td>' + esc(s.vendor_po_no || '—') + '</td>' +
+                    '<td style="font-family:var(--font-m)">' + esc(s.yom || '—') + '</td>' +
+                    '<td>' + esc(s.unit || '—') + '</td>' +
+                    '<td style="text-align:right;font-family:var(--font-m)">' + (s.unit_price != null && s.unit_price > 0 ? parseFloat(s.unit_price).toLocaleString('en-MY', { maximumFractionDigits: 2 }) : '—') + '</td>' +
+                '</tr>';
+            }).join('') +
+            '</tbody></table></div>' +
+            ptPagination(siblings.length, drawerSiblingsPage, drawerSiblingsPageSize, 'goDrawerSiblingsPage', 'changeDrawerSiblingsPageSize') +
+        '</div>';
+    }
+
+    body.innerHTML =
+        '<div class="pt-drawer-section">' +
+            '<h4>Material Information</h4>' +
+            '<div class="pt-info-grid">' +
+                '<div class="pt-info-item"><span class="pt-info-label">Part No</span><span class="pt-info-value">' + esc(m.part_no) + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Serial No</span><span class="pt-info-value mono">' + esc(m.serial_no || '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Brand</span><span class="pt-info-value">' + esc(m.brand || '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Description</span><span class="pt-info-value">' + esc(m.description || '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Category</span><span class="pt-info-value">' + esc(m.category || '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Unit</span><span class="pt-info-value">' + esc(m.unit || '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Price</span><span class="pt-info-value mono">' + (m.unit_price != null && m.unit_price > 0 ? 'RM ' + parseFloat(m.unit_price).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">YOM</span><span class="pt-info-value mono">' + esc(m.yom || '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Vendor</span><span class="pt-info-value">' + esc(m.vendor || '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Vendor PO No</span><span class="pt-info-value mono">' + esc(m.vendor_po_no || '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Install Date</span><span class="pt-info-value mono">' + (m.install_date ? m.install_date.slice(0, 10) : '—') + '</span></div>' +
+            '</div>' +
+        '</div>' +
+
+        (panel ?
+        '<div class="pt-drawer-section">' +
+            '<h4>Panel Information</h4>' +
+            '<div class="pt-info-grid">' +
+                '<div class="pt-info-item"><span class="pt-info-label">Panel ID</span><span class="pt-info-value">' + esc(panel.name) + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Customer</span><span class="pt-info-value">' + esc(panel.customer || '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Start Date</span><span class="pt-info-value mono">' + (panel.start_date ? panel.start_date.slice(0, 10) : '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">End Date</span><span class="pt-info-value mono">' + (panel.end_date ? panel.end_date.slice(0, 10) : '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Install Date</span><span class="pt-info-value mono">' + (panel.install_date ? panel.install_date.slice(0, 10) : '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Total Materials</span><span class="pt-info-value mono">' + (siblings.length + 1) + '</span></div>' +
+            '</div>' +
+        '</div>' :
+        '<div class="pt-drawer-section">' +
+            '<h4>Panel Information</h4>' +
+            '<div style="text-align:center;padding:24px;color:var(--main-text3);font-size:.88rem">Not assigned to any panel</div>' +
+        '</div>') +
+
+        sibRows;
+
+    overlay.classList.add('active');
+    drawer.classList.add('active');
+}
+
+function goDrawerSiblingsPage(page) {
+    drawerSiblingsPage = page;
+    ptRenderDrawerMaterial();
+}
+
+function changeDrawerSiblingsPageSize(size) {
+    drawerSiblingsPageSize = parseInt(size);
+    drawerSiblingsPage = 1;
+    ptRenderDrawerMaterial();
+}
+
 // ---------- MATERIALS ----------
 var matCurrentPage = 1;
 var matPageSize = 10;
@@ -5288,7 +5516,7 @@ function ptFilterMaterials() {
     area.innerHTML =
         '<div class="table-wrap"><table><thead><tr><th>No</th><th>Part No</th><th>Description</th><th>Brand</th><th>Serial No</th><th>Vendor PO</th><th>Vendor</th><th>Panel ID</th><th>YOM</th><th>Category</th><th>Unit</th><th>Price</th><th>Install Date</th><th>Actions</th></tr></thead><tbody>' +
         pageData.map(function(m, i) {
-            return '<tr>' +
+            return '<tr style="cursor:pointer" onclick="ptOpenMaterialDrawer(' + m.id + ')">' +
                 '<td>' + (startIdx + i + 1) + '</td>' +
                 '<td><strong>' + esc(m.part_no) + '</strong></td>' +
                 '<td>' + esc(m.description || '—') + '</td>' +
@@ -5302,7 +5530,7 @@ function ptFilterMaterials() {
                 '<td>' + esc(m.unit || '—') + '</td>' +
                 '<td>' + (m.unit_price != null ? parseFloat(m.unit_price).toLocaleString('en-MY', { maximumFractionDigits: 2 }) : '—') + '</td>' +
                 '<td>' + (m.install_date ? m.install_date.slice(0, 10) : '—') + '</td>' +
-                '<td>' + (canEdit()
+                '<td onclick="event.stopPropagation()">' + (canEdit()
                 ? '<div style="display:flex;gap:4px">' +
                     '<button class="btn btn-ghost btn-sm" onclick="ptShowEditMaterial(' + m.id + ')">Edit</button>' +
                     '<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ptDeleteMaterial(' + m.id + ')">&#10005;</button>' +
