@@ -1341,7 +1341,7 @@ async function initDB() {
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS customer VARCHAR(200) DEFAULT ''",
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS location VARCHAR(300) DEFAULT ''",
             "ALTER TABLE projects ADD COLUMN IF NOT EXISTS install_date DATE",
-            "ALTER TABLE projects ADD CONSTRAINT IF NOT EXISTS projects_name_cat_unique UNIQUE (name, category_id)",
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'projects_name_cat_unique') THEN ALTER TABLE projects ADD CONSTRAINT projects_name_cat_unique UNIQUE (name, category_id); END IF; END $$",
         ];
 
         for (const sql of alterStatements) {
