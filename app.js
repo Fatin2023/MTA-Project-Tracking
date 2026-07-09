@@ -5382,7 +5382,7 @@ function ptRenderDrawerMaterial() {
     var panel = m.panel_no ? (ptDB.panelIds || []).find(function(p) { return p.name === m.panel_no; }) : null;
 
     var siblings = m.panel_no
-        ? ptDB.materials.filter(function(x) { return x.panel_no === m.panel_no && x.id !== m.id; })
+        ? ptDB.materials.filter(function(x) { return x.panel_no === m.panel_no; })
         : [];
 
     var sibTotalPages = Math.ceil(siblings.length / drawerSiblingsPageSize) || 1;
@@ -5394,7 +5394,7 @@ function ptRenderDrawerMaterial() {
     var sibRows = '';
     if (siblings.length > 0) {
         sibRows = '<div class="pt-drawer-section">' +
-            '<h4>Other Materials in ' + esc(m.panel_no) + ' (' + siblings.length + ')</h4>' +
+            '<h4>Materials in ' + esc(m.panel_no) + ' (' + siblings.length + ')</h4>' +
             '<div class="table-wrap"><table><thead><tr>' +
                 '<th style="width:40px">No</th><th>Part No</th><th>Brand</th><th>Description</th><th>Serial No</th><th>Vendor</th><th>Vendor PO</th><th>YOM</th><th>Unit</th><th style="text-align:right">Price</th>' +
             '</tr></thead><tbody>' +
@@ -5444,7 +5444,7 @@ function ptRenderDrawerMaterial() {
                 '<div class="pt-info-item"><span class="pt-info-label">Start Date</span><span class="pt-info-value mono">' + (panel.start_date ? panel.start_date.slice(0, 10) : '—') + '</span></div>' +
                 '<div class="pt-info-item"><span class="pt-info-label">End Date</span><span class="pt-info-value mono">' + (panel.end_date ? panel.end_date.slice(0, 10) : '—') + '</span></div>' +
                 '<div class="pt-info-item"><span class="pt-info-label">Install Date</span><span class="pt-info-value mono">' + (panel.install_date ? panel.install_date.slice(0, 10) : '—') + '</span></div>' +
-                '<div class="pt-info-item"><span class="pt-info-label">Total Materials</span><span class="pt-info-value mono">' + (siblings.length + 1) + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Total Materials</span><span class="pt-info-value mono">' + siblings.length + '</span></div>' +
             '</div>' +
         '</div>' :
         '<div class="pt-drawer-section">' +
