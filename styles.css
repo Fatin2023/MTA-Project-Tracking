@@ -131,7 +131,7 @@ h1,h2,h3{font-family:var(--font-d);font-weight:600;letter-spacing:-.01em}
 .app-header{padding:24px 36px;border-bottom:1px solid var(--main-border);background:var(--main-surface)}
 .app-header h2{font-size:1.35rem;color:var(--main-text)}
 .app-header .header-sub{font-size:.82rem;color:var(--main-text3);margin-top:2px}
-.app-body{padding:28px 36px 60px;max-width:100%;overflow:hidden}
+.app-body{padding:28px 36px 60px;max-width:100%;overflow:visible}
 
 /* ==========================================================
    BUTTONS
@@ -487,7 +487,7 @@ tbody tr:last-child td{border-bottom:none}
    ========================================================== */
 .filter{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;
   background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);
-  padding:14px 18px;box-shadow:var(--shadow-sm)}
+  padding:14px 18px;box-shadow:var(--shadow-sm);position:relative;z-index:50}
 .filter input,.filter select{padding:8px 12px;border:1px solid var(--main-border);border-radius:var(--radius-sm);
   font-size:.85rem;font-family:var(--font-b);background:var(--main-bg);color:var(--main-text)}
 .filter input:focus,.filter select:focus{outline:none;border-color:var(--accent)}
@@ -654,3 +654,4 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
         right: calc(-100vw + 23px);
     }
 }
+

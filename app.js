@@ -5023,86 +5023,181 @@ function ptStatusBadge(s) {
     return '<span class="badge b-red">Pending</span>';
 }
 
+//---------- Multiple dropdown select--------
+function msGetTextValues(id) {
+    if (!_msState[id]) return [];
+    return Array.from(_msState[id]);
+}
+
 // ---------- DASHBOARD ----------
 var dashCurrentPage = 1;
 var dashPageSize = 10;
+var dashCustSelected = [];
 
 function ptRenderDashboard() {
     var d = ptDB.dashboard;
     var el = document.getElementById('pt-dashboard-content');
     var allPanels = ptDB.panelIds || [];
 
-    // Pagination
-    var totalPages = Math.ceil(allPanels.length / dashPageSize) || 1;
-    if (dashCurrentPage > totalPages) dashCurrentPage = totalPages;
-    if (dashCurrentPage < 1) dashCurrentPage = 1;
-    var startIdx = (dashCurrentPage - 1) * dashPageSize;
-    var pageData = allPanels.slice(startIdx, startIdx + dashPageSize);
+    var customers = [];
+    allPanels.forEach(function(p) {
+        var c = (p.customer || '').trim();
+        if (c && customers.indexOf(c) === -1) customers.push(c);
+    });
+    customers.sort();
+    var custOpts = customers.map(function(c) { return { value: c, label: c }; });
+
+    dashCustSelected = [];
 
     el.innerHTML =
         '<div class="stats">' +
             '<div class="stat"><div class="label">Total Panels</div><div class="value">' + d.total_panels + '</div></div>' +
             '<div class="stat"><div class="label">Total Materials</div><div class="value">' + d.total_materials + '</div></div>' +
         '</div>' +
+        '<div class="filter">' +
+            '<input class="input" type="text" placeholder="Search all columns..." id="pt-dash-search" oninput="ptFilterDashboard()" style="max-width:320px">' +
+            '<div style="min-width:180px">' + msGenerate('pt-dash-cust', custOpts, 'All Customers') + '</div>' +
+            '<button class="btn btn-ghost btn-sm" onclick="ptResetDashFilter()">Reset</button>' +
+            '<span id="pt-dash-count" style="font-size:.82rem;color:var(--main-text3)"></span>' +
+        '</div>' +
         '<div class="section-head"><h3>All Panels</h3></div>' +
-        (allPanels.length === 0
-            ? '<div class="empty-msg">No panels yet.</div>'
-            : '<div class="table-wrap"><table><thead><tr><th>No</th><th>Panel ID</th><th>Customer</th><th>Start Date</th><th>End Date</th></tr></thead><tbody>' +
-              pageData.map(function(p, i) {
-                return '<tr style="cursor:pointer" onclick="ptOpenDrawer(' + p.id + ')">' +
-                    '<td>' + (startIdx + i + 1) + '</td>' +
-                    '<td><strong>' + esc(p.name) + '</strong></td>' +
-                    '<td>' + esc(p.customer || '—') + '</td>' +
-                    '<td>' + (p.start_date ? p.start_date.slice(0, 10) : '—') + '</td>' +
-                    '<td>' + (p.end_date ? p.end_date.slice(0, 10) : '—') + '</td>' +
-                '</tr>';
-            }).join('') + '</tbody></table></div>' +
-              ptPagination(allPanels.length, dashCurrentPage, dashPageSize, 'goDashPage', 'changeDashPageSize'));
+        '<div id="pt-dash-table-area"></div>';
+
+    msOnChange('pt-dash-cust', function() {
+        var raw = msGetTextValues('pt-dash-cust');
+        dashCustSelected = raw.filter(function(v) { return v != null && v !== ''; });
+        dashCurrentPage = 1;
+        ptFilterDashboard();
+    });
+    ptFilterDashboard();
+}
+
+function ptGetFilteredDashboard() {
+    var search = (document.getElementById('pt-dash-search').value || '').toLowerCase();
+
+    return (ptDB.panelIds || []).filter(function(p) {
+        if (search) {
+            var haystack = [p.name, p.customer, p.start_date, p.end_date, p.install_date]
+                .map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
+            if (haystack.indexOf(search) === -1) return false;
+        }
+        if (dashCustSelected.length > 0) {
+            var pc = (p.customer || '').trim();
+            if (dashCustSelected.indexOf(pc) === -1) return false;
+        }
+        return true;
+    });
+}
+
+function ptFilterDashboard() {
+    var filtered = ptGetFilteredDashboard();
+    document.getElementById('pt-dash-count').textContent = filtered.length + ' panels';
+
+    var totalPages = Math.ceil(filtered.length / dashPageSize) || 1;
+    if (dashCurrentPage > totalPages) dashCurrentPage = totalPages;
+    if (dashCurrentPage < 1) dashCurrentPage = 1;
+    var startIdx = (dashCurrentPage - 1) * dashPageSize;
+    var pageData = filtered.slice(startIdx, startIdx + dashPageSize);
+
+    var area = document.getElementById('pt-dash-table-area');
+    if (filtered.length === 0) {
+        area.innerHTML = '<div class="empty-msg">No panels found</div>';
+        return;
+    }
+    area.innerHTML =
+        '<div class="table-wrap"><table><thead><tr><th>No</th><th>Panel ID</th><th>Customer</th><th>Start Date</th><th>End Date</th><th>Install Date</th></tr></thead><tbody>' +
+        pageData.map(function(p, i) {
+            return '<tr style="cursor:pointer" onclick="ptOpenDrawer(' + p.id + ')">' +
+                '<td>' + (startIdx + i + 1) + '</td>' +
+                '<td><strong>' + esc(p.name) + '</strong></td>' +
+                '<td>' + esc(p.customer || '—') + '</td>' +
+                '<td>' + (p.start_date ? p.start_date.slice(0, 10) : '—') + '</td>' +
+                '<td>' + (p.end_date ? p.end_date.slice(0, 10) : '—') + '</td>' +
+                '<td>' + (p.install_date ? p.install_date.slice(0, 10) : '—') + '</td>' +
+            '</tr>';
+        }).join('') + '</tbody></table></div>' +
+        ptPagination(filtered.length, dashCurrentPage, dashPageSize, 'goDashPage', 'changeDashPageSize');
+}
+
+function ptResetDashFilter() {
+    document.getElementById('pt-dash-search').value = '';
+    dashCustSelected = [];
+    msClear('pt-dash-cust');
+    dashCurrentPage = 1;
+    ptFilterDashboard();
 }
 
 function goDashPage(page) {
     dashCurrentPage = page;
-    ptRenderDashboard();
+    ptFilterDashboard();
 }
 function changeDashPageSize(size) {
     dashPageSize = parseInt(size);
     dashCurrentPage = 1;
-    ptRenderDashboard();
+    ptFilterDashboard();
 }
 
 // ---------- PANELS ----------
 var panelCurrentPage = 1;
 var panelPageSize = 10;
+var panelCustSelected = [];
 
 function ptRenderPanel() {
     var el = document.getElementById('pt-panel-content');
     var addBtn = canEdit() ? '<button class="btn btn-green btn-sm" onclick="ptOpenAddPanel()">+ Add Panel</button>' : '';
+
+    var customers = [];
+    (ptDB.panelIds || []).forEach(function(p) {
+        var c = (p.customer || '').trim();
+        if (c && customers.indexOf(c) === -1) customers.push(c);
+    });
+    customers.sort();
+    var custOpts = customers.map(function(c) { return { value: c, label: c }; });
+
+    panelCustSelected = [];
+
     el.innerHTML =
         '<div class="filter">' +
-            '<input class="input" type="text" placeholder="Search..." id="pt-panel-search" oninput="ptFilterPanels()" style="max-width:320px">' +
+            '<input class="input" type="text" placeholder="Search all columns..." id="pt-panel-search" oninput="ptFilterPanels()" style="max-width:280px">' +
+            '<div style="min-width:180px">' + msGenerate('pt-panel-cust', custOpts, 'All Customers') + '</div>' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetPanelFilter()">Reset</button>' +
+            '<span id="pt-panel-count" style="font-size:.82rem;color:var(--main-text3)"></span>' +
             '<div style="flex:1"></div>' +
             '<button class="btn btn-blue btn-sm" onclick="ptExportPanelsExcel()">&#128196; Export Excel</button>' +
             addBtn +
         '</div>' +
         '<div class="section-head"><h3>All Panels</h3></div>' +
         '<div id="pt-panel-table-area"></div>';
+
+    msOnChange('pt-panel-cust', function() {
+        var raw = msGetTextValues('pt-panel-cust');
+        panelCustSelected = raw.filter(function(v) { return v != null && v !== ''; });
+        panelCurrentPage = 1;
+        ptFilterPanels();
+    });
     ptFilterPanels();
 }
 
 function ptGetFilteredPanels() {
     var search = (document.getElementById('pt-panel-search').value || '').toLowerCase();
+
     return (ptDB.panelIds || []).filter(function(p) {
-        if (!search) return true;
-        var haystack = [
-            p.name, p.customer, p.start_date, p.end_date, p.install_date
-        ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
-        return haystack.indexOf(search) !== -1;
+        if (search) {
+            var haystack = [p.name, p.customer, p.start_date, p.end_date, p.install_date]
+                .map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
+            if (haystack.indexOf(search) === -1) return false;
+        }
+        if (panelCustSelected.length > 0) {
+            var pc = (p.customer || '').trim();
+            if (panelCustSelected.indexOf(pc) === -1) return false;
+        }
+        return true;
     });
 }
 
 function ptFilterPanels() {
     var filtered = ptGetFilteredPanels();
+    document.getElementById('pt-panel-count').textContent = filtered.length + ' panels';
 
     var totalPages = Math.ceil(filtered.length / panelPageSize) || 1;
     if (panelCurrentPage > totalPages) panelCurrentPage = totalPages;
@@ -5134,6 +5229,8 @@ function ptFilterPanels() {
 
 function ptResetPanelFilter() {
     document.getElementById('pt-panel-search').value = '';
+    panelCustSelected = [];
+    msClear('pt-panel-cust');
     panelCurrentPage = 1;
     ptFilterPanels();
 }
@@ -5472,38 +5569,86 @@ function changeDrawerSiblingsPageSize(size) {
 // ---------- MATERIALS ----------
 var matCurrentPage = 1;
 var matPageSize = 10;
+var matBrandSelected = [];
+var matCatSelected = [];
 
 function ptRenderMaterial() {
     var el = document.getElementById('pt-material-content');
     var addBtn = canEdit() ? '<button class="btn btn-green btn-sm" onclick="ptOpenAddMaterial()">+ Add Material</button>' : '';
+
+    var brands = [];
+    var cats = [];
+    (ptDB.materials || []).forEach(function(m) {
+        var b = (m.brand || '').trim();
+        if (b && brands.indexOf(b) === -1) brands.push(b);
+        var c = (m.category || '').trim();
+        if (c && cats.indexOf(c) === -1) cats.push(c);
+    });
+    brands.sort();
+    cats.sort();
+    var brandOpts = brands.map(function(b) { return { value: b, label: b }; });
+    var catOpts = cats.map(function(c) { return { value: c, label: c }; });
+
+    matBrandSelected = [];
+    matCatSelected = [];
+
     el.innerHTML =
         '<div class="filter">' +
-            '<input class="input" type="text" placeholder="Search..." id="pt-mat-search" oninput="ptFilterMaterials()" style="max-width:320px">' +
+            '<input class="input" type="text" placeholder="Search all columns..." id="pt-mat-search" oninput="ptFilterMaterials()" style="max-width:280px">' +
+            '<div style="min-width:160px">' + msGenerate('pt-mat-brand', brandOpts, 'All Brands') + '</div>' +
+            '<div style="min-width:160px">' + msGenerate('pt-mat-cat', catOpts, 'All Categories') + '</div>' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetMatFilter()">Reset</button>' +
+            '<span id="pt-mat-count" style="font-size:.82rem;color:var(--main-text3)"></span>' +
             '<div style="flex:1"></div>' +
             '<button class="btn btn-blue btn-sm" onclick="ptExportMaterialsExcel()">&#128196; Export Excel</button>' +
             addBtn +
         '</div>' +
         '<div class="section-head"><h3>All Materials</h3></div>' +
         '<div id="pt-mat-table-area"></div>';
+
+    msOnChange('pt-mat-brand', function() {
+        var raw = msGetTextValues('pt-mat-brand');
+        matBrandSelected = raw.filter(function(v) { return v != null && v !== ''; });
+        matCurrentPage = 1;
+        ptFilterMaterials();
+    });
+    msOnChange('pt-mat-cat', function() {
+        var raw = msGetTextValues('pt-mat-cat');
+        matCatSelected = raw.filter(function(v) { return v != null && v !== ''; });
+        matCurrentPage = 1;
+        ptFilterMaterials();
+    });
     ptFilterMaterials();
 }
 
 function ptGetFilteredMaterials() {
     var search = (document.getElementById('pt-mat-search').value || '').toLowerCase();
-    return ptDB.materials.filter(function(m) {
-        if (!search) return true;
-        var haystack = [
-            m.part_no, m.brand, m.description, m.serial_no, m.yom,
-            m.vendor, m.vendor_po_no, m.panel_no, m.install_date,
-            m.category, m.unit, m.unit_price
-        ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
-        return haystack.indexOf(search) !== -1;
+
+    return (ptDB.materials || []).filter(function(m) {
+        if (search) {
+            var haystack = [
+                m.part_no, m.brand, m.description, m.serial_no, m.yom,
+                m.vendor, m.vendor_po_no, m.panel_no, m.install_date,
+                m.category, m.unit, m.unit_price
+            ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
+            if (haystack.indexOf(search) === -1) return false;
+        }
+        if (matBrandSelected.length > 0) {
+            var mb = (m.brand || '').trim();
+            if (matBrandSelected.indexOf(mb) === -1) return false;
+        }
+        if (matCatSelected.length > 0) {
+            var mc = (m.category || '').trim();
+            if (matCatSelected.indexOf(mc) === -1) return false;
+        }
+        return true;
     });
 }
 
 function ptFilterMaterials() {
     var filtered = ptGetFilteredMaterials();
+
+    document.getElementById('pt-mat-count').textContent = filtered.length + ' materials';
 
     var totalPages = Math.ceil(filtered.length / matPageSize) || 1;
     if (matCurrentPage > totalPages) matCurrentPage = totalPages;
@@ -5542,6 +5687,10 @@ function ptFilterMaterials() {
 
 function ptResetMatFilter() {
     document.getElementById('pt-mat-search').value = '';
+    matBrandSelected = [];
+    matCatSelected = [];
+    msClear('pt-mat-brand');
+    msClear('pt-mat-cat');
     matCurrentPage = 1;
     ptFilterMaterials();
 }
