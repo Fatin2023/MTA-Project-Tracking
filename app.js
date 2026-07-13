@@ -3547,11 +3547,11 @@ function renderAdminAttendance() {
             '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label>' +
             '<div style="min-width:150px">' + msGenerate('att-ms-emp', empOpts, 'All Employees') + '</div>' +
           '</div>' +
-          '<div style="display:flex;gap:8px;margin-left:auto">' +
+          '<div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">' +
             '<button class="btn btn-accent btn-sm" onclick="applyAdminAttendanceFilter()">Search</button>' +
             '<button class="btn btn-ghost btn-sm" onclick="resetAdminAttendanceFilter()">Reset</button>' +
             '<button class="btn btn-blue btn-sm" onclick="exportAttendanceCSV()">&#128196; Export CSV</button>' +
-          '</div>' +
+           '</div>' +
         '</div>' +
       '</div>' +
 
@@ -5057,6 +5057,8 @@ function ptRenderDashboard() {
         '<div class="filter">' +
             '<input class="input" type="text" placeholder="Search all columns..." id="pt-dash-search" oninput="ptFilterDashboard()" style="max-width:320px">' +
             '<div style="min-width:180px">' + msGenerate('pt-dash-cust', custOpts, 'All Customers') + '</div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Install From</label><input type="date" class="input" id="pt-dash-inst-from" onchange="ptFilterDashboard()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="pt-dash-inst-to" onchange="ptFilterDashboard()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetDashFilter()">Reset</button>' +
             '<span id="pt-dash-count" style="font-size:.82rem;color:var(--main-text3)"></span>' +
         '</div>' +
@@ -5074,6 +5076,8 @@ function ptRenderDashboard() {
 
 function ptGetFilteredDashboard() {
     var search = (document.getElementById('pt-dash-search').value || '').toLowerCase();
+    var instFrom = document.getElementById('pt-dash-inst-from').value;
+    var instTo = document.getElementById('pt-dash-inst-to').value;
 
     return (ptDB.panelIds || []).filter(function(p) {
         if (search) {
@@ -5085,6 +5089,9 @@ function ptGetFilteredDashboard() {
             var pc = (p.customer || '').trim();
             if (dashCustSelected.indexOf(pc) === -1) return false;
         }
+        var id = p.install_date ? p.install_date.slice(0, 10) : '';
+        if (instFrom && (!id || id < instFrom)) return false;
+        if (instTo && (!id || id > instTo)) return false;
         return true;
     });
 }
@@ -5121,6 +5128,8 @@ function ptFilterDashboard() {
 
 function ptResetDashFilter() {
     document.getElementById('pt-dash-search').value = '';
+    document.getElementById('pt-dash-inst-from').value = '';
+    document.getElementById('pt-dash-inst-to').value = '';
     dashCustSelected = [];
     msClear('pt-dash-cust');
     dashCurrentPage = 1;
@@ -5160,13 +5169,20 @@ function ptRenderPanel() {
         '<div class="filter">' +
             '<input class="input" type="text" placeholder="Search all columns..." id="pt-panel-search" oninput="ptFilterPanels()" style="max-width:280px">' +
             '<div style="min-width:180px">' + msGenerate('pt-panel-cust', custOpts, 'All Customers') + '</div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Start Date</label><input type="date" class="input" id="pt-panel-start" onchange="ptFilterPanels()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">End Date</label><input type="date" class="input" id="pt-panel-end" onchange="ptFilterPanels()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Install From</label><input type="date" class="input" id="pt-panel-inst-from" onchange="ptFilterPanels()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="pt-panel-inst-to" onchange="ptFilterPanels()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetPanelFilter()">Reset</button>' +
             '<span id="pt-panel-count" style="font-size:.82rem;color:var(--main-text3)"></span>' +
-            '<div style="flex:1"></div>' +
-            '<button class="btn btn-blue btn-sm" onclick="ptExportPanelsExcel()">&#128196; Export Excel</button>' +
-            addBtn +
         '</div>' +
-        '<div class="section-head"><h3>All Panels</h3></div>' +
+        '<div class="section-head">' +
+            '<h3>All Panels</h3>' +
+            '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+                '<button class="btn btn-blue btn-sm" onclick="ptExportPanelsExcel()">&#128196; Export Excel</button>' +
+                addBtn +
+            '</div>' +
+        '</div>' +
         '<div id="pt-panel-table-area"></div>';
 
     msOnChange('pt-panel-cust', function() {
@@ -5180,6 +5196,10 @@ function ptRenderPanel() {
 
 function ptGetFilteredPanels() {
     var search = (document.getElementById('pt-panel-search').value || '').toLowerCase();
+    var startFilter = document.getElementById('pt-panel-start').value;
+    var endFilter = document.getElementById('pt-panel-end').value;
+    var instFrom = document.getElementById('pt-panel-inst-from').value;
+    var instTo = document.getElementById('pt-panel-inst-to').value;
 
     return (ptDB.panelIds || []).filter(function(p) {
         if (search) {
@@ -5191,6 +5211,13 @@ function ptGetFilteredPanels() {
             var pc = (p.customer || '').trim();
             if (panelCustSelected.indexOf(pc) === -1) return false;
         }
+        var sd = p.start_date ? p.start_date.slice(0, 10) : '';
+        var ed = p.end_date ? p.end_date.slice(0, 10) : '';
+        var id = p.install_date ? p.install_date.slice(0, 10) : '';
+        if (startFilter && sd !== startFilter) return false;
+        if (endFilter && ed !== endFilter) return false;
+        if (instFrom && (!id || id < instFrom)) return false;
+        if (instTo && (!id || id > instTo)) return false;
         return true;
     });
 }
@@ -5227,8 +5254,13 @@ function ptFilterPanels() {
         ptPagination(filtered.length, panelCurrentPage, panelPageSize, 'goPanelPage', 'changePanelPageSize');
 }
 
+
 function ptResetPanelFilter() {
     document.getElementById('pt-panel-search').value = '';
+    document.getElementById('pt-panel-start').value = '';
+    document.getElementById('pt-panel-end').value = '';
+    document.getElementById('pt-panel-inst-from').value = '';
+    document.getElementById('pt-panel-inst-to').value = '';
     panelCustSelected = [];
     msClear('pt-panel-cust');
     panelCurrentPage = 1;
@@ -5597,13 +5629,20 @@ function ptRenderMaterial() {
             '<input class="input" type="text" placeholder="Search all columns..." id="pt-mat-search" oninput="ptFilterMaterials()" style="max-width:280px">' +
             '<div style="min-width:160px">' + msGenerate('pt-mat-brand', brandOpts, 'All Brands') + '</div>' +
             '<div style="min-width:160px">' + msGenerate('pt-mat-cat', catOpts, 'All Categories') + '</div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Install From</label><input type="date" class="input" id="pt-mat-inst-from" onchange="ptFilterMaterials()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="pt-mat-inst-to" onchange="ptFilterMaterials()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +            
             '<button class="btn btn-ghost btn-sm" onclick="ptResetMatFilter()">Reset</button>' +
             '<span id="pt-mat-count" style="font-size:.82rem;color:var(--main-text3)"></span>' +
             '<div style="flex:1"></div>' +
-            '<button class="btn btn-blue btn-sm" onclick="ptExportMaterialsExcel()">&#128196; Export Excel</button>' +
-            addBtn +
         '</div>' +
-        '<div class="section-head"><h3>All Materials</h3></div>' +
+        '<div class="section-head">' +
+            '<h3>All Materials</h3>' +
+            '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+                '<button class="btn btn-blue btn-sm" onclick="ptExportMaterialsExcel()">&#128196; Export Excel</button>' +
+                addBtn +
+            '</div>' +
+        '</div>' +
+
         '<div id="pt-mat-table-area"></div>';
 
     msOnChange('pt-mat-brand', function() {
@@ -5623,6 +5662,8 @@ function ptRenderMaterial() {
 
 function ptGetFilteredMaterials() {
     var search = (document.getElementById('pt-mat-search').value || '').toLowerCase();
+    var instFrom = document.getElementById('pt-mat-inst-from').value;
+    var instTo = document.getElementById('pt-mat-inst-to').value;
 
     return (ptDB.materials || []).filter(function(m) {
         if (search) {
@@ -5641,9 +5682,13 @@ function ptGetFilteredMaterials() {
             var mc = (m.category || '').trim();
             if (matCatSelected.indexOf(mc) === -1) return false;
         }
+        var id = m.install_date ? m.install_date.slice(0, 10) : '';
+        if (instFrom && (!id || id < instFrom)) return false;
+        if (instTo && (!id || id > instTo)) return false;
         return true;
     });
 }
+
 
 function ptFilterMaterials() {
     var filtered = ptGetFilteredMaterials();
@@ -5687,6 +5732,8 @@ function ptFilterMaterials() {
 
 function ptResetMatFilter() {
     document.getElementById('pt-mat-search').value = '';
+    document.getElementById('pt-mat-inst-from').value = '';
+    document.getElementById('pt-mat-inst-to').value = '';
     matBrandSelected = [];
     matCatSelected = [];
     msClear('pt-mat-brand');
@@ -5998,15 +6045,20 @@ async function ptLoadAllUsers() {
 }
 
 function ptRenderUsers() {
+    var addBtn = canEdit() ? '<button class="btn btn-green btn-sm" onclick="ptShowAddUser()">+ Add User</button>' : '';
     var el = document.getElementById('pt-users-content');
     el.innerHTML =
         '<div class="filter">' +
             '<input class="input" type="text" placeholder="Search..." id="pt-users-search" oninput="ptFilterUsers()" style="max-width:280px">' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetUsersFilter()">Reset</button>' +
-            '<div style="flex:1"></div>' +
-            (canEdit() ? '<button class="btn btn-green btn-sm" onclick="ptShowAddUser()">+ Add User</button>' : '') +
+            '<span id="pt-users-count" style="font-size:.82rem;color:var(--main-text3)"></span>' +
         '</div>' +
-        '<div class="section-head"><h3>All Users</h3></div>' +
+        '<div class="section-head">' +
+            '<h3>All Users</h3>' +
+            '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+                addBtn +
+            '</div>' +
+        '</div>' +
         '<div id="pt-users-table-area"></div>';
     ptFilterUsers();
 }
