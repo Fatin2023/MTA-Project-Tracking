@@ -604,7 +604,7 @@ app.get('/api/attendance', requireAuth, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/attendance', requireAuth, async (req, res) => {
+app.post('/api/attendance', requireEdit, async (req, res) => {
     const { memberId, date, clockIn, clockOut, projectId, scopeId, subScopeId, detailId, description, work_plan_id, work_done_id } = req.body;
     try {
         const result = await pool.query(
@@ -616,7 +616,7 @@ app.post('/api/attendance', requireAuth, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/attendance/:id', requireAuth, async (req, res) => {
+app.put('/api/attendance/:id', requireEdit, async (req, res) => {
     const { date, clockIn, clockOut, projectId, scopeId, subScopeId, detailId, description, work_plan_id, work_done_id } = req.body;
     try {
         await pool.query(
@@ -628,7 +628,7 @@ app.put('/api/attendance/:id', requireAuth, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/attendance/:id', requireAuth, async (req, res) => {
+app.delete('/api/attendance/:id', requireEdit, async (req, res) => {
     try {
         await pool.query('DELETE FROM attendance WHERE id = $1', [req.params.id]);
         res.json({ success: true });

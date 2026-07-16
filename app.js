@@ -4392,7 +4392,7 @@ function renderAdminAttendance() {
       '<div class="section-head time-entry-head">' +
         '<h2>Time Entries</h2>' +
         '<div style="display:flex;gap:8px">' +
-          '<button class="btn btn-green" onclick="showAdminAddAttendance()">+ Add Attendance</button>' +
+          (currentUser.role !== 'viewer' ? '<button class="btn btn-green" onclick="showAdminAddAttendance()">+ Add Attendance</button>' : '') +
         '</div>' +
       '</div>' +
       '<div id="admin-att-table-area"></div>' +
@@ -4557,10 +4557,12 @@ function renderAdminAttPage() {
                 '<td style="font-family:var(--font-m)">' + startTime + '</td>' +
                 '<td style="font-family:var(--font-m)">' + endTime + '</td>' +
                 '<td style="text-align:right;font-family:var(--font-m)">' + dur + '</td>' +
-                '<td><div class="actions-cell">' +
-                    '<button class="btn-icon" onclick="showAdminEditAttendance(' + r.id + ')" title="Edit">&#9998;</button>' +
-                    '<button class="btn-icon danger" onclick="confirmDeleteAttendance(' + r.id + ')" title="Delete">&#10005;</button>' +
-                '</div></td></tr>';
+                '<td>' + (currentUser.role !== 'viewer'
+                    ? '<div class="actions-cell">' +
+                        '<button class="btn-icon" onclick="showAdminEditAttendance(' + r.id + ')" title="Edit">&#9998;</button>' +
+                        '<button class="btn-icon danger" onclick="confirmDeleteAttendance(' + r.id + ')" title="Delete">&#10005;</button>' +
+                    '</div>'
+                : '') + '</td></tr>';
         }).join('');
     }
 
@@ -5163,8 +5165,8 @@ function renderAdminReport() {
                 '</div>' +
             '</div>' +
             '<div id="rpt-stats"></div>' +
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px" id="rpt-charts-row1"></div>' +
-            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px" id="rpt-charts-row2"></div>' +
+            '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:24px;margin-bottom:24px" id="rpt-charts-row1"></div>' +
+            '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:24px;margin-bottom:24px" id="rpt-charts-row2"></div>' +
             '<div id="rpt-tables"></div>' +
         '</div>';
 
@@ -5333,13 +5335,13 @@ function generateReport() {
     });
 
     document.getElementById('rpt-charts-row1').innerHTML =
-        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">' +
+        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch">' +
             '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Cost by Category &rarr; ID/Name</h3>' +
-            '<div style="position:relative;height:280px"><canvas id="chart-item-cost"></canvas></div>' +
+            '<div style="min-width:600px;height:280px"><canvas id="chart-item-cost"></canvas></div>' +
         '</div>' +
-        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">' +
+        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch">' +
             '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Cost by Category</h3>' +
-            '<div style="position:relative;height:280px"><canvas id="chart-scope-cost"></canvas></div>' +
+            '<div style="min-width:600px;height:280px"><canvas id="chart-scope-cost"></canvas></div>' +
         '</div>';
 
     // Chart 3: Monthly Hours Trend
@@ -5375,13 +5377,13 @@ function generateReport() {
     var empData = empSorted.map(function(e) { return Math.round(e[1] / (1000 * 60 * 60) * 10) / 10; });
 
     document.getElementById('rpt-charts-row2').innerHTML =
-        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">' +
+        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch">' +
             '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Monthly Trend</h3>' +
-            '<div style="position:relative;height:280px"><canvas id="chart-monthly"></canvas></div>' +
+            '<div style="min-width:600px;height:280px"><canvas id="chart-monthly"></canvas></div>' +
         '</div>' +
-        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">' +
+        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch">' +
             '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Top Employees by Hours</h3>' +
-            '<div style="position:relative;height:280px"><canvas id="chart-emp-hours"></canvas></div>' +
+            '<div style="min-width:600px;height:280px"><canvas id="chart-emp-hours"></canvas></div>' +
         '</div>';
 
     // ===== TABLES =====
@@ -5453,13 +5455,17 @@ function generateReport() {
     new Chart(document.getElementById('chart-item-cost'), {
         type: 'bar',
         data: { labels: itemLabels, datasets: [{ label: 'Cost (RM)', data: itemData, backgroundColor: itemColors, borderRadius: 6, maxBarThickness: 50 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: chartTextColor, callback: function(v) { return 'RM' + v; } }, grid: { color: chartGridColor } }, x: { ticks: { color: chartTextColor, maxRotation: 45, font: { size: 10 } }, grid: { display: false } } } }
-    });
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+            onResize: function(chart, size) { chart.canvas.parentNode.style.width = Math.max(600, size.width) + 'px'; },
+            scales: { y: { beginAtZero: true, ticks: { color: chartTextColor, callback: function(v) { return 'RM' + v; } }, grid: { color: chartGridColor } }, x: { ticks: { color: chartTextColor, maxRotation: 45, font: { size: 10 } }, grid: { display: false } } } }
+        });
 
     new Chart(document.getElementById('chart-scope-cost'), {
         type: 'doughnut',
         data: { labels: scopeLabels, datasets: [{ data: scopeData, backgroundColor: scopeColors, borderWidth: 0, hoverOffset: 8 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: chartTextColor, padding: 12, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: function(ctx) { return ctx.label + ': RM' + ctx.parsed.toFixed(2); } } } } }
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: chartTextColor, padding: 12, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: function(ctx) { return ctx.label + ': RM' + ctx.parsed.toFixed(2); } } } },
+            onResize: function(chart, size) { chart.canvas.parentNode.style.width = Math.max(600, size.width) + 'px'; }
+        }
     });
 
     new Chart(document.getElementById('chart-monthly'), {
@@ -5468,14 +5474,18 @@ function generateReport() {
             { label: 'Hours', data: monthHoursData, backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 6, yAxisID: 'y', maxBarThickness: 40 },
             { label: 'Cost (RM)', data: monthCostData, type: 'line', borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', pointRadius: 4, pointBackgroundColor: '#ef4444', tension: 0.3, yAxisID: 'y1', fill: true }
         ] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: chartTextColor, usePointStyle: true, padding: 16 } } }, scales: { y: { beginAtZero: true, position: 'left', ticks: { color: chartTextColor, callback: function(v) { return v + 'h'; } }, grid: { color: chartGridColor } }, y1: { beginAtZero: true, position: 'right', ticks: { color: '#ef4444', callback: function(v) { return 'RM' + v; } }, grid: { drawOnChartArea: false } }, x: { ticks: { color: chartTextColor }, grid: { display: false } } } }
-    });
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: chartTextColor, usePointStyle: true, padding: 16 } } },
+            onResize: function(chart, size) { chart.canvas.parentNode.style.width = Math.max(600, size.width) + 'px'; },
+            scales: { y: { beginAtZero: true, position: 'left', ticks: { color: chartTextColor, callback: function(v) { return v + 'h'; } }, grid: { color: chartGridColor } }, y1: { beginAtZero: true, position: 'right', ticks: { color: '#ef4444', callback: function(v) { return 'RM' + v; } }, grid: { drawOnChartArea: false } }, x: { ticks: { color: chartTextColor }, grid: { display: false } } } }
+        });
 
     new Chart(document.getElementById('chart-emp-hours'), {
         type: 'bar',
         data: { labels: empLabels, datasets: [{ label: 'Hours', data: empData, backgroundColor: 'rgba(34,197,94,0.7)', borderRadius: 6, maxBarThickness: 30 }] },
-        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { color: chartTextColor, callback: function(v) { return v + 'h'; } }, grid: { color: chartGridColor } }, y: { ticks: { color: chartTextColor, font: { size: 11 } }, grid: { display: false } } } }
-    });
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+            onResize: function(chart, size) { chart.canvas.parentNode.style.width = Math.max(600, size.width) + 'px'; },
+            scales: { x: { beginAtZero: true, ticks: { color: chartTextColor, callback: function(v) { return v + 'h'; } }, grid: { color: chartGridColor } }, y: { ticks: { color: chartTextColor, font: { size: 11 } }, grid: { display: false } } } }
+        });
 }
 
 // ===== Report Table Pagination =====
@@ -6011,7 +6021,7 @@ function ptFilterPanels() {
                     '<button class="btn btn-ghost btn-sm" onclick="ptShowEditPanel(' + p.id + ')">Edit</button>' +
                     '<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ptDeletePanel(' + p.id + ')">&#10005;</button>' +
                 '</div>'
-                : '<span style="color:var(--main-text3);font-size:.82rem">View only</span>') + '</td></tr>';
+                : '') + '</td></tr>';
         }).join('') + '</tbody></table></div>' +
         ptPagination(filtered.length, panelCurrentPage, panelPageSize, 'goPanelPage', 'changePanelPageSize');
 }
@@ -6488,7 +6498,7 @@ function ptFilterMaterials() {
                     '<button class="btn btn-ghost btn-sm" onclick="ptShowEditMaterial(' + m.id + ')">Edit</button>' +
                     '<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ptDeleteMaterial(' + m.id + ')">&#10005;</button>' +
                 '</div>'
-                : '<span style="color:var(--main-text3);font-size:.82rem">View only</span>') + '</td></tr>';
+                : '') + '</td></tr>';
         }).join('') + '</tbody></table></div>' +
         ptPagination(filtered.length, matCurrentPage, matPageSize, 'goMatPage', 'changeMatPageSize');
 }
