@@ -60,14 +60,37 @@ const API = (window.location.hostname === 'localhost' || window.location.hostnam
     : '/api';
 
 
-async function api(path, opts = {}) {
-    const res = await fetch(API + path, {
-        headers: { 'Content-Type': 'application/json' },
-        ...opts,
-        body: opts.body ? JSON.stringify(opts.body) : undefined
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Request failed');
+async function api(path, opts) {
+    opts = opts || {};
+    var url = '/api' + path;
+    var headers = { 'Content-Type': 'application/json' };
+    var session = localStorage.getItem('multitrade_session');
+    if (session) {
+        try {
+            var user = JSON.parse(session);
+            if (user && user.token) {
+                headers['Authorization'] = 'Bearer ' + user.token;
+            }
+        } catch(e) {}
+    }
+    var options = {
+        method: opts.method || 'GET',
+        headers: headers
+    };
+    if (opts.body) options.body = JSON.stringify(opts.body);
+    var res = await fetch(url, options);
+    var data = await res.json();
+    if (!res.ok) {
+        if (res.status === 401) {
+            localStorage.removeItem('multitrade_session');
+            // 不在登录页才刷新，登录失败不刷新
+            var loginPage = document.getElementById('login-page');
+            if (!loginPage || !loginPage.classList.contains('active')) {
+                window.location.href = window.location.pathname;
+            }
+        }
+        throw new Error(data.error || 'Request failed');
+    }
     return data;
 }
 
@@ -95,6 +118,7 @@ let DB = {
     worklist: [], 
     projectAssignments: [],
     attendance: [],
+    viewerScopes: {},
 };
 
 async function loadDB() {
@@ -123,12 +147,22 @@ async function loadDB() {
         DB.projectAssignments = assignments;
         DB.attendance = attendance;
         DB.worklist = worklist;
+
+        // 加载 viewer 的额外 scope
+        DB.viewerScopes = {};
+        var viewerUsers = (DB.users || []).filter(function(u) { return u.role === 'viewer'; });
+        for (var i = 0; i < viewerUsers.length; i++) {
+            try {
+                var scIds = await api('/viewer-scopes/' + viewerUsers[i].id);
+                DB.viewerScopes[viewerUsers[i].id] = scIds;
+            } catch (e) {
+                DB.viewerScopes[viewerUsers[i].id] = [];
+            }
+        }
     } catch (e) {
         console.error('Failed to load data:', e);
     }
 }
-
-
 
 
 /* ==========================================================
@@ -167,6 +201,13 @@ function formatDuration(ms) {
     if (!ms || ms <= 0) return '0h 0m';
     const t = Math.floor(ms / 1000);
     return Math.floor(t / 3600) + 'h ' + Math.floor((t % 3600) / 60) + 'm ' + (t % 60) + 's';
+}
+
+function formatDateDMY(dateStr) {
+    if (!dateStr) return '—';
+    var parts = dateStr.slice(0, 10).split('-');
+    if (parts.length !== 3) return dateStr;
+    return parts[2] + '/' + parts[1] + '/' + parts[0];
 }
 
 function formatTime(isoStr) {
@@ -261,11 +302,11 @@ let clockInterval = null;
 async function handleLogin(e) {
     e.preventDefault();
     const u = document.getElementById('login-user').value.trim();
-    const p = document.getElementById('login-pass').value;
+    const pass = document.getElementById('login-pass').value;
     const err = document.getElementById('login-error');
-    if (!u || !p) { err.textContent = 'Please enter username and password'; return; }
+    if (!u || !pass) { err.textContent = 'Please enter username and password'; return; }
     try {
-        currentUser = await api('/login', { method: 'POST', body: { username: u, password: p } });
+        currentUser = await api('/login', { method: 'POST', body: { username: u, password: pass } });
         err.textContent = '';
         localStorage.setItem('multitrade_session', JSON.stringify(currentUser));
 
@@ -277,19 +318,52 @@ async function handleLogin(e) {
                 return;
             }
             localStorage.setItem('multitrade_module', 'panel');
-            document.querySelectorAll('.auth-page,.app-layout').forEach(function(p) { p.classList.remove('active'); });
+            document.querySelectorAll('.auth-page,.app-layout').forEach(function(el) { el.classList.remove('active'); });
             document.getElementById('panel-layout').classList.add('active');
             var initial = currentUser.username.charAt(0).toUpperCase();
             document.getElementById('pt-avatar').textContent = initial;
             document.getElementById('pt-user-name').textContent = currentUser.username;
+
+            var isViewer = currentUser.role === 'viewer';
+            document.querySelectorAll('#pt-nav .nav-item').forEach(function(item) {
+                var page = item.getAttribute('data-page');
+                if (page === 'pt-import' || page === 'pt-users') {
+                    item.style.display = isViewer ? 'none' : '';
+                }
+            });
+            document.querySelectorAll('#pt-nav .nav-section').forEach(function(s) {
+                var t = s.textContent.trim();
+                if (t === 'Tools' || t === 'Settings') {
+                    s.style.display = isViewer ? 'none' : '';
+                }
+            });
+            var roleLabel = document.querySelector('#panel-layout .sidebar-user .user-role');
+            if (roleLabel) roleLabel.textContent = isViewer ? 'Viewer' : 'Admin';
+
             await ptLoadDB();
             ptNav('pt-dashboard');
         } else {
             localStorage.setItem('multitrade_module', 'attendance');
             await loadDB();
-            document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
-            if (currentUser.role === 'admin') {
+            document.querySelectorAll('.auth-page,.app-layout').forEach(function(el) { el.classList.remove('active'); });
+            if (currentUser.role === 'admin' || currentUser.role === 'viewer') {
                 document.getElementById('admin-layout').classList.add('active');
+
+                var isViewer = currentUser.role === 'viewer';
+                document.querySelectorAll('#admin-nav .nav-item').forEach(function(item) {
+                    var page = item.getAttribute('data-page');
+                    if (page === 'users' || page === 'departments' || page === 'positions') {
+                        item.style.display = isViewer ? 'none' : '';
+                    }
+                });
+                document.querySelectorAll('#admin-nav .nav-section').forEach(function(s) {
+                    if (s.textContent.trim() === 'HR') {
+                        s.style.display = isViewer ? 'none' : '';
+                    }
+                });
+                var roleLabel = document.querySelector('#admin-layout .sidebar-user .user-role');
+                if (roleLabel) roleLabel.textContent = isViewer ? 'Viewer' : 'Administrator';
+
                 adminNav('projects');
             } else {
                 document.getElementById('employee-layout').classList.add('active');
@@ -378,6 +452,11 @@ async function showPage(id) {
 }
 
 async function adminNav(tab, el) {
+    // Viewer 不能访问 HR 管理页面
+    if (currentUser && currentUser.role === 'viewer' && (tab === 'users' || tab === 'departments' || tab === 'positions')) {
+        tab = 'projects';
+    }
+
     localStorage.setItem('multitrade_admin_page', tab);
     const nav = document.getElementById('admin-nav');
     document.querySelectorAll('#admin-layout .admin-view').forEach(v => v.style.display = 'none');
@@ -402,6 +481,48 @@ async function adminNav(tab, el) {
         case 'report': renderAdminReport(); break;
         case 'worklist': renderWorkList(); break;
     }
+}   
+
+// filter not to see viewer in employee dropdown
+function getViewerMemberIds() {
+    var viewerIds = [];
+    (DB.users || []).forEach(function(u) {
+        if (u.role === 'viewer' && u.memberId) {
+            viewerIds.push(u.memberId);
+        }
+    });
+    return viewerIds;
+}
+function getNonViewerMembers() {
+    var viewerIds = getViewerMemberIds();
+    return DB.members.filter(function(m) {
+        return viewerIds.indexOf(m.id) === -1;
+    });
+}
+
+function getViewerVisibleScopeIds() {
+    if (!currentUser || currentUser.role !== 'viewer') return null;
+    if (!currentUser.memberId) return [];
+
+    var visibleScopeIds = [];
+
+    // 只用手动指定的 scope（Edit User 里勾选的）
+    var extra = (DB.viewerScopes || {})[currentUser.id] || [];
+    extra.forEach(function(sid) {
+        if (visibleScopeIds.indexOf(sid) === -1) {
+            visibleScopeIds.push(sid);
+        }
+    });
+
+    return visibleScopeIds;
+}
+
+function getViewerVisibleProjects() {
+    var scopeIds = getViewerVisibleScopeIds();
+    if (scopeIds === null) return null;
+    return DB.projects.filter(function(p) {
+        return p.categoryId && scopeIds.indexOf(p.categoryId) !== -1;
+    });
 }
 
 
@@ -510,56 +631,109 @@ document.addEventListener('mousedown', function(e) {
 });
 
 function renderMainScope() {
-    const view = document.getElementById('admin-projects');
+    var view = document.getElementById('admin-projects');
 
-    const allCount = DB.projects.length;
-    const allTab = '<div class="tab-item' + (!activeCategoryId ? ' active' : '') + '" onclick="switchScopeTab(null)">All <span class="tab-count">' + allCount + '</span></div>';
+    // viewer 只看到自己 department + 手动指定的 scope
+    var viewerScopeIds = getViewerVisibleScopeIds();
+    var visibleScopes = viewerScopeIds !== null
+        ? DB.scopes.filter(function(s) { return viewerScopeIds.indexOf(s.id) !== -1; })
+        : DB.scopes;
 
-    const tabs = DB.scopes.map(function(s) {
-        const count = DB.projects.filter(function(p) { return p.categoryId === s.id; }).length;
+    var allProjects = viewerScopeIds !== null
+        ? DB.projects.filter(function(p) { return p.categoryId && viewerScopeIds.indexOf(p.categoryId) !== -1; })
+        : DB.projects;
+
+    var allCount = allProjects.length;
+    var allTab = '<div class="tab-item' + (!activeCategoryId ? ' active' : '') + '" onclick="switchScopeTab(null)">All <span class="tab-count">' + allCount + '</span></div>';
+
+    var tabs = visibleScopes.map(function(s) {
+        var count = allProjects.filter(function(p) { return p.categoryId === s.id; }).length;
         return '<div class="tab-item' + (activeCategoryId === s.id ? ' active' : '') + '" onclick="switchScopeTab(' + s.id + ')">' + esc(s.name) + ' <span class="tab-count">' + count + '</span></div>';
     }).join('');
 
-    const activeScope = activeCategoryId ? DB.scopes.find(function(s) { return s.id === activeCategoryId; }) : null;
-    var dotsHtml = activeScope
-        ? '<div style="position:relative;display:inline-flex;align-items:center">' +
+    var activeScope = activeCategoryId ? visibleScopes.find(function(s) { return s.id === activeCategoryId; }) : null;
+    var dotsHtml = '';
+    if (activeScope && canEdit()) {
+        dotsHtml = '<div style="position:relative;display:inline-flex;align-items:center">' +
             '<button class="tab-more-btn" onclick="event.stopPropagation();toggleCatMenu()">&#8942;</button>' +
             '<div id="cat-dropdown" class="cat-dropdown">' +
               '<div class="cat-dropdown-item" onclick="closeCatMenu();showEditCategory(' + activeScope.id + ')">&#9998; Edit</div>' +
               '<div class="cat-dropdown-item danger" onclick="closeCatMenu();confirmDeleteCategory(' + activeScope.id + ')">&#10005; Delete</div>' +
             '</div>' +
-          '</div>'
-        : '';
+          '</div>';
+    }
 
-    view.innerHTML = `
-        <div class="app-header">
-            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
-                <div><h2>Work Category</h2><div class="header-sub">Manage work categories and items</div></div>
-            </div>
-        </div>
-        <div class="app-body">
-            <div class="tabs-wrapper">
-                <div class="tabs-bar">
-                    ${allTab}${tabs}${dotsHtml}
-                    <button class="btn btn-accent" onclick="showAddCategory()">+ Add Category</button>
-                </div>
-            </div>
-            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
-                <input class="input" id="item-search" placeholder="Search ID/Name..." value="${esc(itemSearchQuery)}" oninput="itemSearchChanged()" style="max-width:320px;padding:8px 12px;font-size:.85rem">
-                <span id="item-count" style="font-size:.82rem;color:var(--main-text3)"></span>
-                <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
-                    ${activeCategoryId ?
+    var addCatBtn = canEdit() ? '<button class="btn btn-accent" onclick="showAddCategory()">+ Add Category</button>' : '';
+    var addItemBtn = canEdit() ? '<button class="btn btn-green" onclick="showAddItem()">+ Add Item</button>' : '';
+
+    // 存起来给 switchScopeTab 用
+    window._viewerVisibleScopeIds = viewerScopeIds;
+    window._viewerVisibleProjectIds = viewerScopeIds !== null ? allProjects.map(function(p) { return p.id; }) : null;
+
+    view.innerHTML =
+        '<div class="app-header">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">' +
+                '<div><h2>Work Category</h2><div class="header-sub">Manage work categories and items</div></div>' +
+            '</div>' +
+        '</div>' +
+        '<div class="app-body">' +
+            '<div class="tabs-wrapper">' +
+                '<div class="tabs-bar">' +
+                    allTab + tabs + dotsHtml +
+                    addCatBtn +
+                '</div>' +
+            '</div>' +
+            '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">' +
+                '<input class="input" id="item-search" placeholder="Search all columns..." value="' + esc(itemSearchQuery) + '" oninput="itemSearchChanged()" style="max-width:320px;padding:8px 12px;font-size:.85rem">' +
+                '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Start Date</label><input type="date" class="input" id="item-filter-start" onchange="itemDateChanged()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
+                '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">End Date</label><input type="date" class="input" id="item-filter-end" onchange="itemDateChanged()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
+                '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Install From</label><input type="date" class="input" id="item-filter-inst-from" onchange="itemInstDateChanged()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
+                '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="item-filter-inst-to" onchange="itemInstDateChanged()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
+                '<button class="btn btn-ghost btn-sm" onclick="resetItemFilters()">Reset</button>' +
+                '<span id="item-count" style="font-size:.82rem;color:var(--main-text3)"></span>' +
+                '<div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">' +
+                    (activeCategoryId && canEdit() ?
                         '<a class="btn btn-accent btn-sm" href="/api/template/projects/' + activeCategoryId + '" style="text-decoration:none">Template Download</a>' +
                         '<label class="btn btn-blue btn-sm" style="cursor:pointer">Import Excel<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="adminHandleItemImport(this)"></label>'
-                    : ''}
-                    <button class="btn btn-green" onclick="showAddItem()">+ Add Item</button>
-                </div>
-            </div>
-            <div id="items-table-area"></div>
-        </div>`;
+                    : '') +
+                    addItemBtn +
+                '</div>' +
+            '</div>' +
+            '<div id="items-table-area"></div>' +
+        '</div>';
 
     renderItemsTable();
 }
+
+function itemDateChanged() {
+    var f = document.getElementById('item-filter-start').value;
+    var t = document.getElementById('item-filter-end').value;
+    if (f) document.getElementById('item-filter-end').min = f;
+    if (f && t && t < f) document.getElementById('item-filter-end').value = f;
+    itemCurrentPage = 1;
+    renderItemsTable();
+}
+
+function itemInstDateChanged() {
+    var f = document.getElementById('item-filter-inst-from').value;
+    var t = document.getElementById('item-filter-inst-to').value;
+    if (f) document.getElementById('item-filter-inst-to').min = f;
+    if (f && t && t < f) document.getElementById('item-filter-inst-to').value = f;
+    itemCurrentPage = 1;
+    renderItemsTable();
+}
+
+function resetItemFilters() {
+    itemSearchQuery = '';
+    document.getElementById('item-search').value = '';
+    document.getElementById('item-filter-start').value = '';
+    document.getElementById('item-filter-end').value = '';
+    document.getElementById('item-filter-inst-from').value = '';
+    document.getElementById('item-filter-inst-to').value = '';
+    itemCurrentPage = 1;
+    renderItemsTable();
+}
+
 
 // ========== Admin Item Import ==========
 var adminImportBase64 = null;
@@ -663,81 +837,80 @@ var itemCurrentPage = 1;
 var itemPageSize = 10;
 
 function renderItemsTable() {
-    let allItems = activeCategoryId
-        ? DB.projects.filter(p => p.categoryId === activeCategoryId)
-        : DB.projects;
+    var allItems = getFilteredItems();
 
-    if (itemSearchQuery) {
-        allItems = allItems.filter(p => p.name.toLowerCase().indexOf(itemSearchQuery) !== -1);
-    }
-
-    const countEl = document.getElementById('item-count');
+    var countEl = document.getElementById('item-count');
     if (countEl) countEl.textContent = allItems.length + ' item' + (allItems.length !== 1 ? 's' : '');
 
-    const totalPages = Math.ceil(allItems.length / itemPageSize) || 1;
+    var totalPages = Math.ceil(allItems.length / itemPageSize) || 1;
     if (itemCurrentPage > totalPages) itemCurrentPage = totalPages;
     if (itemCurrentPage < 1) itemCurrentPage = 1;
-    const startIdx = (itemCurrentPage - 1) * itemPageSize;
-    const endIdx = startIdx + itemPageSize;
-    const pageData = allItems.slice(startIdx, endIdx);
+    var startIdx = (itemCurrentPage - 1) * itemPageSize;
+    var endIdx = startIdx + itemPageSize;
+    var pageData = allItems.slice(startIdx, endIdx);
 
-    let rows = '';
+    var rows = '';
     if (allItems.length === 0) {
-        rows = '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No items found</td></tr>';
+        rows = '<tr><td colspan="11" style="text-align:center;color:var(--main-text3);padding:30px">No items found</td></tr>';
     } else {
-        rows = pageData.map((p, idx) => {
-            const cat = p.categoryId ? DB.scopes.find(s => s.id === p.categoryId) : null;
-            const members = getProjectMembers(p.id);
-            const mc = members.length;
-            const cost = getProjectCost(p.id);
-            const cd = getProjectCountdown(p);
+        rows = pageData.map(function(p, idx) {
+            var cat = p.categoryId ? DB.scopes.find(function(s) { return s.id === p.categoryId; }) : null;
+            var members = getProjectMembers(p.id);
+            var mc = members.length;
+            var cost = getProjectCost(p.id);
+            var cd = getProjectCountdown(p);
 
-            let cdHtml = '—';
+            var cdHtml = '\u2014';
             if (cd !== null) {
-                if (cd > 30) cdHtml = `<span style="color:var(--ok);font-weight:600">${cd}d left</span>`;
-                else if (cd > 7) cdHtml = `<span style="color:var(--warning);font-weight:600">${cd}d left</span>`;
-                else if (cd > 0) cdHtml = `<span style="color:var(--danger);font-weight:600">${cd}d left</span>`;
+                if (cd > 30) cdHtml = '<span style="color:var(--ok);font-weight:600">' + cd + 'd left</span>';
+                else if (cd > 7) cdHtml = '<span style="color:var(--warning);font-weight:600">' + cd + 'd left</span>';
+                else if (cd > 0) cdHtml = '<span style="color:var(--danger);font-weight:600">' + cd + 'd left</span>';
                 else if (cd === 0) cdHtml = '<span style="color:var(--warning);font-weight:600">Today!</span>';
-                else cdHtml = `<span style="color:var(--danger);font-weight:600">${Math.abs(cd)}d overdue</span>`;
+                else cdHtml = '<span style="color:var(--danger);font-weight:600">' + Math.abs(cd) + 'd overdue</span>';
             }
 
-            let memberAvatars = '';
+            var memberAvatars = '';
             if (mc > 0) {
-                const show = members.slice(0, 4);
-                memberAvatars = show.map(m => `<span class="badge badge-employee" style="font-size:.72rem;padding:2px 6px">${esc(m.name.split(' ')[0])}</span>`).join(' ');
-                if (mc > 4) memberAvatars += ` <span style="font-size:.75rem;color:var(--main-text3)">+${mc - 4}</span>`;
+                var show = members.slice(0, 4);
+                memberAvatars = show.map(function(m) { return '<span class="badge badge-employee" style="font-size:.72rem;padding:2px 6px">' + esc(m.name.split(' ')[0]) + '</span>'; }).join(' ');
+                if (mc > 4) memberAvatars += ' <span style="font-size:.75rem;color:var(--main-text3)">+' + (mc - 4) + '</span>';
             } else {
                 memberAvatars = '<span style="font-size:.8rem;color:var(--main-text3)">None</span>';
             }
 
-            return `<tr>
-                <td style="font-family:var(--font-m);color:var(--main-text3);width:50px">${startIdx + idx + 1}</td>
-                <td><div style="font-weight:600;cursor:pointer" onclick="showEditItem(${p.id})">${esc(p.name)}</div></td>
-                <td>${esc(p.customer || '—')}</td>
-                <td>${cat ? '<span class="badge badge-scope">' + esc(cat.name) + '</span>' : '<span style="color:var(--main-text3)">—</span>'}</td>
-                <td>${cdHtml}</td>
-                <td>${memberAvatars}</td>
-                <td style="text-align:right;font-family:var(--font-m)">${fmtCost(cost)}</td>
-                <td><div class="actions-cell">
-                    <button class="btn-icon" onclick="showEditItem(${p.id})" title="Edit">&#9998;</button>
-                    <button class="btn-icon danger" onclick="confirmDeleteItem(${p.id})" title="Delete">&#10005;</button>
-                </div></td>
-            </tr>`;
+            return '<tr>' +
+                '<td style="font-family:var(--font-m);color:var(--main-text3);width:50px">' + (startIdx + idx + 1) + '</td>' +
+                '<td><div style="font-weight:600;cursor:pointer" onclick="showEditItem(' + p.id + ')">' + esc(p.name) + '</div></td>' +
+                '<td>' + esc(p.customer || '\u2014') + '</td>' +
+                '<td>' + (cat ? '<span class="badge badge-scope">' + esc(cat.name) + '</span>' : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
+                '<td style="font-family:var(--font-m);font-size:.82rem">' + formatDateDMY(p.startDate) + '</td>' +
+                '<td style="font-family:var(--font-m);font-size:.82rem">' + formatDateDMY(p.endDate) + '</td>' +
+                '<td style="font-family:var(--font-m);font-size:.82rem">' + formatDateDMY(p.installDate) + '</td>' +
+                '<td>' + cdHtml + '</td>' +
+                '<td>' + memberAvatars + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + fmtCost(cost) + '</td>' +
+                // 在 rows 的 map 里，把 Actions 列改成：
+                '<td>' + (canEdit()
+                    ? '<div class="actions-cell">' +
+                        '<button class="btn-icon" onclick="showEditItem(' + p.id + ')" title="Edit">&#9998;</button>' +
+                        '<button class="btn-icon danger" onclick="confirmDeleteItem(' + p.id + ')" title="Delete">&#10005;</button>' +
+                    '</div>'
+                    : '') + '</td></tr>';
         }).join('');
     }
 
-    let paginationHtml = '';
+    var paginationHtml = '';
     if (allItems.length > 0) {
-        const showFrom = startIdx + 1;
-        const showTo = Math.min(endIdx, allItems.length);
-        let pageButtons = '';
-        const maxVisible = 5;
-        let startPage = Math.max(1, itemCurrentPage - Math.floor(maxVisible / 2));
-        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+        var showFrom = startIdx + 1;
+        var showTo = Math.min(endIdx, allItems.length);
+        var pageButtons = '';
+        var maxVisible = 5;
+        var startPage = Math.max(1, itemCurrentPage - Math.floor(maxVisible / 2));
+        var endPage = Math.min(totalPages, startPage + maxVisible - 1);
         if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
         pageButtons += '<button onclick="goItemPage(1)" ' + (itemCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
         pageButtons += '<button onclick="goItemPage(' + (itemCurrentPage - 1) + ')" ' + (itemCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
-        for (let p = startPage; p <= endPage; p++) {
+        for (var p = startPage; p <= endPage; p++) {
             pageButtons += '<button onclick="goItemPage(' + p + ')" class="' + (p === itemCurrentPage ? 'active' : '') + '">' + p + '</button>';
         }
         pageButtons += '<button onclick="goItemPage(' + (itemCurrentPage + 1) + ')" ' + (itemCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
@@ -764,6 +937,9 @@ function renderItemsTable() {
                 '<th>ID / Name</th>' +
                 '<th>Customer</th>' +
                 '<th style="width:130px">Category</th>' +
+                '<th style="width:100px">Start Date</th>' +
+                '<th style="width:100px">End Date</th>' +
+                '<th style="width:100px">Install Date</th>' +
                 '<th style="width:100px">Countdown</th>' +
                 '<th>Members</th>' +
                 '<th style="width:100px;text-align:right">Cost</th>' +
@@ -772,7 +948,7 @@ function renderItemsTable() {
             '<tbody>' + rows + '</tbody>' +
         '</table></div>' +
         paginationHtml;
-}
+}   
 
 function goItemPage(page) {
     const totalPages = Math.ceil(getFilteredItems().length / itemPageSize) || 1;
@@ -789,12 +965,64 @@ function changeItemPageSize(size) {
 }
 
 function getFilteredItems() {
-    let allItems = activeCategoryId
-        ? DB.projects.filter(p => p.categoryId === activeCategoryId)
+    // viewer 过滤
+    var viewerProjectIds = window._viewerVisibleProjectIds;
+    var baseItems = viewerProjectIds !== null
+        ? DB.projects.filter(function(p) { return viewerProjectIds.indexOf(p.id) !== -1; })
         : DB.projects;
+
+    var allItems = activeCategoryId
+        ? baseItems.filter(function(p) { return p.categoryId === activeCategoryId; })
+        : baseItems;
+
     if (itemSearchQuery) {
-        allItems = allItems.filter(p => p.name.toLowerCase().indexOf(itemSearchQuery) !== -1);
+        allItems = allItems.filter(function(p) {
+            var cat = p.categoryId ? DB.scopes.find(function(s) { return s.id === p.categoryId; }) : null;
+            var haystack = [
+                p.name,
+                p.customer,
+                cat ? cat.name : '',
+                p.startDate || '',
+                p.endDate || '',
+                p.installDate || '',
+                formatDateDMY(p.startDate),
+                formatDateDMY(p.endDate),
+                formatDateDMY(p.installDate)
+            ].map(function(v) { return String(v).toLowerCase(); }).join(' ');
+            return haystack.indexOf(itemSearchQuery) !== -1;
+        });
     }
+
+    var startFilter = document.getElementById('item-filter-start') ? document.getElementById('item-filter-start').value : '';
+    var endFilter = document.getElementById('item-filter-end') ? document.getElementById('item-filter-end').value : '';
+    var instFrom = document.getElementById('item-filter-inst-from') ? document.getElementById('item-filter-inst-from').value : '';
+    var instTo = document.getElementById('item-filter-inst-to') ? document.getElementById('item-filter-inst-to').value : '';
+
+    if (startFilter) {
+        allItems = allItems.filter(function(p) {
+            var sd = p.startDate ? p.startDate.slice(0, 10) : '';
+            return sd && sd >= startFilter;
+        });
+    }
+    if (endFilter) {
+        allItems = allItems.filter(function(p) {
+            var ed = p.endDate ? p.endDate.slice(0, 10) : '';
+            return ed && ed <= endFilter;
+        });
+    }
+    if (instFrom) {
+        allItems = allItems.filter(function(p) {
+            var id = p.installDate ? p.installDate.slice(0, 10) : '';
+            return id && id >= instFrom;
+        });
+    }
+    if (instTo) {
+        allItems = allItems.filter(function(p) {
+            var id = p.installDate ? p.installDate.slice(0, 10) : '';
+            return id && id <= instTo;
+        });
+    }
+
     return allItems;
 }
 
@@ -821,7 +1049,7 @@ function showAddCategory() {
             '</div>' +
             '<div id="pic-list-add" style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">' + picList + '</div>' +
         '</div>' +
-        '<div style="margin-top:12px"><label style="font-size:.85rem;display:block;margin-bottom:6px">Department can view this category</label>' +
+        '<div style="margin-top:12px"><label style="font-size:.85rem;display:block;margin-bottom:6px">Employee Attendance Access <span style="font-size:.76rem;color:var(--main-text3);font-weight:normal">— Employees in selected departments can see this category in attendance dropdown :</label>' +
             '<div style="display:flex;gap:6px;margin-bottom:6px">' +
                 '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#dept-list-add input\').forEach(function(c){c.checked=true})">All</button>' +
                 '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#dept-list-add input\').forEach(function(c){c.checked=false})">Clear</button>' +
@@ -881,8 +1109,7 @@ function showEditCategory(sid) {
             '</div>' +
             '<div id="pic-list-edit" style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">' + picList + '</div>' +
         '</div>' +
-        '<div style="margin-top:12px"><label style="font-size:.85rem;display:block;margin-bottom:6px">Department can view this category</label>' +
-            '<div style="display:flex;gap:6px;margin-bottom:6px">' +
+        '<div style="margin-top:12px"><label style="font-size:.85rem;display:block;margin-bottom:6px">Employee Attendance Access <span style="font-size:.76rem;color:var(--main-text3);font-weight:normal">— Employees in selected departments can see <strong>' + esc(scope.name) + '</strong> in attendance dropdown</span></label>' +            '<div style="display:flex;gap:6px;margin-bottom:6px">' +
                 '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#dept-list-edit input\').forEach(function(c){c.checked=true})">All</button>' +
                 '<button class="btn btn-ghost btn-sm" type="button" onclick="document.querySelectorAll(\'#dept-list-edit input\').forEach(function(c){c.checked=false})">Clear</button>' +
             '</div>' +
@@ -934,16 +1161,17 @@ function showAddItem() {
         return `<option value="${s.id}" ${sel}>${esc(s.name)}</option>`;
     }).join('');
 
-    showModal(`<h3>Add Item</h3>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field"><label>ID / Name</label><input class="input" id="inp-item-name" placeholder="e.g. PLC-001 Panel"></div>
-        <div class="field"><label>Customer</label><input class="input" id="inp-item-customer" placeholder="e.g. Petronas"></div>
-        <div class="field"><label>Category</label><select class="input" id="inp-item-cat"><option value="">-- None --</option>${catOpts}</select></div>
-        <div class="field"><label>Start Date</label><input class="input" id="inp-item-start" type="date"></div>
-        <div class="field"><label>End Date</label><input class="input" id="inp-item-end" type="date"></div>
-    </div>
-    <p class="auth-error" id="item-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddItem()">Create</button></div>`);
+    showModal('<h3>Add Item</h3>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+        '<div class="field"><label>ID / Name</label><input class="input" id="inp-item-name" placeholder="e.g. PLC-001 Panel"></div>' +
+        '<div class="field"><label>Customer</label><input class="input" id="inp-item-customer" placeholder="e.g. Petronas"></div>' +
+        '<div class="field"><label>Category</label><select class="input" id="inp-item-cat"><option value="">-- None --</option>' + catOpts + '</select></div>' +
+        '<div class="field"><label>Start Date</label><input class="input" id="inp-item-start" type="date"></div>' +
+        '<div class="field"><label>End Date</label><input class="input" id="inp-item-end" type="date"></div>' +
+        '<div class="field"><label>Install Date</label><input class="input" id="inp-item-install" type="date"></div>' +
+    '</div>' +
+    '<p class="auth-error" id="item-error"></p>' +
+    '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddItem()">Create</button></div>');
     setTimeout(() => document.getElementById('inp-item-name')?.focus(), 100);
 }
 
@@ -954,6 +1182,7 @@ async function doAddItem() {
     const catId = document.getElementById('inp-item-cat').value;
     const startDate = document.getElementById('inp-item-start').value || null;
     const endDate = document.getElementById('inp-item-end').value || null;
+    const installDate = document.getElementById('inp-item-install').value || null;
     if (!name) { errEl.textContent = 'ID / Name is required'; return; }
     try {
         await api('/projects', { method: 'POST', body: {
@@ -961,7 +1190,8 @@ async function doAddItem() {
             categoryId: catId ? parseInt(catId) : null,
             startDate: startDate,
             endDate: endDate,
-            customer: customer || ''
+            customer: customer || '',
+            installDate: installDate
         }});
         hideModal(); await loadDB(); renderMainScope();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
@@ -1048,6 +1278,7 @@ function showEditItem(pid) {
         <div class="field"><label>Category</label><select class="input" id="inp-item-cat-edit"><option value="">-- None --</option>${catOpts}</select></div>
         <div class="field"><label>Start Date</label><input class="input" id="inp-item-start-edit" type="date" value="${proj.startDate || ''}"></div>
         <div class="field"><label>End Date</label><input class="input" id="inp-item-end-edit" type="date" value="${proj.endDate || ''}"></div>
+        <div class="field"><label>Install Date</label><input class="input" id="inp-item-install-edit" type="date" value="${proj.installDate || ''}"></div>
     </div>
 
     <div style="display:flex;gap:24px;margin:14px 0 8px;padding:10px 0;border-top:1px solid var(--main-border);border-bottom:1px solid var(--main-border)">
@@ -1081,6 +1312,7 @@ async function doEditItemFull(pid) {
     const catId = document.getElementById('inp-item-cat-edit').value;
     const startDate = document.getElementById('inp-item-start-edit').value || null;
     const endDate = document.getElementById('inp-item-end-edit').value || null;
+    const installDate = document.getElementById('inp-item-install-edit').value || null;
 
     if (!name) { errEl.textContent = 'ID / Name is required'; return; }
 
@@ -1092,7 +1324,8 @@ async function doEditItemFull(pid) {
                 categoryId: catId ? parseInt(catId) : null,
                 startDate: startDate,
                 endDate: endDate,
-                customer: customer || ''
+                customer: customer || '',
+                installDate: installDate
             }
         });
 
@@ -1200,8 +1433,17 @@ var wlPageSize = 10;
 
 function renderWorkList() {
     const view = document.getElementById('admin-worklist');
+
+    // viewer 过滤 scope
+    var viewerScopeIds = getViewerVisibleScopeIds();
+    var visibleScopes = viewerScopeIds !== null
+        ? DB.scopes.filter(function(s) { return viewerScopeIds.indexOf(s.id) !== -1; })
+        : DB.scopes;
+
     var scopeFilterOpts = '<option value="">All Categories</option>' +
-        DB.scopes.map(s => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('');
+        visibleScopes.map(function(s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('');
+
+    var addBtn = canEdit() ? '<button class="btn btn-green" onclick="showAddWorklist()">+ Add Work List</button>' : '';
 
     view.innerHTML =
         '<div class="app-header">' +
@@ -1214,7 +1456,7 @@ function renderWorkList() {
                     '<label style="font-size:.82rem;color:var(--main-text3)">Filter by Category:</label>' +
                     '<select class="input" id="worklist-filter" onchange="wlFilterChanged()" style="width:180px;padding:8px 10px;font-size:.82rem">' + scopeFilterOpts + '</select>' +
                 '</div>' +
-                '<button class="btn btn-green" onclick="showAddWorklist()">+ Add Work List</button>' +
+                addBtn +
             '</div>' +
             '<div id="worklist-table-area"></div>' +
         '</div>';
@@ -1229,11 +1471,17 @@ function wlFilterChanged() {
 
 function renderWorklistTable() {
     var filterScopeId = document.getElementById('worklist-filter') ? document.getElementById('worklist-filter').value : '';
-    var filtered = filterScopeId
-        ? DB.worklist.filter(w => w.scopeId === parseInt(filterScopeId))
+
+    // viewer 过滤
+    var viewerScopeIds = getViewerVisibleScopeIds();
+    var baseList = viewerScopeIds !== null
+        ? DB.worklist.filter(function(w) { return w.scopeId && viewerScopeIds.indexOf(w.scopeId) !== -1; })
         : DB.worklist;
 
-    // Pagination
+    var filtered = filterScopeId
+        ? baseList.filter(function(w) { return w.scopeId === parseInt(filterScopeId); })
+        : baseList;
+
     var totalPages = Math.ceil(filtered.length / wlPageSize) || 1;
     if (wlCurrentPage > totalPages) wlCurrentPage = totalPages;
     if (wlCurrentPage < 1) wlCurrentPage = 1;
@@ -1246,20 +1494,23 @@ function renderWorklistTable() {
         rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No work items found</td></tr>';
     } else {
         rows = pageData.map(function(w, idx) {
-            var scope = w.scopeId ? DB.scopes.find(s => s.id === w.scopeId) : null;
-            return '<tr>' +
-                '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
-                '<td>' + (scope ? '<span class="badge badge-scope">' + esc(scope.name) + '</span>' : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
-                '<td style="font-weight:500">' + esc(w.title) + '</td>' +
-                '<td><div class="actions-cell">' +
+            var scope = w.scopeId ? DB.scopes.find(function(s) { return s.id === w.scopeId; }) : null;
+            var actionCell = canEdit()
+                ? '<td><div class="actions-cell">' +
                     '<button class="btn-icon" onclick="showEditWorklist(' + w.id + ')" title="Edit">&#9998;</button>' +
                     '<button class="btn-icon danger" onclick="confirmDeleteWorklist(' + w.id + ')" title="Delete">&#10005;</button>' +
-                '</div></td>' +
+                  '</div></td>'
+                : '<td></td>';
+            return '<tr>' +
+                '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
+                '<td>' + (scope ? '<span class="badge badge-scope">' + esc(scope.name) + '</span>' : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
+                '<td style="font-weight:500">' + esc(w.title) + '</td>' +
+                actionCell +
             '</tr>';
         }).join('');
     }
 
-    // Pagination HTML
+    // pagination 保持不变
     var paginationHtml = '';
     if (filtered.length > 0) {
         var showFrom = startIdx + 1;
@@ -1586,6 +1837,18 @@ function changeUsrPageSize(size) {
 function showAddUser() {
     var posOpts = DB.positions.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
     var deptOpts = DB.departments.map(function(d) { return '<option value="' + d.id + '">' + esc(d.name) + '</option>'; }).join('');
+
+    var viewerScopesHtml = '';
+    viewerScopesHtml += '<div id="viewer-scope-fields" style="display:none">' +
+        '<div class="field"><label>Work Category Access</label>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">';
+    DB.scopes.forEach(function(s) {
+        viewerScopesHtml += '<label style="display:flex;align-items:center;gap:4px;font-size:.85rem;padding:4px 8px;border:1px solid var(--main-border);border-radius:var(--radius);cursor:pointer">' +
+            '<input type="checkbox" class="add-viewer-scope-cb" value="' + s.id + '"> ' + esc(s.name) +
+        '</label>';
+    });
+    viewerScopesHtml += '</div></div></div>';
+
     showModal('<h3>Add User</h3>' +
         '<div class="field"><label>Role</label><select class="input" id="adduser-role" onchange="toggleAddUserFields()"><option value="employee">Employee</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></div>' +
         '<div id="emp-fields">' +
@@ -1594,6 +1857,7 @@ function showAddUser() {
             '<div class="field"><label>Department</label><select class="input" id="adduser-dept"><option value="">None</option>' + deptOpts + '</select></div>' +
             '<div class="field"><label>Monthly Salary</label><input class="input input-mono" id="adduser-salary" type="number" placeholder="e.g. 15000.00"></div>' +
         '</div>' +
+        viewerScopesHtml +
         '<div class="field"><label>Username</label><input class="input" id="adduser-user" placeholder="Login username"></div>' +
         '<div class="field"><label>Password</label><input class="input" id="adduser-pass" type="password" placeholder="Min. 6 characters"></div>' +
         '<p class="auth-error" id="adduser-error"></p>' +
@@ -1604,6 +1868,7 @@ function showAddUser() {
 function toggleAddUserFields() {
     var role = document.getElementById('adduser-role').value;
     document.getElementById('emp-fields').style.display = (role === 'employee' || role === 'viewer') ? '' : 'none';
+    document.getElementById('viewer-scope-fields').style.display = role === 'viewer' ? '' : 'none';
 }
 
 async function doAddUser() {
@@ -1616,7 +1881,7 @@ async function doAddUser() {
     if (pass.length < 6) { errEl.textContent = 'Min 6 characters'; return; }
 
     var memberId = null;
-    if (role === 'employee') {
+    if (role === 'employee' || role === 'viewer') {
         var name = document.getElementById('adduser-name').value.trim();
         if (!name) { errEl.textContent = 'Enter a name'; return; }
         var posId = document.getElementById('adduser-pos').value;
@@ -1636,7 +1901,20 @@ async function doAddUser() {
     }
 
     try {
-        await api('/users', { method: 'POST', body: { username: username, password: pass, role: role, memberId: memberId } });
+        var result = await api('/users', { method: 'POST', body: { username: username, password: pass, role: role, memberId: memberId } });
+
+        // 保存 viewer 的额外 scope
+        if (role === 'viewer' && result && result.id) {
+            var cbs = document.querySelectorAll('.add-viewer-scope-cb:checked');
+            var scopeIds = [];
+            cbs.forEach(function(cb) { scopeIds.push(parseInt(cb.value)); });
+            if (scopeIds.length > 0) {
+                await api('/viewer-scopes/' + result.id, {
+                    method: 'PUT',
+                    body: { scopeIds: scopeIds }
+                });
+            }
+        }
     } catch (ex) {
         errEl.textContent = ex.message; return;
     }
@@ -1651,19 +1929,48 @@ function showEditUser(userId) {
     var deptOpts = DB.departments.map(function(d) { var sel = member && member.departmentId === d.id ? 'selected' : ''; return '<option value="' + d.id + '" ' + sel + '>' + esc(d.name) + '</option>'; }).join('');
 
     var html = '<h3>Edit — ' + esc(user.username) + '</h3>';
-    if (user.role !== 'admin' && member) {
-        var curSal = latestSalary(member);
-        html += '<div class="field"><label>Full Name</label><input class="input" id="edituser-name" value="' + esc(member.name) + '"></div>' +
-            '<div class="field"><label>Position</label><select class="input" id="edituser-pos"><option value="">None</option>' + posOpts + '</select></div>' +
-            '<div class="field"><label>Department</label><select class="input" id="edituser-dept"><option value="">None</option>' + deptOpts + '</select></div>' +
-            '<div class="field"><label>Monthly Salary</label><input class="input input-mono" id="edituser-salary" type="number" value="' + (curSal > 0 ? curSal : '') + '" placeholder="e.g. 15000.00"></div>';
-        }
+
+    // Member fields — 不管有没有 member 都渲染（admin 切换 role 时需要）
+    html += '<div id="edit-member-fields"' + (user.role === 'admin' ? ' style="display:none"' : '') + '>';
+    var curSal = member ? latestSalary(member) : 0;
+    html += '<div class="field"><label>Full Name</label><input class="input" id="edituser-name" value="' + (member ? esc(member.name) : '') + '"></div>' +
+        '<div class="field"><label>Position</label><select class="input" id="edituser-pos"><option value="">None</option>' + posOpts + '</select></div>' +
+        '<div class="field"><label>Department</label><select class="input" id="edituser-dept"><option value="">None</option>' + deptOpts + '</select></div>' +
+        '<div class="field"><label>Monthly Salary</label><input class="input input-mono" id="edituser-salary" type="number" value="' + (curSal > 0 ? curSal : '') + '" placeholder="e.g. 15000.00"></div>';
+    html += '</div>';
+
+    // Viewer scope
+    var existing = (DB.viewerScopes || {})[user.id] || [];
+    html += '<div id="edit-viewer-scope-fields"' + (user.role !== 'viewer' ? ' style="display:none"' : '') + '>' +
+        '<div class="field"><label>Work Category Access</label>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">';
+    DB.scopes.forEach(function(s) {
+        var checked = existing.indexOf(s.id) !== -1 ? ' checked' : '';
+        html += '<label style="display:flex;align-items:center;gap:4px;font-size:.85rem;padding:4px 8px;border:1px solid var(--main-border);border-radius:var(--radius);cursor:pointer">' +
+            '<input type="checkbox" class="viewer-scope-cb" value="' + s.id + '"' + checked + '> ' + esc(s.name) +
+        '</label>';
+    });
+    html += '</div></div></div>';
+
     html += '<div class="field"><label>Username</label><input class="input" id="edituser-user" value="' + esc(user.username) + '"></div>' +
         '<div class="field"><label>New Password (blank = keep)</label><input class="input" id="edituser-pass" type="password" placeholder="Leave blank"></div>' +
-        '<div class="field"><label>Role</label><select class="input" id="edituser-role"><option value="admin" ' + (user.role === 'admin' ? 'selected' : '') + '>Admin</option><option value="viewer" ' + (user.role === 'viewer' ? 'selected' : '') + '>Viewer</option><option value="employee" ' + (user.role === 'employee' ? 'selected' : '') + '>Employee</option></select></div>' +
+        '<div class="field"><label>Role</label><select class="input" id="edituser-role" onchange="toggleEditUserFields()">' +
+            '<option value="admin" ' + (user.role === 'admin' ? 'selected' : '') + '>Admin</option>' +
+            '<option value="viewer" ' + (user.role === 'viewer' ? 'selected' : '') + '>Viewer</option>' +
+            '<option value="employee" ' + (user.role === 'employee' ? 'selected' : '') + '>Employee</option>' +
+        '</select></div>' +
         '<p class="auth-error" id="edituser-error"></p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditUser(' + user.id + ')">Save</button></div>';
+
     showModal(html);
+}
+
+function toggleEditUserFields() {
+    var role = document.getElementById('edituser-role').value;
+    var memberFields = document.getElementById('edit-member-fields');
+    var viewerFields = document.getElementById('edit-viewer-scope-fields');
+    if (memberFields) memberFields.style.display = (role === 'employee' || role === 'viewer') ? '' : 'none';
+    if (viewerFields) viewerFields.style.display = role === 'viewer' ? '' : 'none';
 }
 
 async function doEditUser(userId) {
@@ -1675,12 +1982,43 @@ async function doEditUser(userId) {
     if (!newUsername) { errEl.textContent = 'Username cannot be empty'; return; }
     if (newPass && newPass.length < 6) { errEl.textContent = 'Min 6 characters'; return; }
 
+    // 如果从 admin 改成 employee/viewer，需要创建 member
+    var memberId = user.memberId;
+    if (!memberId && (newRole === 'employee' || newRole === 'viewer')) {
+        var nameEl = document.getElementById('edituser-name');
+        var posEl = document.getElementById('edituser-pos');
+        var deptEl = document.getElementById('edituser-dept');
+        var salEl = document.getElementById('edituser-salary');
+        var name = nameEl ? nameEl.value.trim() : '';
+        if (!name) { errEl.textContent = 'Enter a name'; return; }
+        var posId = posEl ? posEl.value : '';
+        var deptId = deptEl ? deptEl.value : '';
+        var sal = salEl ? parseFloat(salEl.value) : 0;
+        var now = new Date().toISOString().slice(0, 7);
+
+        var memberResult = await api('/members', {
+            method: 'POST',
+            body: {
+                name: name,
+                positionId: posId ? parseInt(posId) : null,
+                departmentId: deptId ? parseInt(deptId) : null
+            }
+        });
+        memberId = memberResult.id;
+
+        if (!isNaN(sal) && sal > 0) {
+            await api('/salaries', { method: 'PUT', body: { memberId: memberId, month: now, amount: sal } });
+        }
+    }
+
+    // 更新 user
     await api('/users/' + userId, {
         method: 'PUT',
-        body: { username: newUsername, password: newPass || null, role: newRole }
+        body: { username: newUsername, password: newPass || null, role: newRole, memberId: memberId }
     });
 
-    if (user.memberId) {
+    // 更新 member（已有 member 时）
+    if (memberId && (newRole === 'employee' || newRole === 'viewer')) {
         var nameEl = document.getElementById('edituser-name');
         var posEl = document.getElementById('edituser-pos');
         var deptEl = document.getElementById('edituser-dept');
@@ -1690,29 +2028,34 @@ async function doEditUser(userId) {
         var deptId = deptEl ? (deptEl.value ? parseInt(deptEl.value) : null) : undefined;
 
         if (name || posId !== undefined || deptId !== undefined) {
-            var member = DB.members.find(function(m) { return m.id === user.memberId; });
-            if (member) {
-                await api('/members/' + user.memberId, {
-                    method: 'PUT',
-                    body: {
-                        name: name || member.name,
-                        positionId: posId !== undefined ? posId : member.positionId,
-                        departmentId: deptId !== undefined ? deptId : member.departmentId
-                    }
-                });
-            }
+            var member = DB.members.find(function(m) { return m.id === memberId; });
+            await api('/members/' + memberId, {
+                method: 'PUT',
+                body: {
+                    name: name || (member ? member.name : ''),
+                    positionId: posId !== undefined ? posId : (member ? member.positionId : null),
+                    departmentId: deptId !== undefined ? deptId : (member ? member.departmentId : null)
+                }
+            });
         }
 
         if (salEl) {
             var rawVal = salEl.value.trim();
             var val = parseFloat(rawVal);
             var now = new Date().toISOString().slice(0, 7);
-            if (rawVal !== '' && !isNaN(val) && val > 0) {
-                await api('/salaries', { method: 'PUT', body: { memberId: user.memberId, month: now, amount: val } });
-            } else {
-                await api('/salaries', { method: 'PUT', body: { memberId: user.memberId, month: now, amount: 0 } });
-            }
+            await api('/salaries', { method: 'PUT', body: { memberId: memberId, month: now, amount: (!isNaN(val) && val > 0) ? val : 0 } });
         }
+    }
+
+    // 保存 viewer scope
+    if (newRole === 'viewer') {
+        var cbs = document.querySelectorAll('.viewer-scope-cb:checked');
+        var scopeIds = [];
+        cbs.forEach(function(cb) { scopeIds.push(parseInt(cb.value)); });
+        await api('/viewer-scopes/' + userId, {
+            method: 'PUT',
+            body: { scopeIds: scopeIds }
+        });
     }
 
     hideModal(); await loadDB(); renderUsersList();
@@ -2023,23 +2366,20 @@ var empScopeSearch = {};
 
 function renderEmployeeProjects() {
     empScopeSearch = {};
-    
+
     if (!currentUser || !currentUser.memberId) return;
     var member = DB.members.find(function(m) { return m.id === currentUser.memberId; });
     if (!member) return;
     var assignedProjs = getMemberProjects(member.id);
     var assignedIds = new Set(assignedProjs.map(function(p) { return p.id; }));
 
-    // Build groups: PIC scope → all items; non-PIC → assigned only
     var groups = {};
     DB.scopes.forEach(function(s) {
         var isPic = s.picMemberIds && s.picMemberIds.indexOf(member.id) !== -1;
         var items;
         if (isPic) {
-            // PIC: show ALL items in this category
             items = DB.projects.filter(function(p) { return p.categoryId === s.id; });
         } else {
-            // Not PIC: only show assigned items
             items = assignedProjs.filter(function(p) { return p.categoryId === s.id; });
         }
         if (items.length > 0) {
@@ -2047,13 +2387,11 @@ function renderEmployeeProjects() {
         }
     });
 
-    // Uncategorized (assigned only)
     var uncatItems = assignedProjs.filter(function(p) { return !p.categoryId; });
     if (uncatItems.length > 0) {
         groups[0] = { scope: { id: 0, name: 'Uncategorized', picMemberIds: [] }, items: uncatItems, isPic: false };
     }
 
-    // Build scope sections
     empScopePages = {};
     var scopeSections = '';
 
@@ -2067,7 +2405,7 @@ function renderEmployeeProjects() {
             var itemsData = g.items.map(function(p) {
                 var mc = getProjectMembers(p.id).length;
                 var cd = getProjectCountdown(p);
-                var cdHtml = '—';
+                var cdHtml = '\u2014';
                 if (cd !== null) {
                     if (cd > 30) cdHtml = '<span style="color:var(--ok);font-weight:600">' + cd + ' days left</span>';
                     else if (cd > 7) cdHtml = '<span style="color:var(--warning);font-weight:600">' + cd + ' days left</span>';
@@ -2075,12 +2413,18 @@ function renderEmployeeProjects() {
                     else if (cd === 0) cdHtml = '<span style="color:var(--warning);font-weight:600">Due today!</span>';
                     else cdHtml = '<span style="color:var(--danger);font-weight:600">' + Math.abs(cd) + ' days overdue</span>';
                 }
-                var fmtDate = function(d) { return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'; };
+                var fmtDate = function(d) { return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '\u2014'; };
                 return {
                     id: p.id,
                     name: esc(p.name),
-                    customer: esc(p.customer || '—'),
-                    timeline: fmtDate(p.startDate) + ' — ' + fmtDate(p.endDate),
+                    customer: esc(p.customer || '\u2014'),
+                    timeline: fmtDate(p.startDate) + ' \u2014 ' + fmtDate(p.endDate),
+                    startDateRaw: p.startDate ? p.startDate.slice(0, 10) : '',
+                    endDateRaw: p.endDate ? p.endDate.slice(0, 10) : '',
+                    installDateRaw: p.installDate ? p.installDate.slice(0, 10) : '',
+                    startDateFmt: formatDateDMY(p.startDate),
+                    endDateFmt: formatDateDMY(p.endDate),
+                    installDateFmt: formatDateDMY(p.installDate),
                     team: mc + ' member' + (mc !== 1 ? 's' : ''),
                     cdHtml: cdHtml
                 };
@@ -2101,19 +2445,18 @@ function renderEmployeeProjects() {
                 '</div>' +
                 '<div class="collapse-content" id="scope-' + scopeId + '-content" style="display:none;padding-top:8px">' +
                     '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">' +
-                        '<input class="input" id="scope-search-' + scopeId + '" placeholder="Search ID/Name..." value="' + esc(empScopeSearch[scopeId] || '') + '" oninput="scopeSearchChanged(' + scopeId + ')" style="max-width:260px;padding:7px 10px;font-size:.82rem;margin-right:auto">' +
+                        '<input class="input" id="scope-search-' + scopeId + '" placeholder="Search all columns..." value="' + esc(empScopeSearch[scopeId] || '') + '" oninput="scopeSearchChanged(' + scopeId + ')" style="max-width:260px;padding:7px 10px;font-size:.82rem;margin-right:auto">' +
                         (isPic ? '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
                             '<a class="btn btn-accent btn-sm" href="/api/template/projects/' + scopeId + '" style="text-decoration:none">Template Download</a>' +
                             '<label class="btn btn-blue btn-sm" style="cursor:pointer">Import Excel<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="empHandleScopeImport(' + scopeId + ',this)"></label>' +
                             '<button class="btn btn-green btn-sm" onclick="empShowAddItem(' + scopeId + ')">+ Add Item</button>' +
                         '</div>' : '') +
                     '</div>' +
-                '<div id="scope-items-table-' + scopeId + '"></div>' +  
+                '<div id="scope-items-table-' + scopeId + '"></div>' +
             '</div>';
         });
     }
 
-    // Summary
     buildEmpItemSummaryData(member.id);
     var summaryHtml = empItemSummaryData.length > 0 ? '<div id="emp-item-summary-area"></div>' : '';
 
@@ -2241,6 +2584,7 @@ async function empDoScopeImport(scopeId) {
 }
 
 /* ---------- Employee PIC Item CRUD ---------- */
+
 function empShowAddItem(scopeId) {
     var scope = DB.scopes.find(function(s) { return s.id === scopeId; });
     var scopeName = scope ? scope.name : '';
@@ -2250,6 +2594,7 @@ function empShowAddItem(scopeId) {
             '<div class="field"><label>Customer</label><input class="input" id="emp-inp-customer" placeholder="e.g. Petronas"></div>' +
             '<div class="field"><label>Start Date</label><input class="input" id="emp-inp-item-start" type="date"></div>' +
             '<div class="field"><label>End Date</label><input class="input" id="emp-inp-item-end" type="date"></div>' +
+            '<div class="field"><label>Install Date</label><input class="input" id="emp-inp-item-install" type="date"></div>' +
         '</div>' +
         '<p class="auth-error" id="emp-item-error"></p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="empDoAddItem(' + scopeId + ')">Create</button></div>');
@@ -2262,21 +2607,25 @@ async function empDoAddItem(scopeId) {
     var customerName = document.getElementById('emp-inp-customer').value.trim();
     var startDate = document.getElementById('emp-inp-item-start').value || null;
     var endDate = document.getElementById('emp-inp-item-end').value || null;
+    var installDate = document.getElementById('emp-inp-item-install').value || null;
     if (!name) { errEl.textContent = 'ID / Name is required'; return; }
     try {
         await api('/projects', { method: 'POST', body: {
             name: name, categoryId: scopeId, startDate: startDate, endDate: endDate,
-            customer: customerName || null
+            customer: customerName || null, installDate: installDate
         }});
         hideModal(); await loadDB(); renderEmployeeProjects();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
+
+/* ---------- Edit Item — 加 Install Date ---------- */
+
 function empShowEditItem(pid) {
     var proj = DB.projects.find(function(p) { return p.id === pid; });
     if (!proj) return;
     var cd = getProjectCountdown(proj);
-    var cdHtml = '—';
+    var cdHtml = '\u2014';
     if (cd !== null) {
         if (cd > 30) cdHtml = '<span style="color:var(--ok)">' + cd + ' days left</span>';
         else if (cd > 7) cdHtml = '<span style="color:var(--warning)">' + cd + ' days left</span>';
@@ -2290,6 +2639,7 @@ function empShowEditItem(pid) {
             '<div class="field"><label>Customer</label><input class="input" id="emp-inp-customer-edit" value="' + esc(proj.customer || '') + '"></div>' +
             '<div class="field"><label>Start Date</label><input class="input" id="emp-inp-item-start-edit" type="date" value="' + (proj.startDate || '') + '"></div>' +
             '<div class="field"><label>End Date</label><input class="input" id="emp-inp-item-end-edit" type="date" value="' + (proj.endDate || '') + '"></div>' +
+            '<div class="field"><label>Install Date</label><input class="input" id="emp-inp-item-install-edit" type="date" value="' + (proj.installDate || '') + '"></div>' +
             '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase">Countdown</span><span style="font-size:.9rem">' + cdHtml + '</span></div>' +
         '</div>' +
         '<p class="auth-error" id="emp-item-error"></p>' +
@@ -2304,12 +2654,13 @@ async function empDoEditItem(pid) {
     var customerName = document.getElementById('emp-inp-customer-edit').value.trim();
     var startDate = document.getElementById('emp-inp-item-start-edit').value || null;
     var endDate = document.getElementById('emp-inp-item-end-edit').value || null;
+    var installDate = document.getElementById('emp-inp-item-install-edit').value || null;
     if (!name) { errEl.textContent = 'ID / Name is required'; return; }
     try {
         await api('/projects/' + pid, { method: 'PUT', body: {
             name: name, categoryId: proj ? proj.categoryId : null,
             startDate: startDate, endDate: endDate,
-            customer: customerName || null
+            customer: customerName || null, installDate: installDate
         }});
         hideModal(); await loadDB(); renderEmployeeProjects();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
@@ -2430,11 +2781,25 @@ function renderScopeItemsTable(scopeId) {
     var sp = empScopePages[scopeId];
     if (!sp) return;
     var isPic = sp.isPic;
-    var query = empScopeSearch[scopeId] || '';
+    var query = (empScopeSearch[scopeId] || '').toLowerCase();
 
-    var data = query
-        ? sp.data.filter(function(r) { return r.name.toLowerCase().indexOf(query) !== -1; })
-        : sp.data;
+    var data = sp.data;
+    if (query) {
+        data = data.filter(function(r) {
+            var haystack = [
+                r.name,
+                r.customer,
+                r.startDateRaw,
+                r.endDateRaw,
+                r.installDateRaw,
+                r.startDateFmt,
+                r.endDateFmt,
+                r.installDateFmt,
+                r.team
+            ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
+            return haystack.indexOf(query) !== -1;
+        });
+    }
 
     var totalPages = Math.ceil(data.length / sp.pageSize) || 1;
     if (sp.page > totalPages) sp.page = totalPages;
@@ -2445,7 +2810,7 @@ function renderScopeItemsTable(scopeId) {
     var actionsCol = isPic ? '<th style="width:80px">Actions</th>' : '';
     var rows = '';
     if (data.length === 0) {
-        var colCount = isPic ? 6 : 5;
+        var colCount = isPic ? 9 : 8;
         rows = '<tr><td colspan="' + colCount + '" style="text-align:center;color:var(--main-text3);padding:30px">' +
             (query ? 'No items matching "' + esc(query) + '"' : 'No items. ' + (isPic ? 'Click "+ Add Item" to create one.' : '')) +
             '</td></tr>';
@@ -2459,8 +2824,11 @@ function renderScopeItemsTable(scopeId) {
                 '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
                 '<td><div style="font-family:var(--font-d);font-size:1rem">' + r.name + '</div></td>' +
                 '<td>' + r.customer + '</td>' +
-                '<td style="font-family:var(--font-m);font-size:.85rem">' + r.timeline + '</td>' +
+                '<td style="font-family:var(--font-m);font-size:.85rem">' + (r.startDateFmt || '\u2014') + '</td>' +
+                '<td style="font-family:var(--font-m);font-size:.85rem">' + (r.endDateFmt || '\u2014') + '</td>' +
+                '<td style="font-family:var(--font-m);font-size:.85rem">' + (r.installDateFmt || '\u2014') + '</td>' +
                 '<td>' + r.cdHtml + '</td>' +
+                '<td style="font-size:.85rem">' + r.team + '</td>' +
                 actionCell +
             '</tr>';
         }).join('');
@@ -2497,7 +2865,17 @@ function renderScopeItemsTable(scopeId) {
 
     document.getElementById('scope-items-table-' + scopeId).innerHTML =
         '<div class="table-wrap"><table>' +
-            '<thead><tr><th style="width:50px">No</th><th>Work Category Id/Name</th><th>Customer</th><th>Timeline</th><th>Countdown</th>' + actionsCol + '</tr></thead>' +
+            '<thead><tr>' +
+                '<th style="width:50px">No</th>' +
+                '<th>ID/Name</th>' +
+                '<th>Customer</th>' +
+                '<th style="width:100px">Start Date</th>' +
+                '<th style="width:100px">End Date</th>' +
+                '<th style="width:100px">Install Date</th>' +
+                '<th>Countdown</th>' +
+                '<th>Team</th>' +
+                actionsCol +
+            '</tr></thead>' +
             '<tbody>' + rows + '</tbody>' +
         '</table></div>' + paginationHtml;
 }
@@ -2523,17 +2901,17 @@ function changeScopeItemsPageSize(scopeId, size) {
 
 
 /* ==========================================================
-   SECTION 12: EMPLOYEE — ATTENDANCE TIME ENTRIES (filter by scope → item + date + pagination)
+   SECTION 12: EMPLOYEE — ATTENDANCE TIME ENTRIES
    ========================================================== */
 
-let empAttCurrentPage = 1;
-let empAttPageSize = 10;
-let empAttFilteredData = [];
+var empAttCurrentPage = 1;
+var empAttPageSize = 10;
+var empAttFilteredData = [];
 
 function getEmployeeProjects(memberId) {
     return DB.projectAssignments
-        .filter(pa => pa.memberId === memberId)
-        .map(pa => DB.projects.find(p => p.id === pa.projectId))
+        .filter(function(pa) { return pa.memberId === memberId; })
+        .map(function(pa) { return DB.projects.find(function(p) { return p.id === pa.projectId; }); })
         .filter(Boolean);
 }
 
@@ -2557,184 +2935,180 @@ function getEmployeeVisibleProjects(member, extraProjectId) {
     });
 }
 
+
+/* ---------- render ---------- */
+
 function renderEmployeeAttendance() {
     if (!currentUser || !currentUser.memberId) return;
-    const member = DB.members.find(m => m.id === currentUser.memberId);
+    var member = DB.members.find(function(m) { return m.id === currentUser.memberId; });
     if (!member) return;
 
     empAttCurrentPage = 1;
     empAttPageSize = 10;
 
-    const myProjects = getEmployeeProjects(member.id);
-
-    // Build multi-select options from my projects
-    const myScopeIds = [...new Set(myProjects.map(p => p.categoryId).filter(Boolean))];
-    const myScopes = DB.scopes.filter(s => myScopeIds.includes(s.id));
-    const scopeMsOpts = myScopes.map(s => ({ value: s.id, label: s.name }));
-    const projMsOpts = myProjects.map(p => ({ value: p.id, label: p.name }));
-
-    const today = todayStr();
-    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const defaultFrom = thirtyDaysAgo.toISOString().slice(0, 10);
-
-    const myEntries = DB.attendance.filter(a => a.memberId === member.id);
-    const todayEntries = myEntries.filter(a => a.date === today);
-
-    const todayMs = todayEntries.reduce((s, r) => {
-        if (r.clockIn && r.clockOut) return s + (new Date(r.clockOut) - new Date(r.clockIn));
-        return s;
-    }, 0);
-
-    const weekStart = new Date();
-    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-    const weekStartStr = weekStart.toISOString().slice(0, 10);
-    const weekEntries = myEntries.filter(a => a.date >= weekStartStr);
-    const weekMs = weekEntries.reduce((s, r) => {
-        if (r.clockIn && r.clockOut) return s + (new Date(r.clockOut) - new Date(r.clockIn));
-        return s;
-    }, 0);
-
-    const todayCost = todayEntries.reduce((s, r) => {
-        if (r.clockIn && r.clockOut) { const c = getEntryCost(r.memberId, new Date(r.clockOut) - new Date(r.clockIn)); return s + (c || 0); }
-        return s;
-    }, 0);
-
-    const projectInfo = myProjects.length > 0
-        ? myProjects.map(p => {
-            const scope = p.categoryId ? DB.scopes.find(s => s.id === p.categoryId) : null;
-            const label = scope ? scope.name + ' → ' + p.name : p.name;
-            return '<span class="badge badge-employee" style="margin:2px">' + esc(label) + '</span>';
-          }).join(' ')
-        : '<span style="color:var(--main-text3)">Not assigned to any item</span>';
-
-    document.getElementById('emp-attendance').innerHTML = `
-    <div class="app-header"><h2>My Attendance</h2><div class="header-sub">Log and track your work hours</div></div>
-    <div class="app-body" style="max-width:none">
-
-    <!--*********************************************
-      <div class="emp-card" style="text-align:left;padding:28px 32px">
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
-          <div class="emp-name" style="margin-bottom:0;font-size:1.3rem">${esc(member.name)}</div>
-          <span style="color:var(--main-text3);font-size:.85rem">${esc(getPositionName(member.positionId))} | ${esc(getDeptName(member.departmentId))}</span>
-        </div>
-        <div style="font-size:.85rem;color:var(--main-text2)">My Items: ${projectInfo}</div>
-      </div>
-      
-
-      <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
-        <div class="stat-card"><div class="stat-label">Today</div><div class="stat-value" style="font-size:1.2rem">${formatDuration(todayMs)}</div></div>
-        <div class="stat-card"><div class="stat-label">Today Cost</div><div class="stat-value" style="font-size:1.2rem">${fmtCost(todayCost)}</div></div>
-        <div class="stat-card"><div class="stat-label">This Week</div><div class="stat-value" style="font-size:1.2rem">${formatDuration(weekMs)}</div></div>
-        <div class="stat-card"><div class="stat-label">Entries</div><div class="stat-value" style="font-size:1.2rem">${myEntries.length}</div></div>
-        <div class="stat-card"><div class="stat-label">Hourly Rate</div><div class="stat-value" style="font-size:1.1rem">${fmtHourlyRate(member)}</div></div>
-      </div>
-    *************************************************-->
-
-      <!-- Filter bar -->
-      <div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-          <span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span>
-        </div>
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-          <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label>
-            <input type="date" class="input" id="emp-att-from" value="${defaultFrom}" style="width:145px;padding:8px 10px;font-size:.82rem">
-          </div>
-          <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label>
-            <input type="date" class="input" id="emp-att-to" value="${today}" style="width:145px;padding:8px 10px;font-size:.82rem">
-          </div>
-          <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Category</label>
-            <div style="min-width:140px">${msGenerate('emp-ms-scope', scopeMsOpts, 'All Categories')}</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">ID/Name</label>
-            <div style="min-width:160px">${msGenerate('emp-ms-item', projMsOpts, 'All ID/Name')}</div>
-          </div>
-          <div style="display:flex;gap:8px;margin-left:auto">
-            <button class="btn btn-accent btn-sm" onclick="applyEmpAttendanceFilter()">Search</button>
-            <button class="btn btn-ghost btn-sm" onclick="resetEmpAttendanceFilter()">Reset</button>
-            <button class="btn btn-blue btn-sm" onclick="exportEmpAttendanceCSV()">&#128196; Export CSV</button>
-          </div>
-        </div>
-      </div>
-
-      <div id="emp-att-stats-area"></div>
-      <div id="emp-att-project-summary"></div>
-      <div class="section-head time-entry-head">
-        <h2>Time Entries</h2>
-        <button class="btn btn-green" onclick="showAddTimeEntry()">+ Add Attendance</button>
-      </div>
-      <div id="emp-att-table-area"></div>
-    </div>`;
-
-    /* When Scope selection changes, rebuild Item options */
-    msOnChange('emp-ms-scope', function(selectedScopeIds) {
-        var filtered = selectedScopeIds.length > 0
-            ? myProjects.filter(function(p) { return selectedScopeIds.indexOf(p.categoryId) !== -1; })
-            : myProjects;
-        msRebuild('emp-ms-item', filtered.map(function(p) { return { value: p.id, label: p.name }; }), true);
+    // Filter dropdown: 只显示有 attendance 记录的
+    var myEntries = DB.attendance.filter(function(a) { return a.memberId === member.id; });
+    var myProjectIds = [];
+    myEntries.forEach(function(a) {
+        if (a.projectId && myProjectIds.indexOf(a.projectId) === -1) myProjectIds.push(a.projectId);
     });
+    var myProjects = DB.projects.filter(function(p) { return myProjectIds.indexOf(p.id) !== -1; });
+
+    var myScopeIds = [];
+    myProjects.forEach(function(p) {
+        if (p.categoryId && myScopeIds.indexOf(p.categoryId) === -1) myScopeIds.push(p.categoryId);
+    });
+    var myScopes = DB.scopes.filter(function(s) { return myScopeIds.indexOf(s.id) !== -1; });
+    var scopeMsOpts = myScopes.map(function(s) { return { value: s.id, label: s.name }; });
+
+    var seenOther = false;
+    var projMsOpts = [];
+    myProjects.sort(function(a, b) {
+        var ao = a.name.toLowerCase() === 'other' ? 1 : 0;
+        var bo = b.name.toLowerCase() === 'other' ? 1 : 0;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name);
+    });
+    myProjects.forEach(function(p) {
+        if (p.name.toLowerCase() === 'other') {
+            if (!seenOther) { seenOther = true; projMsOpts.push({ value: 0, label: 'Other' }); }
+        } else {
+            projMsOpts.push({ value: p.id, label: p.name });
+        }
+    });
+
+    var today = todayStr();
+    var thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    var defaultFrom = thirtyDaysAgo.toISOString().slice(0, 10);
+
+    var todayEntries = myEntries.filter(function(a) { return a.date === today; });
+    var todayMs = todayEntries.reduce(function(s, r) {
+        return r.clockIn && r.clockOut ? s + (new Date(r.clockOut) - new Date(r.clockIn)) : s;
+    }, 0);
+    var weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    var weekStartStr = weekStart.toISOString().slice(0, 10);
+    var weekMs = myEntries.filter(function(a) { return a.date >= weekStartStr; }).reduce(function(s, r) {
+        return r.clockIn && r.clockOut ? s + (new Date(r.clockOut) - new Date(r.clockIn)) : s;
+    }, 0);
+    var todayCost = todayEntries.reduce(function(s, r) {
+        if (r.clockIn && r.clockOut) { var c = getEntryCost(r.memberId, new Date(r.clockOut) - new Date(r.clockIn)); return s + (c || 0); }
+        return s;
+    }, 0);
+
+    var view = document.getElementById('emp-attendance');
+    view.innerHTML =
+        '<div class="app-header"><h2>My Attendance</h2><div class="header-sub">Log and track your work hours</div></div>' +
+        '<div class="app-body" style="max-width:none">' +
+            '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>' +
+                '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="date" class="input" id="emp-att-from" value="' + defaultFrom + '" onchange="applyEmpAttendanceFilter()" style="width:145px;padding:8px 10px;font-size:.82rem"></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="emp-att-to" value="' + today + '" onchange="applyEmpAttendanceFilter()" style="width:145px;padding:8px 10px;font-size:.82rem"></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Category</label><div style="min-width:140px" id="ssm-emp-scope"></div></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">ID/Name</label><div style="min-width:160px" id="ssm-emp-item"></div></div>' +
+                    '<div style="display:flex;gap:8px;margin-left:auto">' +
+                        '<button class="btn btn-ghost btn-sm" onclick="resetEmpAttendanceFilter()">Reset</button>' +
+                        '<button class="btn btn-blue btn-sm" onclick="exportEmpAttendanceCSV()">&#128196; Export CSV</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+            '<div id="emp-att-stats-area"></div>' +
+            '<div id="emp-att-project-summary"></div>' +
+            '<div class="section-head time-entry-head"><h2>Time Entries</h2><button class="btn btn-green" onclick="showAddTimeEntry()">+ Add Attendance</button></div>' +
+            '<div id="emp-att-table-area"></div>' +
+        '</div>';
+
+    ssmCreate('ssm-emp-scope', scopeMsOpts, 'All Categories');
+    ssmCreate('ssm-emp-item', projMsOpts, 'All ID/Name');
+
+    ssmOnChange('ssm-emp-scope', function(selectedScopeIds) {
+        var numIds = selectedScopeIds.map(function(v) { return parseInt(v); });
+        var filtered = numIds.length > 0
+            ? myProjects.filter(function(p) { return numIds.indexOf(p.categoryId) !== -1; })
+            : myProjects;
+        var seenOther2 = false;
+        var opts = [];
+        filtered.forEach(function(p) {
+            if (p.name.toLowerCase() === 'other') {
+                if (!seenOther2) { seenOther2 = true; opts.push({ value: 0, label: 'Other' }); }
+            } else {
+                opts.push({ value: p.id, label: p.name });
+            }
+        });
+        ssmUpdate('ssm-emp-item', opts, true);
+        applyEmpAttendanceFilter();
+    });
+
+    ssmOnChange('ssm-emp-item', function() { applyEmpAttendanceFilter(); });
 
     applyEmpAttendanceFilter();
 }
 
-
 function resetEmpAttendanceFilter() {
     var today = todayStr();
-    var thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    document.getElementById('emp-att-from').value = thirtyDaysAgo.toISOString().slice(0, 10);
+    var d30 = new Date(); d30.setDate(d30.getDate() - 30);
+    document.getElementById('emp-att-from').value = d30.toISOString().slice(0, 10);
     document.getElementById('emp-att-to').value = today;
+    ssmClear('ssm-emp-scope');
 
-    /* Clear multi-selects */
-    msClear('emp-ms-scope');
+    // 从 attendance 记录里提取有记录的项目
+    var myEntries = DB.attendance.filter(function(a) { return a.memberId === currentUser.memberId; });
+    var myProjectIds = [];
+    myEntries.forEach(function(a) {
+        if (a.projectId && myProjectIds.indexOf(a.projectId) === -1) myProjectIds.push(a.projectId);
+    });
+    var myProjects = DB.projects.filter(function(p) { return myProjectIds.indexOf(p.id) !== -1; });
 
-    /* Reset Item to show all my projects */
-    var myProjects = getEmployeeProjects(currentUser.memberId);
-    msRebuild('emp-ms-item', myProjects.map(function(p) { return { value: p.id, label: p.name }; }), false);
-
+    myProjects.sort(function(a, b) {
+        var ao = a.name.toLowerCase() === 'other' ? 1 : 0;
+        var bo = b.name.toLowerCase() === 'other' ? 1 : 0;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name);
+    });
+    var seenOther = false;
+    var opts = [];
+    myProjects.forEach(function(p) {
+        if (p.name.toLowerCase() === 'other') {
+            if (!seenOther) { seenOther = true; opts.push({ value: 0, label: 'Other' }); }
+        } else {
+            opts.push({ value: p.id, label: p.name });
+        }
+    });
+    ssmUpdate('ssm-emp-item', opts, false);
     empAttCurrentPage = 1;
     applyEmpAttendanceFilter();
 }
 
-
 function applyEmpAttendanceFilter() {
     if (!currentUser || !currentUser.memberId) return;
-    var member = DB.members.find(m => m.id === currentUser.memberId);
+    var member = DB.members.find(function(m) { return m.id === currentUser.memberId; });
     if (!member) return;
-
     var fromDate = document.getElementById('emp-att-from').value;
     var toDate = document.getElementById('emp-att-to').value;
-    var scopeIds = msGetValues('emp-ms-scope');
-    var itemIds = msGetValues('emp-ms-item');
+    var scopeIds = ssmGetValues('ssm-emp-scope').map(function(v) { return parseInt(v); });
+    var itemIds = ssmGetValues('ssm-emp-item').map(function(v) { return parseInt(v); });
     if (!fromDate || !toDate) return;
 
-    var filtered = DB.attendance.filter(a => a.memberId === member.id && a.date >= fromDate && a.date <= toDate);
-
-    /* Filter by selected scope(s) */
+    var filtered = DB.attendance.filter(function(a) { return a.memberId === member.id && a.date >= fromDate && a.date <= toDate; });
     if (scopeIds.length > 0) {
-        var scopeItemIds = DB.projects.filter(p => scopeIds.indexOf(p.categoryId) !== -1).map(p => p.id);
-        filtered = filtered.filter(a => scopeItemIds.indexOf(a.projectId) !== -1);
+        var sids = DB.projects.filter(function(p) { return scopeIds.indexOf(p.categoryId) !== -1; }).map(function(p) { return p.id; });
+        filtered = filtered.filter(function(a) { return sids.indexOf(a.projectId) !== -1; });
     }
-
-    /* Filter by selected item(s) */
     if (itemIds.length > 0) {
-        filtered = filtered.filter(a => itemIds.indexOf(a.projectId) !== -1);
+        var expandedIds = expandOtherItemIds(itemIds);
+        filtered = filtered.filter(function(a) { return expandedIds.indexOf(a.projectId) !== -1; });
     }
-
-    filtered = filtered.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+    filtered.sort(function(a, b) { return b.date.localeCompare(a.date) || b.id - a.id; });
     empAttFilteredData = filtered;
 
-    // Stats for filtered range
-    const totalMs = filtered.reduce((s, r) => {
-        if (r.clockIn && r.clockOut) return s + (new Date(r.clockOut) - new Date(r.clockIn));
-        return s;
-    }, 0);
-    const totalCost = filtered.reduce((s, r) => {
-        if (r.clockIn && r.clockOut) { const c = getEntryCost(r.memberId, new Date(r.clockOut) - new Date(r.clockIn)); return s + (c || 0); }
-        return s;
-    }, 0);
+    var totalMs = 0, totalCost = 0;
+    filtered.forEach(function(r) {
+        if (r.clockIn && r.clockOut) {
+            var ms = new Date(r.clockOut) - new Date(r.clockIn);
+            totalMs += ms;
+            totalCost += (getEntryCost(r.memberId, ms) || 0);
+        }
+    });
 
     document.getElementById('emp-att-stats-area').innerHTML =
         '<div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:16px">' +
@@ -2743,53 +3117,47 @@ function applyEmpAttendanceFilter() {
             '<div class="stat-card"><div class="stat-label">Filtered Cost</div><div class="stat-value" style="font-size:1.2rem">' + fmtCost(totalCost) + '</div></div>' +
         '</div>';
 
-    
-
-    // Clamp page
-    const totalPages = Math.ceil(filtered.length / empAttPageSize) || 1;
-    if (empAttCurrentPage > totalPages) empAttCurrentPage = totalPages;
+    var tp = Math.ceil(filtered.length / empAttPageSize) || 1;
+    if (empAttCurrentPage > tp) empAttCurrentPage = tp;
     if (empAttCurrentPage < 1) empAttCurrentPage = 1;
-
     renderEmpAttendancePage();
 }
 
 
-function renderEmpAttendancePage() {
-    const filtered = empAttFilteredData;
-    const totalPages = Math.ceil(filtered.length / empAttPageSize) || 1;
-    const startIdx = (empAttCurrentPage - 1) * empAttPageSize;
-    const endIdx = startIdx + empAttPageSize;
-    const pageData = filtered.slice(startIdx, endIdx);
+/* ---------- table + pagination ---------- */
 
-    let rows = '';
-    if (filtered.length === 0) {
+function renderEmpAttendancePage() {
+    var filtered = empAttFilteredData;
+    var totalPages = Math.ceil(filtered.length / empAttPageSize) || 1;
+    var startIdx = (empAttCurrentPage - 1) * empAttPageSize;
+    var pageData = filtered.slice(startIdx, startIdx + empAttPageSize);
+
+    var rows = '';
+    if (!filtered.length) {
         rows = '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No time entries found</td></tr>';
     } else {
-        rows = pageData.map((r, idx) => {
-            var proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
-            var scope = proj && proj.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
-            var dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '—';
-            var startParts = r.clockIn ? r.clockIn.split('T') : [];
-            var endParts = r.clockOut ? r.clockOut.split('T') : [];
-            var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '—';
-            var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '—';
-            var subScopeName = r.subScopeId ? getSubScopeName(r.subScopeId) : '';
-            var itemDisplay = '—';
-            if (proj) {
-                itemDisplay = scope ? esc(scope.name) + ' &rarr; ' + esc(proj.name) : esc(proj.name);
-            }
+        rows = pageData.map(function(r, idx) {
+            var proj = r.projectId ? DB.projects.find(function(p) { return p.id === r.projectId; }) : null;
+            var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
+            var dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '\u2014';
+            var st = r.clockIn ? r.clockIn.split('T') : [];
+            var et = r.clockOut ? r.clockOut.split('T') : [];
+            var sTime = st.length === 2 ? st[1].substring(0, 5) : '\u2014';
+            var eTime = et.length === 2 ? et[1].substring(0, 5) : '\u2014';
+            var itemDisp = '\u2014';
+            if (proj) itemDisp = scope ? esc(scope.name) + ' &rarr; ' + esc(proj.name) : esc(proj.name);
             var wp = r.work_plan_id ? DB.worklist.find(function(w) { return w.id === r.work_plan_id; }) : null;
             var wd = r.work_done_id ? DB.worklist.find(function(w) { return w.id === r.work_done_id; }) : null;
 
             return '<tr>' +
                 '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
-                '<td style="font-family:var(--font-m)">' + r.date + '</td>' +
-                '<td>' + itemDisplay + '</td>' +
-                '<td>' + (wp ? esc(wp.title) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
-                '<td>' + (wd ? esc(wd.title) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
-                '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.description || '') + '">' + (r.description ? esc(r.description) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
-                '<td style="font-family:var(--font-m)">' + startTime + '</td>' +
-                '<td style="font-family:var(--font-m)">' + endTime + '</td>' +
+                '<td style="font-family:var(--font-m)">' + formatDateDMY(r.date) + '</td>' +
+                '<td>' + itemDisp + '</td>' +
+                '<td>' + (wp ? esc(wp.title) : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
+                '<td>' + (wd ? esc(wd.title) : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
+                '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.description || '') + '">' + (r.description ? esc(r.description) : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
+                '<td style="font-family:var(--font-m)">' + sTime + '</td>' +
+                '<td style="font-family:var(--font-m)">' + eTime + '</td>' +
                 '<td style="text-align:right;font-family:var(--font-m)">' + dur + '</td>' +
                 '<td><div class="actions-cell">' +
                     '<button class="btn-icon" onclick="showEditTimeEntry(' + r.id + ')" title="Edit">&#9998;</button>' +
@@ -2798,24 +3166,21 @@ function renderEmpAttendancePage() {
         }).join('');
     }
 
-    let paginationHtml = '';
+    var pgHtml = '';
     if (filtered.length > 0) {
-        const showFrom = startIdx + 1;
-        const showTo = Math.min(endIdx, filtered.length);
-        let pageButtons = '';
-        const maxVisible = 5;
-        let startPage = Math.max(1, empAttCurrentPage - Math.floor(maxVisible / 2));
-        let endPage = Math.min(totalPages, startPage + maxVisible - 1);
-        if (endPage - startPage < maxVisible - 1) startPage = Math.max(1, endPage - maxVisible + 1);
-        pageButtons += '<button onclick="goEmpAttPage(1)" ' + (empAttCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
-        pageButtons += '<button onclick="goEmpAttPage(' + (empAttCurrentPage - 1) + ')" ' + (empAttCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
-        for (let p = startPage; p <= endPage; p++) {
-            pageButtons += '<button onclick="goEmpAttPage(' + p + ')" class="' + (p === empAttCurrentPage ? 'active' : '') + '">' + p + '</button>';
-        }
-        pageButtons += '<button onclick="goEmpAttPage(' + (empAttCurrentPage + 1) + ')" ' + (empAttCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
-        pageButtons += '<button onclick="goEmpAttPage(' + totalPages + ')" ' + (empAttCurrentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
-        paginationHtml = '<div class="pagination">' +
-            '<div class="pagination-info">Showing ' + showFrom + ' to ' + showTo + ' of ' + filtered.length + ' entries</div>' +
+        var showTo = Math.min(startIdx + empAttPageSize, filtered.length);
+        var btns = '';
+        var maxV = 5;
+        var sp = Math.max(1, empAttCurrentPage - Math.floor(maxV / 2));
+        var ep = Math.min(totalPages, sp + maxV - 1);
+        if (ep - sp < maxV - 1) sp = Math.max(1, ep - maxV + 1);
+        btns += '<button onclick="goEmpAttPage(1)" ' + (empAttCurrentPage === 1 ? 'disabled' : '') + '>&laquo;</button>';
+        btns += '<button onclick="goEmpAttPage(' + (empAttCurrentPage - 1) + ')" ' + (empAttCurrentPage === 1 ? 'disabled' : '') + '>&lsaquo;</button>';
+        for (var p = sp; p <= ep; p++) btns += '<button onclick="goEmpAttPage(' + p + ')" class="' + (p === empAttCurrentPage ? 'active' : '') + '">' + p + '</button>';
+        btns += '<button onclick="goEmpAttPage(' + (empAttCurrentPage + 1) + ')" ' + (empAttCurrentPage === totalPages ? 'disabled' : '') + '>&rsaquo;</button>';
+        btns += '<button onclick="goEmpAttPage(' + totalPages + ')" ' + (empAttCurrentPage === totalPages ? 'disabled' : '') + '>&raquo;</button>';
+        pgHtml = '<div class="pagination">' +
+            '<div class="pagination-info">Showing ' + (startIdx + 1) + ' to ' + showTo + ' of ' + filtered.length + ' entries</div>' +
             '<div style="display:flex;align-items:center;gap:20px">' +
                 '<div class="pagination-size"><label>Show</label>' +
                     '<select onchange="changeEmpAttPageSize(this.value)">' +
@@ -2825,26 +3190,19 @@ function renderEmpAttendancePage() {
                         '<option value="50"' + (empAttPageSize === 50 ? ' selected' : '') + '>50</option>' +
                         '<option value="100"' + (empAttPageSize === 100 ? ' selected' : '') + '>100</option>' +
                     '</select></div>' +
-                '<div class="pagination-controls">' + pageButtons + '</div>' +
+                '<div class="pagination-controls">' + btns + '</div>' +
             '</div></div>';
     }
 
-    var tableArea = document.getElementById('emp-att-table-area');
-    tableArea.innerHTML =
-        '<div class="table-wrap">' +
-            '<table><thead><tr>' +
-                '<th style="width:50px">No</th><th>Date</th><th>Category &rarr; ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th>' +
-            '</tr></thead><tbody>' + rows + '</tbody></table>' +
-        '</div>' +
-        paginationHtml;
+    document.getElementById('emp-att-table-area').innerHTML =
+        '<div class="table-wrap"><table><thead><tr>' +
+            '<th style="width:50px">No</th><th>Date</th><th>Category &rarr; ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>' + pgHtml;
 }
 
-
 function goEmpAttPage(page) {
-    const totalPages = Math.ceil(empAttFilteredData.length / empAttPageSize) || 1;
-    if (page < 1) page = 1;
-    if (page > totalPages) page = totalPages;
-    empAttCurrentPage = page;
+    var tp = Math.ceil(empAttFilteredData.length / empAttPageSize) || 1;
+    empAttCurrentPage = Math.max(1, Math.min(page, tp));
     renderEmpAttendancePage();
 }
 
@@ -2854,304 +3212,272 @@ function changeEmpAttPageSize(size) {
     renderEmpAttendancePage();
 }
 
+
+/* ==========================================================
+   ADD / EDIT — 用 ssCreate (跟 Admin 一样)
+   ========================================================== */
+
+function empSortedProjects(scopeId) {
+    var list = scopeId
+        ? DB.projects.filter(function(p) { return p.categoryId === scopeId; })
+        : DB.projects.slice();
+    list.sort(function(a, b) {
+        var ao = a.name.toLowerCase() === 'other' ? 1 : 0;
+        var bo = b.name.toLowerCase() === 'other' ? 1 : 0;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name);
+    });
+    return list;
+}
+
+function empAttScopeChanged(member) {
+    var scopeId = document.getElementById('entry-scope-filter').value;
+    var sid = scopeId ? parseInt(scopeId) : null;
+    var vis = getEmployeeVisibleProjects(member);
+    var projects = sid
+        ? vis.filter(function(p) { return p.categoryId === sid; })
+        : vis;
+    projects.sort(function(a, b) {
+        var ao = a.name.toLowerCase() === 'other' ? 1 : 0;
+        var bo = b.name.toLowerCase() === 'other' ? 1 : 0;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name);
+    });
+    ssUpdate('ss-entry-item', projects.map(function(p) { return { value: p.id, label: p.name }; }), false);
+
+    var wlFiltered = sid ? DB.worklist.filter(function(w) { return w.scopeId === sid; }) : DB.worklist;
+    var wlOpts = wlFiltered.map(function(w) { return { value: w.id, label: w.title }; });
+    ssUpdate('ss-entry-workplan', wlOpts, false);
+    ssUpdate('ss-entry-workdone', wlOpts, false);
+}
+
+function empAttScopeChangedEdit(member, extraProjectId) {
+    var scopeId = document.getElementById('entry-scope-filter').value;
+    var sid = scopeId ? parseInt(scopeId) : null;
+    var vis = getEmployeeVisibleProjects(member, extraProjectId);
+    var projects = sid
+        ? vis.filter(function(p) { return p.categoryId === sid; })
+        : vis;
+    projects.sort(function(a, b) {
+        var ao = a.name.toLowerCase() === 'other' ? 1 : 0;
+        var bo = b.name.toLowerCase() === 'other' ? 1 : 0;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name);
+    });
+    ssUpdate('ss-entry-item', projects.map(function(p) { return { value: p.id, label: p.name }; }), false);
+
+    var wlFiltered = sid ? DB.worklist.filter(function(w) { return w.scopeId === sid; }) : DB.worklist;
+    var wlOpts = wlFiltered.map(function(w) { return { value: w.id, label: w.title }; });
+    ssUpdate('ss-entry-workplan', wlOpts, false);
+    ssUpdate('ss-entry-workdone', wlOpts, false);
+}
+
 function showAddTimeEntry() {
     try {
         var member = currentUser && currentUser.memberId ? DB.members.find(function(m) { return m.id === currentUser.memberId; }) : null;
         var visibleScopes = getEmployeeVisibleScopes(member);
         var today = todayStr();
         var scopeOptions = '<option value="">-- Select Category --</option>' +
-            visibleScopes.map(function(s) {
-                return '<option value="' + s.id + '">' + esc(s.name) + '</option>';
-            }).join('');
+            visibleScopes.map(function(s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('');
 
-        showModal(`
-        <h3>Add Time Entry</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="${today}"></div><br>
-            <div class="field"><label>Category</label><select class="input" id="entry-scope-filter" onchange="entryScopeChanged()">${scopeOptions}</select></div>
-            <div class="field"><label>ID/Name</label><select class="input" id="entry-project"><option value="">-- Select Category First --</option></select></div>
-            <div style="display:none"><select class="input" id="entry-detail">${detailOpts(null)}</select></div>
-            <div class="field"><label>Work Plan</label><select class="input" id="entry-workplan"><option value="">-- Select Category First --</option></select></div>
-            <div class="field"><label>Work Done</label><select class="input" id="entry-workdone"><option value="">-- Select Category First --</option></select></div>
-            <div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="09:00"></div>
-            <div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="18:00"></div>
-        </div>
-        <div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="entry-desc" rows="2" placeholder="For Other Selected" style="resize:vertical"></textarea></div>
-        <p class="auth-error" id="entry-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddTimeEntry()">Save</button></div>`);
-        setTimeout(function() { document.getElementById('entry-scope-filter').focus(); }, 100);
-    } catch (e) {
-        alert('Error: ' + e.message);  // ← 会弹出具体报错
-    }
+        showModal(
+            '<h3>Add Time Entry</h3>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+                '<div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="' + today + '"></div><br>' +
+                '<div class="field"><label>Category</label><select class="input" id="entry-scope-filter" onchange="empAttScopeChanged(_empModalMember)">' + scopeOptions + '</select></div>' +
+                '<div class="field"><label>ID/Name</label><div id="ss-entry-item"></div></div>' +
+                '<div style="display:none"><select class="input" id="entry-detail">' + detailOpts(null) + '</select></div>' +
+                '<div class="field"><label>Work Plan</label><div id="ss-entry-workplan"></div></div>' +
+                '<div class="field"><label>Work Done</label><div id="ss-entry-workdone"></div></div>' +
+                '<div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="09:00"></div>' +
+                '<div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="18:00"></div>' +
+            '</div>' +
+            '<div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="entry-desc" rows="2" placeholder="For Other Selected" style="resize:vertical"></textarea></div>' +
+            '<p class="auth-error" id="entry-error"></p>' +
+            '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddTimeEntry()">Save</button></div>'
+        );
+
+        setTimeout(function() {
+            window._empModalMember = member;
+            ssCreate('ss-entry-item', [], '-- Select Category First --');
+            var wlOpts = DB.worklist.map(function(w) { return { value: w.id, label: w.title }; });
+            ssCreate('ss-entry-workplan', wlOpts, '-- None --');
+            ssCreate('ss-entry-workdone', wlOpts, '-- None --');
+        }, 50);
+    } catch (e) { alert('Error: ' + e.message); }
 }
 
 function showEditTimeEntry(entryId) {
     var entry = DB.attendance.find(function(a) { return a.id === entryId; });
     if (!entry) return;
 
-    var currentProj = entry.projectId ? DB.projects.find(function(p) { return p.id === entry.projectId; }) : null;
-    var currentScopeId = currentProj && currentProj.categoryId ? currentProj.categoryId : '';
+    var curProj = entry.projectId ? DB.projects.find(function(p) { return p.id === entry.projectId; }) : null;
+    var curScopeId = curProj && curProj.categoryId ? curProj.categoryId : '';
     var member = currentUser && currentUser.memberId ? DB.members.find(function(m) { return m.id === currentUser.memberId; }) : null;
-    var visibleScopes = getEmployeeVisibleScopes(member, currentScopeId);
+    var visibleScopes = getEmployeeVisibleScopes(member, curScopeId);
 
-    // 显示所有 scope
     var scopeOptions = '<option value="">-- Select Category --</option>' +
         visibleScopes.map(function(s) {
-            var sel = currentScopeId === s.id ? 'selected' : '';
-            return '<option value="' + s.id + '" ' + sel + '>' + esc(s.name) + '</option>';
+            var sel = curScopeId === s.id ? ' selected' : '';
+            return '<option value="' + s.id + '"' + sel + '>' + esc(s.name) + '</option>';
         }).join('');
 
-    // 显示该 scope 下所有 project
-    var visibleProjects = getEmployeeVisibleProjects(member, entry.projectId);
-    var scopeItems = currentScopeId
-        ? visibleProjects.filter(function(p) { return p.categoryId === currentScopeId; })
-        : visibleProjects;
-    var projectOpts = scopeItems.map(function(p) {
-        var sel = entry.projectId === p.id ? 'selected' : '';
-        return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>';
-    }).join('');
+    var st = entry.clockIn ? entry.clockIn.split('T') : [];
+    var et = entry.clockOut ? entry.clockOut.split('T') : [];
+    var sTime = st.length === 2 ? st[1].substring(0, 5) : '';
+    var eTime = et.length === 2 ? et[1].substring(0, 5) : '';
 
-    var startParts = entry.clockIn ? entry.clockIn.split('T') : [];
-    var endParts = entry.clockOut ? entry.clockOut.split('T') : [];
-    var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
-    var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
-
-    showModal(`
-    <h3>Edit Time Entry</h3>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="${entry.date}"></div><br>
-        <div class="field"><label>Category</label><select class="input" id="entry-scope-filter" onchange="entryScopeChangedEdit()">${scopeOptions}</select></div>
-        <div class="field"><label>ID/Name</label><select class="input" id="entry-project"><option value="">-- Select ID/Name --</option>${projectOpts}</select></div>
-        <div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="entry-subscope"><option value="">-- Select Category First --</option></select></div>
-        <div style="display:none"><select class="input" id="entry-detail">${detailOpts(entry.detailId)}</select></div>
-        <div class="field"><label>Work Plan</label><select class="input" id="entry-workplan"><option value="">-- Select Category First --</option></select></div>
-        <div class="field"><label>Work Done</label><select class="input" id="entry-workdone"><option value="">-- Select Category First --</option></select></div>
-        <div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="${startTime}"></div>
-        <div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="${endTime}"></div>
-    </div>
-    <div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="entry-desc" rows="2" style="resize:vertical">${esc(entry.description || '')}</textarea></div>
-    <p class="auth-error" id="entry-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditTimeEntry(${entryId})">Save</button></div>`);
+    showModal(
+        '<h3>Edit Time Entry</h3>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+            '<div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="' + entry.date + '"></div><br>' +
+            '<div class="field"><label>Category</label><select class="input" id="entry-scope-filter" onchange="empAttScopeChangedEdit(_empModalMember, _empModalExtraProjectId)">' + scopeOptions + '</select></div>' +
+            '<div class="field"><label>ID/Name</label><div id="ss-entry-item"></div></div>' +
+            '<div style="display:none"><select class="input" id="entry-detail">' + detailOpts(entry.detailId) + '</select></div>' +
+            '<div class="field"><label>Work Plan</label><div id="ss-entry-workplan"></div></div>' +
+            '<div class="field"><label>Work Done</label><div id="ss-entry-workdone"></div></div>' +
+            '<div class="field"><label>Start Time</label><input class="input" id="entry-start" type="time" value="' + sTime + '"></div>' +
+            '<div class="field"><label>End Time</label><input class="input" id="entry-end" type="time" value="' + eTime + '"></div>' +
+        '</div>' +
+        '<div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="entry-desc" rows="2" style="resize:vertical">' + esc(entry.description || '') + '</textarea></div>' +
+        '<p class="auth-error" id="entry-error"></p>' +
+        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditTimeEntry(' + entryId + ')">Save</button></div>'
+    );
 
     setTimeout(function() {
-        entryFilterWorklist();
-        if (entry.work_plan_id) {
-            var wpEl = document.getElementById('entry-workplan');
-            if (wpEl) wpEl.value = entry.work_plan_id;
+        window._empModalMember = member;
+        window._empModalExtraProjectId = entry.projectId;
+
+        var scopeItems = getEmployeeVisibleProjects(member, entry.projectId);
+        if (curScopeId) {
+            scopeItems = scopeItems.filter(function(p) { return p.categoryId === curScopeId; });
         }
-        if (entry.work_done_id) {
-            var wdEl = document.getElementById('entry-workdone');
-            if (wdEl) wdEl.value = entry.work_done_id;
-        }
+        scopeItems.sort(function(a, b) {
+            var ao = a.name.toLowerCase() === 'other' ? 1 : 0;
+            var bo = b.name.toLowerCase() === 'other' ? 1 : 0;
+            if (ao !== bo) return ao - bo;
+            return a.name.localeCompare(b.name);
+        });
+        ssCreate('ss-entry-item', scopeItems.map(function(p) { return { value: p.id, label: p.name }; }), '-- Select ID/Name --');
+        if (entry.projectId) ssSetValue('ss-entry-item', entry.projectId);
+
+        var wlFiltered = curScopeId ? DB.worklist.filter(function(w) { return w.scopeId === curScopeId; }) : DB.worklist;
+        var wlOpts = wlFiltered.map(function(w) { return { value: w.id, label: w.title }; });
+        ssCreate('ss-entry-workplan', wlOpts, '-- None --');
+        if (entry.work_plan_id) ssSetValue('ss-entry-workplan', entry.work_plan_id);
+        ssCreate('ss-entry-workdone', wlOpts, '-- None --');
+        if (entry.work_done_id) ssSetValue('ss-entry-workdone', entry.work_done_id);
     }, 50);
 }
 
-function entryScopeChanged() {
-    var scopeId = document.getElementById('entry-scope-filter').value;
-    var projSelect = document.getElementById('entry-project');
-    var member = currentUser && currentUser.memberId ? DB.members.find(function(m) { return m.id === currentUser.memberId; }) : null;
-    var visibleProjects = getEmployeeVisibleProjects(member);
 
-    var filtered = scopeId
-        ? visibleProjects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
-        : visibleProjects;
-
-    filtered.sort(function(a, b) {
-        if (a.name.toLowerCase() === 'other') return -1;
-        if (b.name.toLowerCase() === 'other') return 1;
-        return a.name.localeCompare(b.name);
-    });
-
-    projSelect.innerHTML = '<option value="">-- Select ID/Name --</option>' +
-        filtered.map(function(p) {
-            return '<option value="' + p.id + '">' + esc(p.name) + '</option>';
-        }).join('');
-
-    entryFilterWorklist();
-}
-
-function entryScopeChangedEdit() {
-    var scopeId = document.getElementById('entry-scope-filter').value;
-    var projSelect = document.getElementById('entry-project');
-    var currentProjectId = parseInt(projSelect.value || '0') || null;
-    var member = currentUser && currentUser.memberId ? DB.members.find(function(m) { return m.id === currentUser.memberId; }) : null;
-    var visibleProjects = getEmployeeVisibleProjects(member, currentProjectId);
-
-    var filtered = scopeId
-        ? visibleProjects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
-        : visibleProjects;
-
-    filtered.sort(function(a, b) {
-        if (a.name.toLowerCase() === 'other') return -1;
-        if (b.name.toLowerCase() === 'other') return 1;
-        return a.name.localeCompare(b.name);
-    });
-
-    projSelect.innerHTML = '<option value="">-- Select ID/Name --</option>' +
-        filtered.map(function(p) {
-            return '<option value="' + p.id + '">' + esc(p.name) + '</option>';
-        }).join('');
-
-    entryFilterWorklist();
-}
-
-function entryFilterWorklist() {
-    var scopeId = document.getElementById('entry-scope-filter').value;
-    var wpSelect = document.getElementById('entry-workplan');
-    var wdSelect = document.getElementById('entry-workdone');
-    if (!wpSelect || !wdSelect) return;
-    if (!DB.worklist) DB.worklist = [];  // ← 加这行
-    if (!scopeId) {
-        wpSelect.innerHTML = '<option value="">-- Select Category First --</option>';
-        wdSelect.innerHTML = '<option value="">-- Select Category First --</option>';
-        return;
-    }
-    var filtered = DB.worklist.filter(function(w) { return w.scopeId === parseInt(scopeId); });
-    var opts = '<option value="">-- None --</option>' +
-        filtered.map(function(w) {
-            return '<option value="' + w.id + '">' + esc(w.title) + '</option>';
-        }).join('');
-    wpSelect.innerHTML = opts;
-    wdSelect.innerHTML = opts;
-}
-
+/* ==========================================================
+   SAVE / DELETE
+   ========================================================== */
 
 async function doAddTimeEntry() {
     var errEl = document.getElementById('entry-error');
-    var date = document.getElementById('entry-date').value;
-    var projectId = document.getElementById('entry-project').value;
-    var subScopeEl = document.getElementById('entry-subscope');
-    var detailEl = document.getElementById('entry-detail');
-    var subScopeId = subScopeEl ? subScopeEl.value : '';
-    var detailId = detailEl ? detailEl.value : '';
-    var workPlanId = document.getElementById('entry-workplan').value;
-    var workDoneId = document.getElementById('entry-workdone').value;
-    var start = document.getElementById('entry-start').value;
-    var end = document.getElementById('entry-end').value;
-    var desc = document.getElementById('entry-desc').value.trim();
+    var date      = document.getElementById('entry-date').value;
+    var projectId  = ssGetValue('ss-entry-item');
+    var detailEl   = document.getElementById('entry-detail');
+    var detailId   = detailEl ? detailEl.value : '';
+    var wpId       = ssGetValue('ss-entry-workplan');
+    var wdId       = ssGetValue('ss-entry-workdone');
+    var start      = document.getElementById('entry-start').value;
+    var end        = document.getElementById('entry-end').value;
+    var desc       = document.getElementById('entry-desc').value.trim();
 
     errEl.textContent = '';
-    if (!date) { errEl.textContent = 'Date is required'; return; }
+    if (!date)      { errEl.textContent = 'Date is required'; return; }
     if (!projectId) { errEl.textContent = 'Please select an item'; return; }
-    if (!start) { errEl.textContent = 'Start time is required'; return; }
-    if (!end) { errEl.textContent = 'End time is required'; return; }
+    if (!start)     { errEl.textContent = 'Start time is required'; return; }
+    if (!end)       { errEl.textContent = 'End time is required'; return; }
     if (start >= end) { errEl.textContent = 'End time must be after start time'; return; }
 
     var newStart = date + 'T' + start + ':00';
-    var newEnd = date + 'T' + end + ':00';
+    var newEnd   = date + 'T' + end + ':00';
 
-    var myEntries = DB.attendance.filter(function(a) {
-        return a.memberId === currentUser.memberId && a.date === date && a.clockIn && a.clockOut;
-    });
-    var overlap = null;
-    for (var i = 0; i < myEntries.length; i++) {
-        if (newStart < myEntries[i].clockOut && newEnd > myEntries[i].clockIn) {
-            overlap = myEntries[i]; break;
-        }
-    }
-    if (overlap) {
-        var oStart = overlap.clockIn.split('T')[1].substring(0, 5);
-        var oEnd = overlap.clockOut.split('T')[1].substring(0, 5);
-        var oProj = overlap.projectId ? DB.projects.find(function(p) { return p.id === overlap.projectId; }) : null;
-        var oScope = oProj && oProj.categoryId ? DB.scopes.find(function(s) { return s.id === oProj.categoryId; }) : null;
-        var oLabel = oScope ? oScope.name + ' -> ' + oProj.name : (oProj ? oProj.name : '');
-        errEl.textContent = 'Overlaps with ' + oStart + '-' + oEnd + (oLabel ? ' (' + oLabel + ')' : '');
-        return;
-    }
+    var overlap = _checkOverlap(currentUser.memberId, date, newStart, newEnd, null);
+    if (overlap) { errEl.textContent = overlap; return; }
 
     try {
-        await api('/attendance', {
-            method: 'POST',
-            body: {
-                memberId: currentUser.memberId,
-                date: date,
-                clockIn: newStart,
-                clockOut: newEnd,
-                projectId: parseInt(projectId),
-                scopeId: null,
-                subScopeId: subScopeId ? parseInt(subScopeId) : null,
-                detailId: detailId ? parseInt(detailId) : null,
-                work_plan_id: workPlanId ? parseInt(workPlanId) : null,
-                work_done_id: workDoneId ? parseInt(workDoneId) : null,
-                description: desc
-            }
-        });
+        await api('/attendance', { method: 'POST', body: {
+            memberId: currentUser.memberId, date: date,
+            clockIn: newStart, clockOut: newEnd,
+            projectId: parseInt(projectId), scopeId: null,
+            subScopeId: null, detailId: detailId ? parseInt(detailId) : null,
+            work_plan_id: wpId ? parseInt(wpId) : null,
+            work_done_id: wdId ? parseInt(wdId) : null,
+            description: desc
+        }});
         hideModal(); await loadDB(); renderEmployeeAttendance();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
 async function doEditTimeEntry(entryId) {
     var errEl = document.getElementById('entry-error');
-    var date = document.getElementById('entry-date').value;
-    var projectId = document.getElementById('entry-project').value;
-    var subScopeEl = document.getElementById('entry-subscope');
-    var detailEl = document.getElementById('entry-detail');
-    var subScopeId = subScopeEl ? subScopeEl.value : '';
-    var detailId = detailEl ? detailEl.value : '';
-    var workPlanId = document.getElementById('entry-workplan').value;
-    var workDoneId = document.getElementById('entry-workdone').value;
-    var start = document.getElementById('entry-start').value;
-    var end = document.getElementById('entry-end').value;
-    var desc = document.getElementById('entry-desc').value.trim();
+    var date      = document.getElementById('entry-date').value;
+    var projectId  = ssGetValue('ss-entry-item');
+    var detailEl   = document.getElementById('entry-detail');
+    var detailId   = detailEl ? detailEl.value : '';
+    var wpId       = ssGetValue('ss-entry-workplan');
+    var wdId       = ssGetValue('ss-entry-workdone');
+    var start      = document.getElementById('entry-start').value;
+    var end        = document.getElementById('entry-end').value;
+    var desc       = document.getElementById('entry-desc').value.trim();
 
     errEl.textContent = '';
-    if (!date) { errEl.textContent = 'Date is required'; return; }
+    if (!date)      { errEl.textContent = 'Date is required'; return; }
     if (!projectId) { errEl.textContent = 'Please select an item'; return; }
-    if (!start) { errEl.textContent = 'Start time is required'; return; }
-    if (!end) { errEl.textContent = 'End time is required'; return; }
+    if (!start)     { errEl.textContent = 'Start time is required'; return; }
+    if (!end)       { errEl.textContent = 'End time is required'; return; }
     if (start >= end) { errEl.textContent = 'End time must be after start time'; return; }
 
     var newStart = date + 'T' + start + ':00';
-    var newEnd = date + 'T' + end + ':00';
+    var newEnd   = date + 'T' + end + ':00';
 
-    var myEntries = DB.attendance.filter(function(a) {
-        return a.memberId === currentUser.memberId && a.date === date && a.clockIn && a.clockOut && a.id !== entryId;
-    });
-    var overlap = null;
-    for (var i = 0; i < myEntries.length; i++) {
-        if (newStart < myEntries[i].clockOut && newEnd > myEntries[i].clockIn) {
-            overlap = myEntries[i]; break;
-        }
-    }
-    if (overlap) {
-        var oStart = overlap.clockIn.split('T')[1].substring(0, 5);
-        var oEnd = overlap.clockOut.split('T')[1].substring(0, 5);
-        var oProj = overlap.projectId ? DB.projects.find(function(p) { return p.id === overlap.projectId; }) : null;
-        var oScope = oProj && oProj.categoryId ? DB.scopes.find(function(s) { return s.id === oProj.categoryId; }) : null;
-        var oLabel = oScope ? oScope.name + ' -> ' + oProj.name : (oProj ? oProj.name : '');
-        errEl.textContent = 'Overlaps with ' + oStart + '-' + oEnd + (oLabel ? ' (' + oLabel + ')' : '');
-        return;
-    }
+    var overlap = _checkOverlap(currentUser.memberId, date, newStart, newEnd, entryId);
+    if (overlap) { errEl.textContent = overlap; return; }
 
     try {
-        await api('/attendance/' + entryId, {
-            method: 'PUT',
-            body: {
-                date: date,
-                clockIn: newStart,
-                clockOut: newEnd,
-                projectId: parseInt(projectId),
-                scopeId: null,
-                subScopeId: subScopeId ? parseInt(subScopeId) : null,
-                detailId: detailId ? parseInt(detailId) : null,
-                work_plan_id: workPlanId ? parseInt(workPlanId) : null,
-                work_done_id: workDoneId ? parseInt(workDoneId) : null,
-                description: desc
-            }
-        });
+        await api('/attendance/' + entryId, { method: 'PUT', body: {
+            date: date, clockIn: newStart, clockOut: newEnd,
+            projectId: parseInt(projectId), scopeId: null,
+            subScopeId: null, detailId: detailId ? parseInt(detailId) : null,
+            work_plan_id: wpId ? parseInt(wpId) : null,
+            work_done_id: wdId ? parseInt(wdId) : null,
+            description: desc
+        }});
         hideModal(); await loadDB(); renderEmployeeAttendance();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
-function confirmDeleteTimeEntry(entryId) {
-    var entry = DB.attendance.find(a => a.id === entryId);
-    if (!entry) return;
-    var proj = entry.projectId ? DB.projects.find(p => p.id === entry.projectId) : null;
-    var scope = proj && proj.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
-    var label = proj ? (scope ? scope.name + ' → ' + proj.name : proj.name) : '—';
 
+function _checkOverlap(memberId, date, newStart, newEnd, excludeId) {
+    var myEntries = DB.attendance.filter(function(a) {
+        return a.memberId === memberId && a.date === date && a.clockIn && a.clockOut && a.id !== excludeId;
+    });
+    for (var i = 0; i < myEntries.length; i++) {
+        if (newStart < myEntries[i].clockOut && newEnd > myEntries[i].clockIn) {
+            var oS = myEntries[i].clockIn.split('T')[1].substring(0, 5);
+            var oE = myEntries[i].clockOut.split('T')[1].substring(0, 5);
+            var oP = myEntries[i].projectId ? DB.projects.find(function(p) { return p.id === myEntries[i].projectId; }) : null;
+            var oSc = oP && oP.categoryId ? DB.scopes.find(function(s) { return s.id === oP.categoryId; }) : null;
+            var oL = oSc ? oSc.name + ' -> ' + oP.name : (oP ? oP.name : '');
+            return 'Overlaps with ' + oS + '-' + oE + (oL ? ' (' + oL + ')' : '');
+        }
+    }
+    return null;
+}
+
+function confirmDeleteTimeEntry(entryId) {
+    var entry = DB.attendance.find(function(a) { return a.id === entryId; });
+    if (!entry) return;
+    var proj = entry.projectId ? DB.projects.find(function(p) { return p.id === entry.projectId; }) : null;
+    var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
+    var label = proj ? (scope ? scope.name + ' \u2192 ' + proj.name : proj.name) : '\u2014';
     showModal('<h3>Delete Time Entry</h3>' +
         '<p style="color:var(--main-text2);line-height:1.6">Delete this entry?<br>' +
-        'Date: <strong style="color:var(--main-text)">' + entry.date + '</strong><br>' +
+        'Date: <strong style="color:var(--main-text)">' + formatDateDMY(entry.date) + '</strong><br>' +
         'Item: <strong style="color:var(--main-text)">' + esc(label) + '</strong></p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button>' +
         '<button class="btn btn-danger" onclick="doDeleteTimeEntry(' + entryId + ')">Delete</button></div>');
@@ -3160,60 +3486,41 @@ function confirmDeleteTimeEntry(entryId) {
 async function doDeleteTimeEntry(entryId) {
     try {
         await api('/attendance/' + entryId, { method: 'DELETE' });
-        hideModal();
-        await loadDB();
-        renderEmployeeAttendance();
-        showToast('Time entry deleted successfully');
+        hideModal(); await loadDB(); renderEmployeeAttendance(); showToast('Time entry deleted successfully');
     } catch (e) { alert('Failed: ' + e.message); }
 }
 
 function exportEmpAttendanceCSV() {
     var data = empAttFilteredData;
-    if (data.length === 0) { alert('No data to export'); return; }
-
-    var headers = ['Date', 'Category', 'ID/Name', 'Work Plan', 'Work Done', 'Start', 'End', 'Duration', 'Remark'];
+    if (!data.length) { alert('No data to export'); return; }
+    var headers = ['Date','Category','ID/Name','Work Plan','Work Done','Start','End','Duration','Remark'];
     var rows = data.map(function(r) {
         var proj = r.projectId ? DB.projects.find(function(p) { return p.id === r.projectId; }) : null;
         var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
         var dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '';
-        var startParts = r.clockIn ? r.clockIn.split('T') : [];
-        var endParts = r.clockOut ? r.clockOut.split('T') : [];
-        var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
-        var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
+        var st = r.clockIn ? r.clockIn.split('T') : [];
+        var et = r.clockOut ? r.clockOut.split('T') : [];
+        var sT = st.length === 2 ? st[1].substring(0, 5) : '';
+        var eT = et.length === 2 ? et[1].substring(0, 5) : '';
         var wp = r.work_plan_id ? DB.worklist.find(function(w) { return w.id === r.work_plan_id; }) : null;
         var wd = r.work_done_id ? DB.worklist.find(function(w) { return w.id === r.work_done_id; }) : null;
-
-        return [r.date, scope ? scope.name : '', proj ? proj.name : '', wp ? wp.title : '', wd ? wd.title : '', startTime, endTime, dur, r.description || ''];
+        return [formatDateDMY(r.date), scope ? scope.name : '', proj ? proj.name : '', wp ? wp.title : '', wd ? wd.title : '', sT, eT, dur, r.description || ''];
     });
-
     var csv = headers.join(',') + '\n';
-    rows.forEach(function(row) {
-        csv += row.map(function(cell) { return '"' + String(cell).replace(/"/g, '""') + '"'; }).join(',') + '\n';
-    });
-
+    rows.forEach(function(row) { csv += row.map(function(c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(',') + '\n'; });
     var blob = new Blob([csv], { type: 'text/csv' });
     var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
+    var a = document.createElement('a'); a.href = url;
     a.download = 'my_attendance_' + new Date().toISOString().slice(0, 10) + '.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    a.click(); URL.revokeObjectURL(url);
 }
 
 function showToast(message) {
-    var existing = document.querySelector('.toast');
-    if (existing) existing.remove();
-
-    var toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.textContent = message;
-    document.body.appendChild(toast);
-
-    setTimeout(function() { toast.classList.add('show'); }, 10);
-    setTimeout(function() {
-        toast.classList.remove('show');
-        setTimeout(function() { toast.remove(); }, 300);
-    }, 2500);
+    var old = document.querySelector('.toast'); if (old) old.remove();
+    var t = document.createElement('div'); t.className = 'toast'; t.textContent = message;
+    document.body.appendChild(t);
+    setTimeout(function() { t.classList.add('show'); }, 10);
+    setTimeout(function() { t.classList.remove('show'); setTimeout(function() { t.remove(); }, 300); }, 2500);
 }
 
 
@@ -3352,11 +3659,19 @@ var _msIds = new Set();
 function msGenerate(id, options, placeholder) {
     _msIds.add(id);
     _msState[id] = new Set();
-    _msState[id + '_opts'] = options;
+    _msState[id + '_opts'] = options.slice().sort(function(a, b) {
+        var al = a.label.toLowerCase();
+        var bl = b.label.toLowerCase();
+        var aNum = /^\d/.test(al);
+        var bNum = /^\d/.test(bl);
+        if (aNum && !bNum) return -1;
+        if (!aNum && bNum) return 1;
+        return al.localeCompare(bl, undefined, { numeric: true });
+    });
     _msState[id + '_ph'] = placeholder || 'Select...';
 
-    var itemsHtml = options.length > 0
-        ? options.map(function(o) {
+    var itemsHtml = _msState[id + '_opts'].length > 0
+        ? _msState[id + '_opts'].map(function(o) {
             return '<label class="multi-select-item" onclick="event.stopPropagation()">' +
                 '<input type="checkbox" value="' + o.value + '" ' +
                 'onchange="msOnCheck(\'' + id + '\', this.value, this.checked)">' +
@@ -3448,9 +3763,19 @@ function msGetValues(id) {
 }
 
 function msRebuild(id, options, keepSelection) {
+    var sorted = options.slice().sort(function(a, b) {
+        var al = a.label.toLowerCase();
+        var bl = b.label.toLowerCase();
+        var aNum = /^\d/.test(al);
+        var bNum = /^\d/.test(bl);
+        if (aNum && !bNum) return -1;
+        if (!aNum && bNum) return 1;
+        return al.localeCompare(bl, undefined, { numeric: true });
+    });
+
     var prev = keepSelection && _msState[id] ? new Set(_msState[id]) : new Set();
-    _msState[id + '_opts'] = options;
-    var validSet = new Set(options.map(function(o) { return String(o.value); }));
+    _msState[id + '_opts'] = sorted;
+    var validSet = new Set(sorted.map(function(o) { return String(o.value); }));
     _msState[id] = new Set(Array.from(prev).filter(function(v) { return validSet.has(v); }));
 
     var wrap = document.getElementById(id + '-wrap');
@@ -3463,8 +3788,8 @@ function msRebuild(id, options, keepSelection) {
         '<button type="button" onclick="msClear(\'' + id + '\');event.stopPropagation()">Clear</button>' +
     '</div>';
 
-    var itemsHtml = options.length > 0
-        ? options.map(function(o) {
+    var itemsHtml = sorted.length > 0
+        ? sorted.map(function(o) {
             var chk = _msState[id].has(String(o.value)) ? 'checked ' : '';
             return '<label class="multi-select-item" onclick="event.stopPropagation()">' +
                 '<input type="checkbox" value="' + o.value + '" ' + chk +
@@ -3491,70 +3816,579 @@ document.addEventListener('click', function(e) {
     });
 });
 
+/* ==========================================================
+   Searchable Select Component (Single - for modals)
+   ========================================================== */
+var _ssInstances = {};
+
+function ssCreate(containerId, options, placeholder, onChange) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    _ssInstances[containerId] = {
+        options: options.slice(),
+        selected: '',
+        placeholder: placeholder || '-- Select --',
+        onChange: onChange || null,
+        filter: '',
+        open: false
+    };
+    _ssRender(containerId);
+}
+
+function ssUpdate(containerId, options, keepSelected) {
+    var inst = _ssInstances[containerId];
+    if (!inst) return;
+    inst.options = options.slice();
+    inst.filter = '';
+    if (!keepSelected) inst.selected = '';
+    if (keepSelected && inst.selected) {
+        var found = options.find(function(o) { return String(o.value) === String(inst.selected); });
+        if (!found) inst.selected = '';
+    }
+    _ssRender(containerId);
+}
+
+function ssGetValue(containerId) {
+    var inst = _ssInstances[containerId];
+    return inst ? inst.selected : '';
+}
+
+function ssSetValue(containerId, val) {
+    var inst = _ssInstances[containerId];
+    if (!inst) return;
+    inst.selected = String(val);
+    _ssRender(containerId);
+}
+
+function ssClear(containerId) {
+    var inst = _ssInstances[containerId];
+    if (!inst) return;
+    inst.selected = '';
+    inst.filter = '';
+    _ssRender(containerId);
+}
+
+function ssGetFiltered(containerId) {
+    var inst = _ssInstances[containerId];
+    if (!inst) return [];
+    var f = inst.filter.toLowerCase();
+    if (!f) return inst.options;
+    return inst.options.filter(function(o) { return o.label.toLowerCase().indexOf(f) !== -1; });
+}
+
+function _ssRender(containerId) {
+    var inst = _ssInstances[containerId];
+    if (!inst) return;
+    var container = document.getElementById(containerId);
+    if (!container) return;
+
+    var selectedLabel = inst.placeholder;
+    if (inst.selected) {
+        var found = inst.options.find(function(o) { return String(o.value) === String(inst.selected); });
+        if (found) selectedLabel = found.label;
+    }
+
+    var filtered = ssGetFiltered(containerId);
+    var displayFilter = inst.open ? inst.filter : '';
+
+    var html =
+        '<div class="ss-wrapper" style="position:relative">' +
+            '<div class="ss-display" onclick="ssToggle(\'' + containerId + '\')" ' +
+                'style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;' +
+                'background:var(--main-input-bg,#fff);border:1px solid var(--main-border);border-radius:var(--radius,6px);' +
+                'cursor:pointer;font-size:.85rem;min-height:38px;user-select:none">' +
+                '<span style="' + (!inst.selected ? 'color:var(--main-text3)' : '') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' +
+                    esc(selectedLabel) +
+                '</span>' +
+                '<span style="margin-left:8px;color:var(--main-text3);font-size:.7rem;flex-shrink:0">' +
+                    (inst.open ? '&#9650;' : '&#9660;') +
+                '</span>' +
+            '</div>' +
+            (inst.open
+                ? '<div class="ss-dropdown" style="position:absolute;top:100%;left:0;right:0;z-index:9999;' +
+                    'background:var(--main-surface);border:1px solid var(--main-border);border-top:none;' +
+                    'border-radius:0 0 var(--radius,6px) var(--radius,6px);max-height:260px;overflow:hidden;' +
+                    'box-shadow:0 4px 12px rgba(0,0,0,.15)">' +
+                    '<div style="padding:6px 8px;border-bottom:1px solid var(--main-border)">' +
+                        '<input class="input ss-search" type="text" placeholder="Search..." ' +
+                            'value="' + esc(displayFilter) + '" ' +
+                            'oninput="ssOnFilter(\'' + containerId + '\', this.value)" ' +
+                            'onclick="event.stopPropagation()" ' +
+                            'style="width:100%;padding:6px 8px;font-size:.82rem;border:1px solid var(--main-border);' +
+                            'border-radius:4px;outline:none;background:var(--main-input-bg,#fff);color:var(--main-text)">' +
+                    '</div>' +
+                    '<div class="ss-options" style="overflow-y:auto;max-height:210px">' +
+                        (filtered.length === 0
+                            ? '<div style="padding:10px 12px;color:var(--main-text3);font-size:.82rem;text-align:center">No results found</div>'
+                            : '<div class="ss-option" data-value="" onclick="ssSelect(\'' + containerId + '\',\'\')" ' +
+                                'style="padding:8px 12px;cursor:pointer;font-size:.82rem;color:var(--main-text3);' +
+                                'border-bottom:1px solid var(--main-border);font-style:italic">' +
+                                esc(inst.placeholder) +
+                              '</div>' +
+                              filtered.map(function(o) {
+                                  var isSelected = String(o.value) === String(inst.selected);
+                                  return '<div class="ss-option" data-value="' + o.value + '" ' +
+                                      'onclick="ssSelect(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\')" ' +
+                                      'style="padding:8px 12px;cursor:pointer;font-size:.82rem;' +
+                                      (isSelected
+                                          ? 'background:var(--main-accent-bg,rgba(99,102,241,.1));color:var(--main-accent,#6366f1);font-weight:600'
+                                          : 'color:var(--main-text)') +
+                                      ';border-bottom:1px solid var(--main-border,rgba(0,0,0,.05))">' +
+                                      esc(o.label) +
+                                      '</div>';
+                              }).join('')
+                        ) +
+                    '</div>' +
+                '</div>'
+                : ''
+            ) +
+        '</div>';
+
+    container.innerHTML = html;
+
+    if (inst.open) {
+        setTimeout(function() {
+            var searchEl = container.querySelector('.ss-search');
+            if (searchEl) searchEl.focus();
+        }, 10);
+    }
+}
+
+function ssToggle(containerId) {
+    var inst = _ssInstances[containerId];
+    if (!inst) return;
+    Object.keys(_ssInstances).forEach(function(id) {
+        if (id !== containerId && _ssInstances[id].open) {
+            _ssInstances[id].open = false;
+            _ssInstances[id].filter = '';
+            _ssRender(id);
+        }
+    });
+    if (typeof _ssmInstances !== 'undefined') {
+        Object.keys(_ssmInstances).forEach(function(id) {
+            if (_ssmInstances[id].open) {
+                _ssmInstances[id].open = false;
+                _ssmInstances[id].filter = '';
+                _ssmRender(id);
+            }
+        });
+    }
+    inst.open = !inst.open;
+    inst.filter = '';
+    _ssRender(containerId);
+}
+
+function ssOnFilter(containerId, val) {
+    var inst = _ssInstances[containerId];
+    if (!inst) return;
+    inst.filter = val;
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    var optionsDiv = container.querySelector('.ss-options');
+    if (!optionsDiv) return;
+    var filtered = ssGetFiltered(containerId);
+    optionsDiv.innerHTML =
+        (filtered.length === 0
+            ? '<div style="padding:10px 12px;color:var(--main-text3);font-size:.82rem;text-align:center">No results found</div>'
+            : '<div class="ss-option" data-value="" onclick="ssSelect(\'' + containerId + '\',\'\')" ' +
+                'style="padding:8px 12px;cursor:pointer;font-size:.82rem;color:var(--main-text3);' +
+                'border-bottom:1px solid var(--main-border);font-style:italic">' +
+                esc(inst.placeholder) +
+              '</div>' +
+              filtered.map(function(o) {
+                  var isSelected = String(o.value) === String(inst.selected);
+                  return '<div class="ss-option" data-value="' + o.value + '" ' +
+                      'onclick="ssSelect(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\')" ' +
+                      'style="padding:8px 12px;cursor:pointer;font-size:.82rem;' +
+                      (isSelected
+                          ? 'background:var(--main-accent-bg,rgba(99,102,241,.1));color:var(--main-accent,#6366f1);font-weight:600'
+                          : 'color:var(--main-text)') +
+                      ';border-bottom:1px solid var(--main-border,rgba(0,0,0,.05))">' +
+                      esc(o.label) +
+                      '</div>';
+              }).join('')
+        );
+}
+
+function ssSelect(containerId, val) {
+    var inst = _ssInstances[containerId];
+    if (!inst) return;
+    inst.selected = String(val);
+    inst.open = false;
+    inst.filter = '';
+    _ssRender(containerId);
+    if (inst.onChange) inst.onChange(val);
+}
+
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.ss-wrapper') && !e.target.closest('.ssm-wrapper')) {
+        Object.keys(_ssInstances).forEach(function(id) {
+            if (_ssInstances[id].open) {
+                _ssInstances[id].open = false;
+                _ssInstances[id].filter = '';
+                _ssRender(id);
+            }
+        });
+        if (typeof _ssmInstances !== 'undefined') {
+            Object.keys(_ssmInstances).forEach(function(id) {
+                if (_ssmInstances[id].open) {
+                    _ssmInstances[id].open = false;
+                    _ssmInstances[id].filter = '';
+                    _ssmRender(id);
+                }
+            });
+        }
+    }
+});
 
 /* ==========================================================
-   SECTION 10: ADMIN — ATTENDANCE (work list(scope) → id/name(item))
+   Searchable Multi-Select Component (for filters)
+   ========================================================== */
+var _ssmInstances = {};
+
+function ssmCreate(containerId, options, placeholder) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    var sorted = options.slice().sort(function(a, b) {
+        var al = a.label.toLowerCase();
+        var bl = b.label.toLowerCase();
+        // 数字开头的排前面
+        var aNum = /^\d/.test(al);
+        var bNum = /^\d/.test(bl);
+        if (aNum && !bNum) return -1;
+        if (!aNum && bNum) return 1;
+        return al.localeCompare(bl, undefined, { numeric: true });
+    });
+    _ssmInstances[containerId] = {
+        options: sorted,
+        selected: [],
+        placeholder: placeholder || 'All',
+        filter: '',
+        open: false,
+        onChange: null
+    };
+    _ssmRender(containerId);
+}
+
+function ssmUpdate(containerId, options, keepSelected) {
+    var inst = _ssmInstances[containerId];
+    if (!inst) return;
+    var sorted = options.slice().sort(function(a, b) {
+        var al = a.label.toLowerCase();
+        var bl = b.label.toLowerCase();
+        var aNum = /^\d/.test(al);
+        var bNum = /^\d/.test(bl);
+        if (aNum && !bNum) return -1;
+        if (!aNum && bNum) return 1;
+        return al.localeCompare(bl, undefined, { numeric: true });
+    });
+    inst.options = sorted;
+    inst.filter = '';
+    if (keepSelected) {
+        var validValues = sorted.map(function(o) { return String(o.value); });
+        inst.selected = inst.selected.filter(function(v) { return validValues.indexOf(String(v)) !== -1; });
+    } else {
+        inst.selected = [];
+    }
+    _ssmRender(containerId);
+}
+
+function ssmGetValues(containerId) {
+    var inst = _ssmInstances[containerId];
+    return inst ? inst.selected.map(function(v) { return parseInt(v); }) : [];
+}
+
+function ssmClear(containerId) {
+    var inst = _ssmInstances[containerId];
+    if (!inst) return;
+    inst.selected = [];
+    inst.filter = '';
+    _ssmRender(containerId);
+    if (inst.onChange) inst.onChange([]);
+}
+
+function ssmOnChange(containerId, callback) {
+    var inst = _ssmInstances[containerId];
+    if (inst) inst.onChange = callback;
+}
+
+function _ssmGetFiltered(containerId) {
+    var inst = _ssmInstances[containerId];
+    if (!inst) return [];
+    var f = inst.filter.toLowerCase();
+    if (!f) return inst.options;
+    return inst.options.filter(function(o) { return o.label.toLowerCase().indexOf(f) !== -1; });
+}
+
+function _ssmRender(containerId) {
+    var inst = _ssmInstances[containerId];
+    if (!inst) return;
+    var container = document.getElementById(containerId);
+    if (!container) return;
+
+    var count = inst.selected.length;
+    var displayText = inst.placeholder;
+    if (count === 1) {
+        var found = inst.options.find(function(o) { return String(o.value) === String(inst.selected[0]); });
+        displayText = found ? found.label : inst.selected[0];
+    } else if (count > 1) {
+        displayText = count + ' selected';
+    }
+
+    var filtered = _ssmGetFiltered(containerId);
+
+    var html = '<div class="ssm-wrapper" style="position:relative">' +
+        '<div class="ssm-display" onclick="ssmToggle(\'' + containerId + '\')" ' +
+            'style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;' +
+            'background:var(--main-input-bg,#fff);border:1px solid var(--main-border);border-radius:6px;' +
+            'cursor:pointer;font-size:.82rem;min-height:36px;user-select:none;gap:6px">' +
+            '<span style="' + (count === 0 ? 'color:var(--main-text3)' : '') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' +
+                esc(displayText) +
+            '</span>' +
+            (count > 0
+                ? '<span onclick="event.stopPropagation();ssmClear(\'' + containerId + '\');_ssmRender(\'' + containerId + '\')" style="color:var(--main-text3);font-size:.85rem;cursor:pointer;flex-shrink:0" title="Clear">&times;</span>'
+                : '<span style="color:var(--main-text3);font-size:.7rem;flex-shrink:0">' + (inst.open ? '&#9650;' : '&#9660;') + '</span>'
+            ) +
+        '</div>';
+
+    if (inst.open) {
+        html += '<div class="ssm-dropdown" style="position:absolute;top:100%;left:0;right:0;z-index:9999;' +
+            'background:var(--main-surface);border:1px solid var(--main-border);border-top:none;' +
+            'border-radius:0 0 6px 6px;max-height:300px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.15)">';
+
+        html += '<div style="padding:6px 8px;border-bottom:1px solid var(--main-border)">' +
+            '<input class="input ssm-search" type="text" placeholder="Search..." ' +
+            'value="' + esc(inst.filter) + '" ' +
+            'oninput="ssmOnFilter(\'' + containerId + '\', this.value)" ' +
+            'onclick="event.stopPropagation()" ' +
+            'style="width:100%;padding:6px 8px;font-size:.8rem;border:1px solid var(--main-border);' +
+            'border-radius:4px;outline:none;background:var(--main-input-bg,#fff);color:var(--main-text)">' +
+            '</div>';
+
+        html += '<div style="display:flex;gap:10px;padding:5px 8px;border-bottom:1px solid var(--main-border);font-size:.75rem">' +
+            '<a href="javascript:void(0)" onclick="ssmSelectAll(\'' + containerId + '\')" style="color:var(--main-accent,#6366f1);text-decoration:none">Select All</a>' +
+            '<a href="javascript:void(0)" onclick="ssmClear(\'' + containerId + '\');_ssmRender(\'' + containerId + '\')" style="color:var(--main-text3);text-decoration:none">Clear</a>' +
+            '</div>';
+
+        html += '<div class="ssm-options" style="overflow-y:auto;max-height:200px">';
+        if (filtered.length === 0) {
+            html += '<div style="padding:10px 12px;color:var(--main-text3);font-size:.82rem;text-align:center">No results</div>';
+        } else {
+            filtered.forEach(function(o) {
+                var checked = inst.selected.indexOf(String(o.value)) !== -1;
+                html += '<label style="display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;font-size:.82rem;' +
+                    (checked ? 'background:rgba(99,102,241,.06)' : '') + ';border-bottom:1px solid rgba(0,0,0,.03)">' +
+                    '<input type="checkbox" ' + (checked ? 'checked' : '') + ' ' +
+                    'onchange="ssmToggleOption(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\',this.checked)" ' +
+                    'style="accent-color:var(--main-accent,#6366f1)">' +
+                    '<span style="color:var(--main-text)">' + esc(o.label) + '</span>' +
+                    '</label>';
+            });
+        }
+        html += '</div></div>';
+    }
+    html += '</div>';
+    container.innerHTML = html;
+
+    if (inst.open) {
+        setTimeout(function() {
+            var el = container.querySelector('.ssm-search');
+            if (el) el.focus();
+        }, 10);
+    }
+}
+
+function ssmToggle(containerId) {
+    var inst = _ssmInstances[containerId];
+    if (!inst) return;
+    Object.keys(_ssmInstances).forEach(function(id) {
+        if (id !== containerId && _ssmInstances[id].open) {
+            _ssmInstances[id].open = false;
+            _ssmInstances[id].filter = '';
+            _ssmRender(id);
+        }
+    });
+    if (typeof _ssInstances !== 'undefined') {
+        Object.keys(_ssInstances).forEach(function(id) {
+            if (_ssInstances[id] && _ssInstances[id].open) {
+                _ssInstances[id].open = false;
+                _ssInstances[id].filter = '';
+                _ssRender(id);
+            }
+        });
+    }
+    inst.open = !inst.open;
+    inst.filter = '';
+    _ssmRender(containerId);
+}
+
+function ssmOnFilter(containerId, val) {
+    var inst = _ssmInstances[containerId];
+    if (!inst) return;
+    inst.filter = val;
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    var optionsDiv = container.querySelector('.ssm-options');
+    if (!optionsDiv) return;
+    var filtered = _ssmGetFiltered(containerId);
+    if (filtered.length === 0) {
+        optionsDiv.innerHTML = '<div style="padding:10px 12px;color:var(--main-text3);font-size:.82rem;text-align:center">No results</div>';
+        return;
+    }
+    optionsDiv.innerHTML = filtered.map(function(o) {
+        var checked = inst.selected.indexOf(String(o.value)) !== -1;
+        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;font-size:.82rem;' +
+            (checked ? 'background:rgba(99,102,241,.06)' : '') + ';border-bottom:1px solid rgba(0,0,0,.03)">' +
+            '<input type="checkbox" ' + (checked ? 'checked' : '') + ' ' +
+            'onchange="ssmToggleOption(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\',this.checked)" ' +
+            'style="accent-color:var(--main-accent,#6366f1)">' +
+            '<span style="color:var(--main-text)">' + esc(o.label) + '</span>' +
+            '</label>';
+    }).join('');
+}
+
+function ssmToggleOption(containerId, val, checked) {
+    var inst = _ssmInstances[containerId];
+    if (!inst) return;
+    var strVal = String(val);
+    if (checked) {
+        if (inst.selected.indexOf(strVal) === -1) inst.selected.push(strVal);
+    } else {
+        inst.selected = inst.selected.filter(function(v) { return String(v) !== strVal; });
+    }
+    // 保存 scroll 位置
+    var container = document.getElementById(containerId);
+    var optionsDiv = container ? container.querySelector('.ssm-options') : null;
+    var scrollTop = optionsDiv ? optionsDiv.scrollTop : 0;
+    _ssmRender(containerId);
+    // 恢复 scroll 位置
+    var newContainer = document.getElementById(containerId);
+    var newOptionsDiv = newContainer ? newContainer.querySelector('.ssm-options') : null;
+    if (newOptionsDiv) newOptionsDiv.scrollTop = scrollTop;
+    if (inst.onChange) inst.onChange(inst.selected.slice());
+}
+
+function ssmSelectAll(containerId) {
+    var inst = _ssmInstances[containerId];
+    if (!inst) return;
+    var filtered = _ssmGetFiltered(containerId);
+    inst.selected = filtered.map(function(o) { return String(o.value); });
+    var container = document.getElementById(containerId);
+    var optionsDiv = container ? container.querySelector('.ssm-options') : null;
+    var scrollTop = optionsDiv ? optionsDiv.scrollTop : 0;
+    _ssmRender(containerId);
+    var newContainer = document.getElementById(containerId);
+    var newOptionsDiv = newContainer ? newContainer.querySelector('.ssm-options') : null;
+    if (newOptionsDiv) newOptionsDiv.scrollTop = scrollTop;
+    if (inst.onChange) inst.onChange(inst.selected.slice());
+}
+
+/* ==========================================================
+   SECTION 10: ADMIN — ATTENDANCE
    ========================================================== */
 
 var adminAttCurrentPage = 1;
 var adminAttPageSize = 10;
 var adminAttFilteredData = [];
 
+function buildFilterItemOpts(scopeId) {
+    var list = sortedProjects(scopeId);
+    var seenOther = false;
+    var opts = [];
+    list.forEach(function(p) {
+        if (p.name.toLowerCase() === 'other') {
+            if (!seenOther) {
+                seenOther = true;
+                opts.push({ value: 0, label: 'Other' });
+            }
+        } else {
+            opts.push({ value: p.id, label: p.name });
+        }
+    });
+    return opts;
+}
+
+function expandOtherItemIds(itemIds) {
+    var hasOther = false;
+    var realIds = [];
+    itemIds.forEach(function(id) {
+        var n = parseInt(id);
+        if (n === 0) hasOther = true;
+        else if (!isNaN(n) && realIds.indexOf(n) === -1) realIds.push(n);
+    });
+    if (hasOther) {
+        DB.projects.forEach(function(p) {
+            if (p.name.toLowerCase() === 'other' && realIds.indexOf(p.id) === -1) {
+                realIds.push(p.id);
+            }
+        });
+    }
+    return realIds;
+}
+
+function sortedMembers() {
+    var viewerIds = getViewerMemberIds();
+    return DB.members.filter(function(m) {
+        return viewerIds.indexOf(m.id) === -1;
+    }).sort(function(a, b) { return a.name.localeCompare(b.name); });
+}
+
+function sortedProjects(scopeId) {
+    var list = scopeId
+        ? DB.projects.filter(function(p) { return p.categoryId === scopeId; })
+        : DB.projects.slice();
+    list.sort(function(a, b) {
+        var ao = a.name.toLowerCase() === 'other' ? 1 : 0;
+        var bo = b.name.toLowerCase() === 'other' ? 1 : 0;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name);
+    });
+    return list;
+}
+
 function renderAdminAttendance() {
     adminAttCurrentPage = 1;
     adminAttPageSize = 10;
 
     var today = todayStr();
-    var thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    var thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     var defaultFrom = thirtyDaysAgo.toISOString().slice(0, 10);
 
-    var scopeOpts = DB.scopes.map(function(s) { return { value: s.id, label: s.name }; });
-    var empOpts = DB.members.map(function(m) { return { value: m.id, label: m.name }; });
-    var deptOpts = DB.departments.map(function(d) { return { value: d.id, label: d.name }; });
+    var viewerScopeIds = getViewerVisibleScopeIds();
+    var scopeList = viewerScopeIds !== null
+        ? DB.scopes.filter(function(s) { return viewerScopeIds.indexOf(s.id) !== -1; })
+        : DB.scopes.slice();
+    scopeList = scopeList.sort(function(a, b) { return a.name.localeCompare(b.name); });
+    var empList = getNonViewerMembers();
+    var deptList = DB.departments.slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
+
+    var scopeOpts = scopeList.map(function(s) { return { value: s.id, label: s.name }; });
+    var empOpts = empList.map(function(m) { return { value: m.id, label: m.name }; });
+    var deptOpts = deptList.map(function(d) { return { value: d.id, label: d.name }; });
 
     var view = document.getElementById('admin-attendance');
     view.innerHTML =
     '<div class="app-header"><h2>Attendance</h2><div class="header-sub">Track all employee attendance</div></div>' +
     '<div class="app-body">' +
       '<div class="stats-grid" id="att-stats"></div>' +
-
       '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">' +
           '<span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span>' +
         '</div>' +
         '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
-          '<div style="display:flex;align-items:center;gap:6px">' +
-            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label>' +
-            '<input type="date" class="input" id="att-from" value="' + defaultFrom + '" style="width:145px;padding:8px 10px;font-size:.82rem">' +
-          '</div>' +
-          '<div style="display:flex;align-items:center;gap:6px">' +
-            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label>' +
-            '<input type="date" class="input" id="att-to" value="' + today + '" style="width:145px;padding:8px 10px;font-size:.82rem">' +
-          '</div>' +
-          '<div style="display:flex;align-items:center;gap:6px">' +
-            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Department</label>' +
-            '<div style="min-width:140px">' + msGenerate('att-ms-dept', deptOpts, 'All Departments') + '</div>' +
-          '</div>' +
-          '<div style="display:flex;align-items:center;gap:6px">' +
-            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Category</label>' +
-            '<div style="min-width:140px">' + msGenerate('att-ms-scope', scopeOpts, 'All Categories') + '</div>' +
-          '</div>' +
-          '<div style="display:flex;align-items:center;gap:6px">' +
-            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">ID/Name</label>' +
-            '<div style="min-width:160px">' + msGenerate('att-ms-item', [], 'All ID/Names') + '</div>' +
-          '</div>' +
-          '<div style="display:flex;align-items:center;gap:6px">' +
-            '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label>' +
-            '<div style="min-width:150px">' + msGenerate('att-ms-emp', empOpts, 'All Employees') + '</div>' +
-          '</div>' +
+          '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="date" class="input" id="att-from" value="' + defaultFrom + '" onchange="applyAdminAttendanceFilter()" style="width:145px;padding:8px 10px;font-size:.82rem"></div>' +
+          '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="att-to" value="' + today + '" onchange="applyAdminAttendanceFilter()" style="width:145px;padding:8px 10px;font-size:.82rem"></div>' +
+          '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Department</label><div style="min-width:140px" id="ssm-att-dept"></div></div>' +
+          '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Category</label><div style="min-width:140px" id="ssm-att-scope"></div></div>' +
+          '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">ID/Name</label><div style="min-width:160px" id="ssm-att-item"></div></div>' +
+          '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label><div style="min-width:150px" id="ssm-att-emp"></div></div>' +
           '<div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">' +
-            '<button class="btn btn-accent btn-sm" onclick="applyAdminAttendanceFilter()">Search</button>' +
             '<button class="btn btn-ghost btn-sm" onclick="resetAdminAttendanceFilter()">Reset</button>' +
             '<button class="btn btn-blue btn-sm" onclick="exportAttendanceCSV()">&#128196; Export CSV</button>' +
-           '</div>' +
+          '</div>' +
         '</div>' +
       '</div>' +
-
       '<div class="section-head time-entry-head">' +
         '<h2>Time Entries</h2>' +
         '<div style="display:flex;gap:8px">' +
@@ -3564,34 +4398,55 @@ function renderAdminAttendance() {
       '<div id="admin-att-table-area"></div>' +
     '</div>';
 
-    /* Populate Item multi-select with all projects */
-    var allItemOpts = DB.projects.map(function(p) { return { value: p.id, label: p.name }; });
-    msRebuild('att-ms-item', allItemOpts, false);
+    ssmCreate('ssm-att-dept', deptOpts, 'All Departments');
+    ssmCreate('ssm-att-scope', scopeOpts, 'All Categories');
+    ssmCreate('ssm-att-item', buildFilterItemOpts(), 'All ID/Names');
+    ssmCreate('ssm-att-emp', empOpts, 'All Employees');
 
-    /* When Scope selection changes, rebuild Item options to match */
-    msOnChange('att-ms-scope', function(selectedScopeIds) {
-        var filtered = selectedScopeIds.length > 0
-            ? DB.projects.filter(function(p) { return selectedScopeIds.indexOf(p.categoryId) !== -1; })
-            : DB.projects;
-        msRebuild('att-ms-item', filtered.map(function(p) { return { value: p.id, label: p.name }; }), true);
+    ssmOnChange('ssm-att-scope', function(selectedScopeIds) {
+        var numIds = selectedScopeIds.map(function(v) { return parseInt(v); });
+        var filtered = numIds.length > 0
+            ? sortedProjects().filter(function(p) { return numIds.indexOf(p.categoryId) !== -1; })
+            : sortedProjects();
+        var seenOther = false;
+        var opts = [];
+        filtered.forEach(function(p) {
+            if (p.name.toLowerCase() === 'other') {
+                if (!seenOther) { seenOther = true; opts.push({ value: 0, label: 'Other' }); }
+            } else {
+                opts.push({ value: p.id, label: p.name });
+            }
+        });
+        ssmUpdate('ssm-att-item', opts, true);
+        applyAdminAttendanceFilter();
     });
+
+    ssmOnChange('ssm-att-dept', function(selectedDeptIds) {
+        var numIds = selectedDeptIds.map(function(v) { return parseInt(v); });
+        var filtered = numIds.length > 0
+            ? getNonViewerMembers().filter(function(m) { return numIds.indexOf(m.departmentId) !== -1; })
+            : getNonViewerMembers();
+        ssmUpdate('ssm-att-emp', filtered.map(function(m) { return { value: m.id, label: m.name }; }), true);
+        applyAdminAttendanceFilter();
+    });
+
+    ssmOnChange('ssm-att-item', function() { applyAdminAttendanceFilter(); });
+    ssmOnChange('ssm-att-emp', function() { applyAdminAttendanceFilter(); });
 
     applyAdminAttendanceFilter();
 }
 
 function resetAdminAttendanceFilter() {
     var today = todayStr();
-    var thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    var thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     document.getElementById('att-from').value = thirtyDaysAgo.toISOString().slice(0, 10);
     document.getElementById('att-to').value = today;
-
-    msClear('att-ms-scope');
-    msClear('att-ms-dept');    // ← 加这行
-    msClear('att-ms-emp');
-
-    var allItemOpts = DB.projects.map(function(p) { return { value: p.id, label: p.name }; });
-    msRebuild('att-ms-item', allItemOpts, false);
-
+    ssmClear('ssm-att-scope');
+    ssmClear('ssm-att-dept');
+    ssmClear('ssm-att-emp');
+    ssmUpdate('ssm-att-item', buildFilterItemOpts(), false);
+    ssmUpdate('ssm-att-emp', getNonViewerMembers().map(function(m) { return { value: m.id, label: m.name }; }), false);
     adminAttCurrentPage = 1;
     applyAdminAttendanceFilter();
 }
@@ -3599,32 +4454,39 @@ function resetAdminAttendanceFilter() {
 function applyAdminAttendanceFilter() {
     var fromDate = document.getElementById('att-from').value;
     var toDate = document.getElementById('att-to').value;
-    var scopeIds = msGetValues('att-ms-scope');
-    var itemIds = msGetValues('att-ms-item');
-    var deptIds = msGetValues('att-ms-dept');    // ← 加这行
-    var empIds = msGetValues('att-ms-emp');
+    var scopeIds = ssmGetValues('ssm-att-scope').map(function(v) { return parseInt(v); });
+    var itemIds = ssmGetValues('ssm-att-item').map(function(v) { return parseInt(v); });
+    var deptIds = ssmGetValues('ssm-att-dept').map(function(v) { return parseInt(v); });
+    var empIds = ssmGetValues('ssm-att-emp').map(function(v) { return parseInt(v); });
     if (!fromDate || !toDate) return;
 
     var filtered = DB.attendance.filter(function(a) { return a.date >= fromDate && a.date <= toDate; });
 
-    /* Filter by selected scope(s) */
+    // 排除 viewer 的记录
+    var viewerMemberIds = getViewerMemberIds();
+    filtered = filtered.filter(function(a) { return viewerMemberIds.indexOf(a.memberId) === -1; });
+
+    // 排除 viewer scope 以外的记录（没选 filter 也生效）
+    var viewerScopeIds = getViewerVisibleScopeIds();
+    if (viewerScopeIds !== null) {
+        var vpIds = DB.projects.filter(function(p) {
+            return p.categoryId && viewerScopeIds.indexOf(p.categoryId) !== -1;
+        }).map(function(p) { return p.id; });
+        filtered = filtered.filter(function(a) { return vpIds.indexOf(a.projectId) !== -1; });
+    }
+
     if (scopeIds.length > 0) {
         var scopeItemIds = DB.projects.filter(function(p) { return scopeIds.indexOf(p.categoryId) !== -1; }).map(function(p) { return p.id; });
         filtered = filtered.filter(function(a) { return scopeItemIds.indexOf(a.projectId) !== -1; });
     }
-
-    /* Filter by selected item(s) */
     if (itemIds.length > 0) {
-        filtered = filtered.filter(function(a) { return itemIds.indexOf(a.projectId) !== -1; });
+        var expandedIds = expandOtherItemIds(itemIds);
+        filtered = filtered.filter(function(a) { return expandedIds.indexOf(a.projectId) !== -1; });
     }
-
-    /* Filter by selected department(s) */    // ← 加这块
     if (deptIds.length > 0) {
         var deptMemberIds = DB.members.filter(function(m) { return deptIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
         filtered = filtered.filter(function(a) { return deptMemberIds.indexOf(a.memberId) !== -1; });
     }
-
-    /* Filter by selected employee(s) */
     if (empIds.length > 0) {
         filtered = filtered.filter(function(a) { return empIds.indexOf(a.memberId) !== -1; });
     }
@@ -3632,7 +4494,6 @@ function applyAdminAttendanceFilter() {
     filtered = filtered.sort(function(a, b) { return b.date.localeCompare(a.date) || b.id - a.id; });
     adminAttFilteredData = filtered;
 
-    /* Stats */
     var totalMs = filtered.reduce(function(s, r) {
         if (r.clockIn && r.clockOut) return s + (new Date(r.clockOut) - new Date(r.clockIn));
         return s;
@@ -3641,7 +4502,7 @@ function applyAdminAttendanceFilter() {
         if (r.clockIn && r.clockOut) { var c = getEntryCost(r.memberId, new Date(r.clockOut) - new Date(r.clockIn)); return s + (c || 0); }
         return s;
     }, 0);
-    var uniqueEmps = [].concat.apply([], [filtered.map(function(r) { return r.memberId; })]);
+    var uniqueEmps = filtered.map(function(r) { return r.memberId; });
     uniqueEmps = uniqueEmps.filter(function(v, i, a) { return a.indexOf(v) === i; }).length;
     var uniqueProjects = filtered.map(function(r) { return r.projectId; }).filter(Boolean);
     uniqueProjects = uniqueProjects.filter(function(v, i, a) { return a.indexOf(v) === i; }).length;
@@ -3656,7 +4517,6 @@ function applyAdminAttendanceFilter() {
     var totalPages = Math.ceil(filtered.length / adminAttPageSize) || 1;
     if (adminAttCurrentPage > totalPages) adminAttCurrentPage = totalPages;
     if (adminAttCurrentPage < 1) adminAttCurrentPage = 1;
-
     renderAdminAttPage();
 }
 
@@ -3668,34 +4528,32 @@ function renderAdminAttPage() {
     var pageData = filtered.slice(startIdx, endIdx);
 
     var rows = '';
-        if (filtered.length === 0) {
-            rows = '<tr><td colspan="12" style="text-align:center;color:var(--main-text3);padding:30px">No attendance records found</td></tr>';
-        } else {
-            rows = pageData.map(function(r, idx) {
-        var emp = DB.members.find(function(m) { return m.id === r.memberId; });
-        var dept = emp && emp.departmentId ? getDeptName(emp.departmentId) : '';
-        var proj = r.projectId ? DB.projects.find(function(p) { return p.id === r.projectId; }) : null;
-        var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
-        var dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '—';
-        var startParts = r.clockIn ? r.clockIn.split('T') : [];
-        var endParts = r.clockOut ? r.clockOut.split('T') : [];
-        var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '—';
-        var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '—';
-        var itemDisplay = '—';
-        if (proj) {
-            itemDisplay = scope ? esc(scope.name) + ' &rarr; ' + esc(proj.name) : esc(proj.name);
-        }
-        var wp = r.work_plan_id ? DB.worklist.find(function(w) { return w.id === r.work_plan_id; }) : null;
-        var wd = r.work_done_id ? DB.worklist.find(function(w) { return w.id === r.work_done_id; }) : null;
+    if (filtered.length === 0) {
+        rows = '<tr><td colspan="12" style="text-align:center;color:var(--main-text3);padding:30px">No attendance records found</td></tr>';
+    } else {
+        rows = pageData.map(function(r, idx) {
+            var emp = DB.members.find(function(m) { return m.id === r.memberId; });
+            var dept = emp && emp.departmentId ? getDeptName(emp.departmentId) : '';
+            var proj = r.projectId ? DB.projects.find(function(p) { return p.id === r.projectId; }) : null;
+            var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
+            var dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '\u2014';
+            var startParts = r.clockIn ? r.clockIn.split('T') : [];
+            var endParts = r.clockOut ? r.clockOut.split('T') : [];
+            var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '\u2014';
+            var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '\u2014';
+            var itemDisplay = '\u2014';
+            if (proj) itemDisplay = scope ? esc(scope.name) + ' &rarr; ' + esc(proj.name) : esc(proj.name);
+            var wp = r.work_plan_id ? DB.worklist.find(function(w) { return w.id === r.work_plan_id; }) : null;
+            var wd = r.work_done_id ? DB.worklist.find(function(w) { return w.id === r.work_done_id; }) : null;
             return '<tr>' +
                 '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
-                '<td style="font-family:var(--font-m)">' + r.date + '</td>' +
-                '<td>' + (dept ? esc(dept) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td style="font-family:var(--font-m)">' + formatDateDMY(r.date) + '</td>' +
+                '<td>' + (dept ? esc(dept) : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
                 '<td>' + (emp ? esc(emp.name) : '?') + '</td>' +
                 '<td>' + itemDisplay + '</td>' +
-                '<td>' + (wp ? esc(wp.title) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
-                '<td>' + (wd ? esc(wd.title) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
-                '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.description || '') + '">' + (r.description ? esc(r.description) : '<span style="color:var(--main-text3)">—</span>') + '</td>' +
+                '<td>' + (wp ? esc(wp.title) : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
+                '<td>' + (wd ? esc(wd.title) : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
+                '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.description || '') + '">' + (r.description ? esc(r.description) : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
                 '<td style="font-family:var(--font-m)">' + startTime + '</td>' +
                 '<td style="font-family:var(--font-m)">' + endTime + '</td>' +
                 '<td style="text-align:right;font-family:var(--font-m)">' + dur + '</td>' +
@@ -3758,22 +4616,21 @@ function changeAdminAttPageSize(size) {
 }
 
 function showAdminAddAttendance() {
+    var scopeList = DB.scopes.slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
     var scopeOptions = '<option value="">-- Select Category --</option>' +
-        DB.scopes.map(function(s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('');
-    var memberOpts = '<option value="">-- Select Employee --</option>' +
-        DB.members.map(function(m) { return '<option value="' + m.id + '">' + esc(m.name) + '</option>'; }).join('');
+        scopeList.map(function(s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('');
 
     showModal(
     '<h3>Add Attendance</h3>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
-        '<div class="field"><label>Employee</label><select class="input" id="att-member">' + memberOpts + '</select></div>' +
+        '<div class="field"><label>Employee</label><div id="ss-att-member"></div></div>' +
         '<div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="' + todayStr() + '"></div>' +
-        '<div class="field"><label>Categories</label><select class="input" id="att-scope-filter" onchange="adminAttScopeChanged()">' + scopeOptions + '</select></div>' +
-        '<div class="field"><label>ID/Name</label><select class="input" id="att-item"><option value="">-- Select Category First --</option></select></div>' +
-        '<div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- Select Category First --</option></select></div>' +
+        '<div class="field"><label>Category</label><select class="input" id="att-scope-filter" onchange="adminAttScopeChanged()">' + scopeOptions + '</select></div>' +
+        '<div class="field"><label>ID/Name</label><div id="ss-att-item"></div></div>' +
+        '<div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- None --</option></select></div>' +
         '<div class="field" style="display:none"><label>Detail</label><select class="input" id="att-detail">' + detailOpts(null) + '</select></div>' +
-        '<div class="field"><label>Work Plan</label><select class="input" id="att-workplan"><option value="">-- Select Category First --</option></select></div>' +
-        '<div class="field"><label>Work Done</label><select class="input" id="att-workdone"><option value="">-- Select Category First --</option></select></div>' +
+        '<div class="field"><label>Work Plan</label><div id="ss-att-workplan"></div></div>' +
+        '<div class="field"><label>Work Done</label><div id="ss-att-workdone"></div></div>' +
         '<div class="field"><label>Start Time</label><input class="input" id="att-start" type="time" value="09:00"></div>' +
         '<div class="field"><label>End Time</label><input class="input" id="att-end" type="time" value="18:00"></div>' +
     '</div>' +
@@ -3781,35 +4638,45 @@ function showAdminAddAttendance() {
     '<p class="auth-error" id="att-error"></p>' +
     '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAdminAddAttendance()">Save</button></div>'
     );
-    setTimeout(function() { var el = document.getElementById('att-member'); if (el) el.focus(); }, 100);
+
+    setTimeout(function() {
+        var memberOpts = getNonViewerMembers().map(function(m) { return { value: m.id, label: m.name }; });
+        ssCreate('ss-att-member', memberOpts, '-- Select Employee --');
+        ssCreate('ss-att-item', [], '-- Select Category First --');
+        var wlOpts = DB.worklist.map(function(w) { return { value: w.id, label: w.title }; });
+        ssCreate('ss-att-workplan', wlOpts, '-- None --');
+        ssCreate('ss-att-workdone', wlOpts, '-- None --');
+    }, 50);
 }
 
-function adminAttItemChanged() {
+function adminAttScopeChanged() {
     var scopeId = document.getElementById('att-scope-filter').value;
-    var itemSelect = document.getElementById('att-item');
-    var filtered = scopeId
-        ? DB.projects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
-        : DB.projects;
+    var sid = scopeId ? parseInt(scopeId) : null;
+    var projects = sortedProjects(sid);
+    ssUpdate('ss-att-item', projects.map(function(p) { return { value: p.id, label: p.name }; }), false);
 
-    filtered.sort(function(a, b) {
-        if (a.name.toLowerCase() === 'other') return -1;
-        if (b.name.toLowerCase() === 'other') return 1;
-        return a.name.localeCompare(b.name);
-    });
+    var ssSelect = document.getElementById('att-subscope');
+    if (ssSelect) {
+        var ssFiltered = sid ? DB.subScopes.filter(function(s) { return s.scopeId === sid; }) : DB.subScopes;
+        ssSelect.innerHTML = '<option value="">-- None --</option>' +
+            ssFiltered.map(function(s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('');
+    }
 
-    itemSelect.innerHTML = '<option value="">-- Select ID/Name --</option>' +
-        filtered.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
+    var wlFiltered = sid ? DB.worklist.filter(function(w) { return w.scopeId === sid; }) : DB.worklist;
+    var wlOpts = wlFiltered.map(function(w) { return { value: w.id, label: w.title }; });
+    ssUpdate('ss-att-workplan', wlOpts, false);
+    ssUpdate('ss-att-workdone', wlOpts, false);
 }
 
 async function doAdminAddAttendance() {
     var errEl = document.getElementById('att-error');
-    var memberId = document.getElementById('att-member').value;
+    var memberId = ssGetValue('ss-att-member');
     var date = document.getElementById('att-date').value;
-    var itemId = document.getElementById('att-item').value;
+    var itemId = ssGetValue('ss-att-item');
     var subScopeId = document.getElementById('att-subscope').value;
     var detailId = document.getElementById('att-detail').value;
-    var workPlanId = document.getElementById('att-workplan').value;
-    var workDoneId = document.getElementById('att-workdone').value;
+    var workPlanId = ssGetValue('ss-att-workplan');
+    var workDoneId = ssGetValue('ss-att-workdone');
     var start = document.getElementById('att-start').value;
     var end = document.getElementById('att-end').value;
     var desc = document.getElementById('att-desc').value.trim();
@@ -3840,7 +4707,9 @@ async function doAdminAddAttendance() {
                 description: desc
             }
         });
-        hideModal(); await loadDB(); renderAdminAttendance();
+        hideModal();
+        await loadDB();
+        renderAdminAttendance();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
@@ -3851,43 +4720,28 @@ function showAdminEditAttendance(id) {
     var proj = entry.projectId ? DB.projects.find(function(p) { return p.id === entry.projectId; }) : null;
     var currentScopeId = proj && proj.categoryId ? proj.categoryId : '';
 
+    var scopeList = DB.scopes.slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
     var scopeOptions = '<option value="">-- Select Category --</option>' +
-        DB.scopes.map(function(s) {
-            var sel = currentScopeId === s.id ? 'selected' : '';
-            return '<option value="' + s.id + '" ' + sel + '>' + esc(s.name) + '</option>';
+        scopeList.map(function(s) {
+            var sel = currentScopeId === s.id ? ' selected' : '';
+            return '<option value="' + s.id + '"' + sel + '>' + esc(s.name) + '</option>';
         }).join('');
-
-        // 显示该 scope 下所有 project
-    var scopeItems = currentScopeId
-        ? DB.projects.filter(function(p) { return p.categoryId === currentScopeId; })
-        : DB.projects;
-
-    scopeItems.sort(function(a, b) {
-        if (a.name.toLowerCase() === 'other') return -1;
-        if (b.name.toLowerCase() === 'other') return 1;
-        return a.name.localeCompare(b.name);
-    });
-
-    var projectOpts = scopeItems.map(function(p) {
-        var sel = entry.projectId === p.id ? 'selected' : '';
-        return '<option value="' + p.id + '" ' + sel + '>' + esc(p.name) + '</option>';
-    }).join('');
 
     var startParts = entry.clockIn ? entry.clockIn.split('T') : [];
     var endParts = entry.clockOut ? entry.clockOut.split('T') : [];
     var startTime = startParts.length === 2 ? startParts[1].substring(0, 5) : '';
     var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
 
-        showModal(
+    showModal(
     '<h3>Edit Attendance</h3>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
         '<div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="' + entry.date + '"></div><br>' +
         '<div class="field"><label>Category</label><select class="input" id="att-scope-filter" onchange="adminAttScopeChangedEdit()">' + scopeOptions + '</select></div>' +
-        '<div class="field"><label>ID/Names</label><select class="input" id="att-item"><option value="">-- Select ID/Name --</option>' + projectOpts + '</select></div>' +
-        '<div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- Select Category First --</option></select></div>' +
+        '<div class="field"><label>ID/Name</label><div id="ss-att-item"></div></div>' +
+        '<div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- None --</option></select></div>' +
         '<div class="field" style="display:none"><label>Detail</label><select class="input" id="att-detail">' + detailOpts(entry.detailId) + '</select></div>' +
-        '<div class="field"><label>Work Plan</label><select class="input" id="att-workplan"><option value="">-- Select Category First --</option></select></div>' +
-        '<div class="field"><label>Work Done</label><select class="input" id="att-workdone"><option value="">-- Select Category First --</option></select></div>' +
+        '<div class="field"><label>Work Plan</label><div id="ss-att-workplan"></div></div>' +
+        '<div class="field"><label>Work Done</label><div id="ss-att-workdone"></div></div>' +
         '<div class="field"><label>Start Time</label><input class="input" id="att-start" type="time" value="' + startTime + '"></div>' +
         '<div class="field"><label>End Time</label><input class="input" id="att-end" type="time" value="' + endTime + '"></div>' +
     '</div>' +
@@ -3895,93 +4749,55 @@ function showAdminEditAttendance(id) {
     '<p class="auth-error" id="att-error"></p>' +
     '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAdminEditAttendance(' + id + ')">Save</button></div>');
 
-    // ← 加在这里，showModal 括号结束后面
     setTimeout(function() {
-        adminAttFilterSubScopes();
-        adminAttFilterWorklist();
-        if (entry.subScopeId) {
-            var ssEl = document.getElementById('att-subscope');
-            if (ssEl) ssEl.value = entry.subScopeId;
-        }
-        if (entry.work_plan_id) {
-            var wpEl = document.getElementById('att-workplan');
-            if (wpEl) wpEl.value = entry.work_plan_id;
-        }
-        if (entry.work_done_id) {
-            var wdEl = document.getElementById('att-workdone');
-            if (wdEl) wdEl.value = entry.work_done_id;
+        var scopeItems = sortedProjects(currentScopeId || null);
+        ssCreate('ss-att-item', scopeItems.map(function(p) { return { value: p.id, label: p.name }; }), '-- Select ID/Name --');
+        if (entry.projectId) ssSetValue('ss-att-item', entry.projectId);
+
+        var wlFiltered = currentScopeId ? DB.worklist.filter(function(w) { return w.scopeId === currentScopeId; }) : DB.worklist;
+        var wlOpts = wlFiltered.map(function(w) { return { value: w.id, label: w.title }; });
+        ssCreate('ss-att-workplan', wlOpts, '-- None --');
+        if (entry.work_plan_id) ssSetValue('ss-att-workplan', entry.work_plan_id);
+        ssCreate('ss-att-workdone', wlOpts, '-- None --');
+        if (entry.work_done_id) ssSetValue('ss-att-workdone', entry.work_done_id);
+
+        var ssSelect = document.getElementById('att-subscope');
+        if (ssSelect) {
+            var ssFiltered = currentScopeId ? DB.subScopes.filter(function(s) { return s.scopeId === currentScopeId; }) : DB.subScopes;
+            ssSelect.innerHTML = '<option value="">-- None --</option>' +
+                ssFiltered.map(function(s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('');
+            if (entry.subScopeId) ssSelect.value = entry.subScopeId;
         }
     }, 50);
 }
 
-function adminAttItemChangedEdit() {
-    var scopeId = document.getElementById('att-scope-filter').value;
-    var itemSelect = document.getElementById('att-item');
-    var filtered = scopeId
-        ? DB.projects.filter(function(p) { return p.categoryId === parseInt(scopeId); })
-        : DB.projects;
-
-    filtered.sort(function(a, b) {
-        if (a.name.toLowerCase() === 'other') return -1;
-        if (b.name.toLowerCase() === 'other') return 1;
-        return a.name.localeCompare(b.name);
-    });
-
-    itemSelect.innerHTML = '<option value="">-- Select ID/Name --</option>' +
-        filtered.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
-}
-
-// ===== Scope → Worklist 联动 =====
-
-function adminAttScopeChanged() {
-    adminAttItemChanged();
-    adminAttFilterSubScopes();
-    adminAttFilterWorklist();
-}
-
 function adminAttScopeChangedEdit() {
-    adminAttItemChangedEdit();
-    adminAttFilterSubScopes();
-    adminAttFilterWorklist();
-}
-
-function adminAttFilterSubScopes() {
     var scopeId = document.getElementById('att-scope-filter').value;
+    var sid = scopeId ? parseInt(scopeId) : null;
+    var projects = sortedProjects(sid);
+    ssUpdate('ss-att-item', projects.map(function(p) { return { value: p.id, label: p.name }; }), false);
+
     var ssSelect = document.getElementById('att-subscope');
-    if (!ssSelect) return;
-    var filtered = scopeId
-        ? DB.subScopes.filter(function(s) { return s.scopeId === parseInt(scopeId); })
-        : DB.subScopes;
-    ssSelect.innerHTML = '<option value="">-- None --</option>' +
-        filtered.map(function(s) {
-            return '<option value="' + s.id + '">' + esc(s.name) + '</option>';
-        }).join('');
-}
+    if (ssSelect) {
+        var ssFiltered = sid ? DB.subScopes.filter(function(s) { return s.scopeId === sid; }) : DB.subScopes;
+        ssSelect.innerHTML = '<option value="">-- None --</option>' +
+            ssFiltered.map(function(s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('');
+    }
 
-function adminAttFilterWorklist() {
-    var scopeId = document.getElementById('att-scope-filter').value;
-    var wpSelect = document.getElementById('att-workplan');
-    var wdSelect = document.getElementById('att-workdone');
-    if (!wpSelect || !wdSelect) return;
-    var filtered = scopeId
-        ? DB.worklist.filter(function(w) { return w.scopeId === parseInt(scopeId); })
-        : DB.worklist;
-    var opts = '<option value="">-- None --</option>' +
-        filtered.map(function(w) {
-            return '<option value="' + w.id + '">' + esc(w.title) + '</option>';
-        }).join('');
-    wpSelect.innerHTML = opts;
-    wdSelect.innerHTML = opts;
+    var wlFiltered = sid ? DB.worklist.filter(function(w) { return w.scopeId === sid; }) : DB.worklist;
+    var wlOpts = wlFiltered.map(function(w) { return { value: w.id, label: w.title }; });
+    ssUpdate('ss-att-workplan', wlOpts, false);
+    ssUpdate('ss-att-workdone', wlOpts, false);
 }
 
 async function doAdminEditAttendance(id) {
     var errEl = document.getElementById('att-error');
     var date = document.getElementById('att-date').value;
-    var itemId = document.getElementById('att-item').value;
+    var itemId = ssGetValue('ss-att-item');
     var subScopeId = document.getElementById('att-subscope').value;
     var detailId = document.getElementById('att-detail').value;
-    var workPlanId = document.getElementById('att-workplan').value;
-    var workDoneId = document.getElementById('att-workdone').value;
+    var workPlanId = ssGetValue('ss-att-workplan');
+    var workDoneId = ssGetValue('ss-att-workdone');
     var start = document.getElementById('att-start').value;
     var end = document.getElementById('att-end').value;
     var desc = document.getElementById('att-desc').value.trim();
@@ -4010,7 +4826,9 @@ async function doAdminEditAttendance(id) {
                 description: desc
             }
         });
-        hideModal(); await loadDB(); renderAdminAttendance();
+        hideModal();
+        await loadDB();
+        renderAdminAttendance();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
 }
 
@@ -4020,8 +4838,7 @@ async function confirmDeleteAttendance(id) {
     var emp = DB.members.find(function(m) { return m.id === entry.memberId; });
     var proj = entry.projectId ? DB.projects.find(function(p) { return p.id === entry.projectId; }) : null;
     var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
-    var label = proj ? (scope ? scope.name + ' → ' + proj.name : proj.name) : '—';
-
+    var label = proj ? (scope ? scope.name + ' \u2192 ' + proj.name : proj.name) : '\u2014';
     showModal('<h3>Delete Attendance</h3>' +
         '<p style="color:var(--main-text2);line-height:1.6">Delete entry for <strong style="color:var(--main-text)">' + esc(emp ? emp.name : '?') + '</strong> on <strong style="color:var(--main-text)">' + entry.date + '</strong>?<br>Item: ' + esc(label) + '</p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteAttendance(' + id + ')">Delete</button></div>');
@@ -4030,14 +4847,15 @@ async function confirmDeleteAttendance(id) {
 async function doDeleteAttendance(id) {
     try {
         await api('/attendance/' + id, { method: 'DELETE' });
-        hideModal(); await loadDB(); renderAdminAttendance();
+        hideModal();
+        await loadDB();
+        renderAdminAttendance();
     } catch (e) { alert('Failed: ' + e.message); }
 }
 
 function exportAttendanceCSV() {
     var data = adminAttFilteredData;
     if (data.length === 0) { alert('No data to export'); return; }
-
     var headers = ['Date', 'Department', 'Employee', 'Category', 'ID/Name', 'Work Plan', 'Work Done', 'Start', 'End', 'Duration', 'Remark'];
     var rows = data.map(function(r) {
         var emp = DB.members.find(function(m) { return m.id === r.memberId; });
@@ -4051,16 +4869,12 @@ function exportAttendanceCSV() {
         var endTime = endParts.length === 2 ? endParts[1].substring(0, 5) : '';
         var wp = r.work_plan_id ? DB.worklist.find(function(w) { return w.id === r.work_plan_id; }) : null;
         var wd = r.work_done_id ? DB.worklist.find(function(w) { return w.id === r.work_done_id; }) : null;
-
-        return [r.date, dept, emp ? emp.name : '', scope ? scope.name : '', proj ? proj.name : '', wp ? wp.title : '', wd ? wd.title : '', startTime, endTime, dur, r.description || ''];
+        return [formatDateDMY(r.date), dept, emp ? emp.name : '', scope ? scope.name : '', proj ? proj.name : '', wp ? wp.title : '', wd ? wd.title : '', startTime, endTime, dur, r.description || ''];
     });
-
-
     var csv = headers.join(',') + '\n';
     rows.forEach(function(row) {
         csv += row.map(function(cell) { return '"' + String(cell).replace(/"/g, '""') + '"'; }).join(',') + '\n';
     });
-
     var blob = new Blob([csv], { type: 'text/csv' });
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -4069,7 +4883,6 @@ function exportAttendanceCSV() {
     a.click();
     URL.revokeObjectURL(url);
 }
-
 
 
 /* ==========================================================
@@ -4204,109 +5017,6 @@ async function doDeleteSubScope(id) {
 
 
 
-
-/* ==========================================================
-   SECTION 15: ADMIN — DETAILS
-   ========================================================== */
-
-function renderAdminDetails() {
-    const view = document.getElementById('admin-details');
-    let rows = '';
-    if (DB.details.length === 0) {
-        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No details yet</td></tr>';
-    } else {
-        rows = DB.details.map((d, index) =>
-            '<tr>' +
-                '<td style="font-family:var(--font-m);width:60px">' + (index + 1) + '</td>' +
-                '<td>' + esc(d.name) + '</td>' +
-                '<td style="color:var(--main-text3);font-size:.82rem">' + (d.createdAt ? new Date(d.createdAt).toLocaleDateString() : '—') + '</td>' +
-                '<td><div class="actions-cell">' +
-                    '<button class="btn-icon" onclick="showEditDetail(' + d.id + ')" title="Edit">&#9998;</button>' +
-                    '<button class="btn-icon danger" onclick="confirmDeleteDetail(' + d.id + ')" title="Delete">&#10005;</button>' +
-                '</div></td>' +
-            '</tr>'
-        ).join('');
-
-    }
-
-    view.innerHTML =
-        '<div class="app-header">' +
-            '<h2>Details</h2>' +
-            '<div class="header-sub">Manage detail categories</div>' +
-        '</div>' +
-        '<div class="app-body">' +
-            '<div class="section-head">' +
-                '<h2>All Details <span style="color:var(--main-text3);font-weight:400;font-size:.85rem">(' + DB.details.length + ')</span></h2>' +
-                '<button class="btn btn-green" onclick="showAddDetail()">+ Add Detail</button>' +
-            '</div>' +
-            '<div class="table-wrap"><table>' +
-                '<thead><tr>' +
-                    '<th style="width:60px">No</th>' +
-                    '<th>Name</th>' +
-                    '<th style="width:140px">Created</th>' +
-                    '<th style="width:90px">Actions</th>' +
-                '</tr></thead>' +
-                '<tbody>' + rows + '</tbody>' +
-            '</table></div>' +
-        '</div>';
-}
-
-function showAddDetail() {
-    showModal('<h3>Add Detail</h3>' +
-        '<div class="field"><label>Name</label><input class="input" id="detail-name" placeholder="Enter detail name"></div>' +
-        '<p class="auth-error" id="detail-error"></p>' +
-        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddDetail()">Save</button></div>');
-    setTimeout(function() { document.getElementById('detail-name').focus(); }, 100);
-}
-
-async function doAddDetail() {
-    var errEl = document.getElementById('detail-error');
-    var name = document.getElementById('detail-name').value.trim();
-    errEl.textContent = '';
-    if (!name) { errEl.textContent = 'Name is required'; return; }
-    try {
-        await api('/details', { method: 'POST', body: { name: name } });
-        hideModal(); await loadDB(); renderAdminDetails();
-    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
-}
-
-function showEditDetail(id) {
-    var item = DB.details.find(d => d.id === id);
-    if (!item) return;
-    showModal('<h3>Edit Detail</h3>' +
-        '<div class="field"><label>Name</label><input class="input" id="detail-name" value="' + esc(item.name) + '"></div>' +
-        '<p class="auth-error" id="detail-error"></p>' +
-        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditDetail(' + id + ')">Save</button></div>');
-    setTimeout(function() { document.getElementById('detail-name').focus(); }, 100);
-}
-
-async function doEditDetail(id) {
-    var errEl = document.getElementById('detail-error');
-    var name = document.getElementById('detail-name').value.trim();
-    errEl.textContent = '';
-    if (!name) { errEl.textContent = 'Name is required'; return; }
-    try {
-        await api('/details/' + id, { method: 'PUT', body: { name: name } });
-        hideModal(); await loadDB(); renderAdminDetails();
-    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
-}
-
-function confirmDeleteDetail(id) {
-    var item = DB.details.find(d => d.id === id);
-    if (!item) return;
-    showModal('<h3>Delete Detail</h3>' +
-        '<p style="color:var(--main-text2);line-height:1.6">Delete <strong style="color:var(--main-text)">' + esc(item.name) + '</strong>?</p>' +
-        '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteDetail(' + id + ')">Delete</button></div>');
-}
-
-async function doDeleteDetail(id) {
-    try {
-        await api('/details/' + id, { method: 'DELETE' });
-        hideModal(); await loadDB(); renderAdminDetails();
-    } catch (e) { alert('Failed: ' + e.message); }
-}
-
-
 // /* ==========================================================
 //    SECTION 16: ADMIN — SCOPES
 //    ========================================================== */
@@ -4425,30 +5135,31 @@ function renderAdminReport() {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     var defaultFrom = thirtyDaysAgo.toISOString().slice(0, 10);
 
-    var scopeOpts = DB.scopes.map(function(s) { return { value: s.id, label: s.name }; });
-    var deptOpts = DB.departments.map(function(d) { return { value: d.id, label: d.name }; });
-    var empOpts = DB.members.map(function(m) { return { value: m.id, label: m.name }; });
-    var itemOpts = DB.projects.map(function(p) { return { value: p.id, label: p.name }; });
+    var viewerScopeIds = getViewerVisibleScopeIds();
+    var scopeList = viewerScopeIds !== null
+        ? DB.scopes.filter(function(s) { return viewerScopeIds.indexOf(s.id) !== -1; })
+        : DB.scopes.slice();
+    scopeList = scopeList.sort(function(a, b) { return a.name.localeCompare(b.name); });
+    var deptList = DB.departments.slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
+    var empList = getNonViewerMembers().slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
+
+    var scopeOpts = scopeList.map(function(s) { return { value: s.id, label: s.name }; });
+    var deptOpts = deptList.map(function(d) { return { value: d.id, label: d.name }; });
+    var empOpts = empList.map(function(m) { return { value: m.id, label: m.name }; });
 
     view.innerHTML =
-        '<div class="app-header">' +
-            '<h2>Report</h2>' +
-            '<div class="header-sub">Summary and analytics</div>' +
-        '</div>' +
+        '<div class="app-header"><h2>Report</h2><div class="header-sub">Summary and analytics</div></div>' +
         '<div class="app-body">' +
             '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
                 '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>' +
                 '<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">' +
-                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="date" class="input" id="rpt-from" value="' + defaultFrom + '" style="width:155px;padding:8px 10px;font-size:.82rem"></div>' +
-                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="rpt-to" value="' + today + '" style="width:155px;padding:8px 10px;font-size:.82rem"></div>' +
-                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Department</label><div style="min-width:140px">' + msGenerate('rpt-ms-dept', deptOpts, 'All Departments') + '</div></div>' +
-                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Category</label><div style="min-width:140px">' + msGenerate('rpt-ms-scope', scopeOpts, 'All Categories') + '</div></div>' +
-                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">ID/Name</label><div style="min-width:160px">' + msGenerate('rpt-ms-item', itemOpts, 'All ID/Names') + '</div></div>' +
-                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label><div style="min-width:160px">' + msGenerate('rpt-ms-emp', empOpts, 'All Employees') + '</div></div>' +
-                    '<div style="display:flex;gap:8px;margin-left:auto">' +
-                        '<button class="btn btn-accent btn-sm" onclick="generateReport()">Generate</button>' +
-                        '<button class="btn btn-ghost btn-sm" onclick="resetReport()">Reset</button>' +
-                    '</div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="date" class="input" id="rpt-from" value="' + defaultFrom + '" onchange="generateReport()" style="width:155px;padding:8px 10px;font-size:.82rem"></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="rpt-to" value="' + today + '" onchange="generateReport()" style="width:155px;padding:8px 10px;font-size:.82rem"></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Department</label><div style="min-width:140px" id="ssm-rpt-dept"></div></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Category</label><div style="min-width:140px" id="ssm-rpt-scope"></div></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">ID/Name</label><div style="min-width:160px" id="ssm-rpt-item"></div></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label><div style="min-width:160px" id="ssm-rpt-emp"></div></div>' +
+                    '<div style="display:flex;gap:8px;margin-left:auto"><button class="btn btn-ghost btn-sm" onclick="resetReport()">Reset</button></div>' +
                 '</div>' +
             '</div>' +
             '<div id="rpt-stats"></div>' +
@@ -4457,19 +5168,40 @@ function renderAdminReport() {
             '<div id="rpt-tables"></div>' +
         '</div>';
 
-    msOnChange('rpt-ms-scope', function(selectedScopeIds) {
-        var filtered = selectedScopeIds.length > 0
-            ? DB.projects.filter(function(p) { return selectedScopeIds.indexOf(p.categoryId) !== -1; })
-            : DB.projects;
-        msRebuild('rpt-ms-item', filtered.map(function(p) { return { value: p.id, label: p.name }; }), true);
+    ssmCreate('ssm-rpt-dept', deptOpts, 'All Departments');
+    ssmCreate('ssm-rpt-scope', scopeOpts, 'All Categories');
+    ssmCreate('ssm-rpt-item', buildFilterItemOpts(), 'All ID/Names');
+    ssmCreate('ssm-rpt-emp', empOpts, 'All Employees');
+
+    ssmOnChange('ssm-rpt-scope', function(selectedScopeIds) {
+        var numIds = selectedScopeIds.map(function(v) { return parseInt(v); });
+        var filtered = numIds.length > 0
+            ? sortedProjects().filter(function(p) { return numIds.indexOf(p.categoryId) !== -1; })
+            : sortedProjects();
+        var seenOther = false;
+        var opts = [];
+        filtered.forEach(function(p) {
+            if (p.name.toLowerCase() === 'other') {
+                if (!seenOther) { seenOther = true; opts.push({ value: 0, label: 'Other' }); }
+            } else {
+                opts.push({ value: p.id, label: p.name });
+            }
+        });
+        ssmUpdate('ssm-rpt-item', opts, true);
+        generateReport();
     });
 
-    msOnChange('rpt-ms-dept', function(selectedDeptIds) {
-        var filtered = selectedDeptIds.length > 0
-            ? DB.members.filter(function(m) { return selectedDeptIds.indexOf(m.departmentId) !== -1; })
-            : DB.members;
-        msRebuild('rpt-ms-emp', filtered.map(function(m) { return { value: m.id, label: m.name }; }), true);
+    ssmOnChange('ssm-rpt-dept', function(selectedDeptIds) {
+        var numIds = selectedDeptIds.map(function(v) { return parseInt(v); });
+        var filtered = numIds.length > 0
+            ? sortedMembers().filter(function(m) { return numIds.indexOf(m.departmentId) !== -1; })
+            : sortedMembers();
+        ssmUpdate('ssm-rpt-emp', filtered.map(function(m) { return { value: m.id, label: m.name }; }), true);
+        generateReport();
     });
+
+    ssmOnChange('ssm-rpt-item', function() { generateReport(); });
+    ssmOnChange('ssm-rpt-emp', function() { generateReport(); });
 
     generateReport();
 }
@@ -4480,21 +5212,21 @@ function resetReport() {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     document.getElementById('rpt-from').value = thirtyDaysAgo.toISOString().slice(0, 10);
     document.getElementById('rpt-to').value = today;
-    msClear('rpt-ms-scope');
-    msClear('rpt-ms-dept');
-    msClear('rpt-ms-emp');
-    var allItemOpts = DB.projects.map(function(p) { return { value: p.id, label: p.name }; });
-    msRebuild('rpt-ms-item', allItemOpts, false);
+    ssmClear('ssm-rpt-scope');
+    ssmClear('ssm-rpt-dept');
+    ssmClear('ssm-rpt-emp');
+    ssmUpdate('ssm-rpt-item', buildFilterItemOpts(), false);
+    ssmUpdate('ssm-rpt-emp', sortedMembers().map(function(m) { return { value: m.id, label: m.name }; }), false);
     generateReport();
 }
 
 function generateReport() {
     var fromDate = document.getElementById('rpt-from').value;
     var toDate = document.getElementById('rpt-to').value;
-    var scopeIds = msGetValues('rpt-ms-scope');
-    var itemIds = msGetValues('rpt-ms-item');
-    var deptIds = msGetValues('rpt-ms-dept');
-    var empIds = msGetValues('rpt-ms-emp');
+    var scopeIds = ssmGetValues('ssm-rpt-scope').map(function(v) { return parseInt(v); });
+    var itemIds = ssmGetValues('ssm-rpt-item').map(function(v) { return parseInt(v); });
+    var deptIds = ssmGetValues('ssm-rpt-dept').map(function(v) { return parseInt(v); });
+    var empIds = ssmGetValues('ssm-rpt-emp').map(function(v) { return parseInt(v); });
     if (!fromDate || !toDate) return;
 
     var filtered = DB.attendance.filter(function(a) {
@@ -4502,12 +5234,23 @@ function generateReport() {
         return a.date >= fromDate && a.date <= toDate;
     });
 
+    var viewerMemberIds = getViewerMemberIds();
+    filtered = filtered.filter(function(a) { return viewerMemberIds.indexOf(a.memberId) === -1; });
+    var viewerScopeIds = getViewerVisibleScopeIds();
+    if (viewerScopeIds !== null) {
+        var vpIds = DB.projects.filter(function(p) {
+            return p.categoryId && viewerScopeIds.indexOf(p.categoryId) !== -1;
+        }).map(function(p) { return p.id; });
+        filtered = filtered.filter(function(a) { return vpIds.indexOf(a.projectId) !== -1; });
+    }
+
     if (scopeIds.length > 0) {
         var scopeItemIds = DB.projects.filter(function(p) { return scopeIds.indexOf(p.categoryId) !== -1; }).map(function(p) { return p.id; });
         filtered = filtered.filter(function(a) { return scopeItemIds.indexOf(a.projectId) !== -1; });
     }
     if (itemIds.length > 0) {
-        filtered = filtered.filter(function(a) { return itemIds.indexOf(a.projectId) !== -1; });
+        var expandedIds = expandOtherItemIds(itemIds);
+        filtered = filtered.filter(function(a) { return expandedIds.indexOf(a.projectId) !== -1; });
     }
     if (deptIds.length > 0) {
         var deptMemberIds = DB.members.filter(function(m) { return deptIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
@@ -4653,7 +5396,7 @@ function generateReport() {
         var entries = filtered.filter(function(r) { return (r.projectId || 0) === pid; }).length;
         var members = new Set(filtered.filter(function(r) { return (r.projectId || 0) === pid; }).map(function(r) { return r.memberId; })).size;
         var cd = proj ? getProjectCountdown(proj) : null;
-        var cdHtml = '—';
+        var cdHtml = '\u2014';
         if (cd !== null) {
             if (cd > 30) cdHtml = '<span style="color:var(--ok);font-weight:600">' + cd + 'd left</span>';
             else if (cd > 7) cdHtml = '<span style="color:var(--warning);font-weight:600">' + cd + 'd left</span>';
@@ -4682,8 +5425,8 @@ function generateReport() {
         var member = DB.members.find(function(m) { return m.id === mid; });
         rptEmpData_cache.push({
             name: member ? esc(member.name) : 'Unknown',
-            pos: member ? esc(getPositionName(member.positionId)) : '—',
-            dept: member ? esc(getDeptName(member.departmentId)) : '—',
+            pos: member ? esc(getPositionName(member.positionId)) : '\u2014',
+            dept: member ? esc(getDeptName(member.departmentId)) : '\u2014',
             entries: data.entries,
             days: data.days.size,
             ms: data.ms,
@@ -5081,8 +5824,16 @@ function ptGetFilteredDashboard() {
 
     return (ptDB.panelIds || []).filter(function(p) {
         if (search) {
-            var haystack = [p.name, p.customer, p.start_date, p.end_date, p.install_date]
-                .map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
+            var haystack = [
+                p.name,
+                p.customer,
+                p.start_date,
+                p.end_date,
+                p.install_date,
+                formatDateDMY(p.start_date),
+                formatDateDMY(p.end_date),
+                formatDateDMY(p.install_date)
+            ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
             if (haystack.indexOf(search) === -1) return false;
         }
         if (dashCustSelected.length > 0) {
@@ -5118,9 +5869,9 @@ function ptFilterDashboard() {
                 '<td>' + (startIdx + i + 1) + '</td>' +
                 '<td><strong>' + esc(p.name) + '</strong></td>' +
                 '<td>' + esc(p.customer || '—') + '</td>' +
-                '<td>' + (p.start_date ? p.start_date.slice(0, 10) : '—') + '</td>' +
-                '<td>' + (p.end_date ? p.end_date.slice(0, 10) : '—') + '</td>' +
-                '<td>' + (p.install_date ? p.install_date.slice(0, 10) : '—') + '</td>' +
+                '<td>' + formatDateDMY(p.start_date) + '</td>' +
+                '<td>' + formatDateDMY(p.end_date) + '</td>' +
+                '<td>' + formatDateDMY(p.install_date) + '</td>' +
             '</tr>';
         }).join('') + '</tbody></table></div>' +
         ptPagination(filtered.length, dashCurrentPage, dashPageSize, 'goDashPage', 'changeDashPageSize');
@@ -5169,10 +5920,10 @@ function ptRenderPanel() {
         '<div class="filter">' +
             '<input class="input" type="text" placeholder="Search all columns..." id="pt-panel-search" oninput="ptFilterPanels()" style="max-width:280px">' +
             '<div style="min-width:180px">' + msGenerate('pt-panel-cust', custOpts, 'All Customers') + '</div>' +
-            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Start Date</label><input type="date" class="input" id="pt-panel-start" onchange="ptFilterPanels()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
-            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">End Date</label><input type="date" class="input" id="pt-panel-end" onchange="ptFilterPanels()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
-            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Install From</label><input type="date" class="input" id="pt-panel-inst-from" onchange="ptFilterPanels()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
-            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="pt-panel-inst-to" onchange="ptFilterPanels()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Start Date</label><input type="date" class="input" id="pt-panel-start" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)" onchange="var f=this.value,t=document.getElementById(\'pt-panel-end\').value;if(f){document.getElementById(\'pt-panel-end\').min=f;if(t&&t<f)document.getElementById(\'pt-panel-end\').value=this.value}ptFilterPanels()"></div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">End Date</label><input type="date" class="input" id="pt-panel-end" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)" onchange="var f=document.getElementById(\'pt-panel-start\').value,t=this.value;if(f&&t&&t<f)this.value=f;ptFilterPanels()"></div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Install From</label><input type="date" class="input" id="pt-panel-inst-from" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)" onchange="var f=this.value,t=document.getElementById(\'pt-panel-inst-to\').value;if(f){document.getElementById(\'pt-panel-inst-to\').min=f;if(t&&t<f)document.getElementById(\'pt-panel-inst-to\').value=this.value}ptFilterPanels()"></div>' +
+            '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="pt-panel-inst-to" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)" onchange="var f=document.getElementById(\'pt-panel-inst-from\').value,t=this.value;if(f&&t&&t<f)this.value=f;ptFilterPanels()"></div>' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetPanelFilter()">Reset</button>' +
             '<span id="pt-panel-count" style="font-size:.82rem;color:var(--main-text3)"></span>' +
         '</div>' +
@@ -5203,21 +5954,32 @@ function ptGetFilteredPanels() {
 
     return (ptDB.panelIds || []).filter(function(p) {
         if (search) {
-            var haystack = [p.name, p.customer, p.start_date, p.end_date, p.install_date]
-                .map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
+            var haystack = [
+                p.name,
+                p.customer,
+                p.start_date,
+                p.end_date,
+                p.install_date,
+                formatDateDMY(p.start_date),
+                formatDateDMY(p.end_date),
+                formatDateDMY(p.install_date)
+            ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
             if (haystack.indexOf(search) === -1) return false;
         }
         if (panelCustSelected.length > 0) {
             var pc = (p.customer || '').trim();
             if (panelCustSelected.indexOf(pc) === -1) return false;
         }
+
         var sd = p.start_date ? p.start_date.slice(0, 10) : '';
         var ed = p.end_date ? p.end_date.slice(0, 10) : '';
         var id = p.install_date ? p.install_date.slice(0, 10) : '';
-        if (startFilter && sd !== startFilter) return false;
-        if (endFilter && ed !== endFilter) return false;
+
+        if (startFilter && (!sd || sd < startFilter)) return false;
+        if (endFilter && (!ed || ed > endFilter)) return false;
         if (instFrom && (!id || id < instFrom)) return false;
         if (instTo && (!id || id > instTo)) return false;
+
         return true;
     });
 }
@@ -5241,9 +6003,9 @@ function ptFilterPanels() {
                 '<td>' + (startIdx + i + 1) + '</td>' +
                 '<td><strong>' + esc(p.name) + '</strong></td>' +
                 '<td>' + esc(p.customer || '—') + '</td>' +
-                '<td>' + (p.start_date ? p.start_date.slice(0, 10) : '—') + '</td>' +
-                '<td>' + (p.end_date ? p.end_date.slice(0, 10) : '—') + '</td>' +
-                '<td>' + (p.install_date ? p.install_date.slice(0, 10) : '—') + '</td>' +
+                '<td>' + formatDateDMY(p.start_date) + '</td>' +
+                '<td>' + formatDateDMY(p.end_date) + '</td>' +
+                '<td>' + formatDateDMY(p.install_date) + '</td>' +
                 '<td onclick="event.stopPropagation()">' + (canEdit()
                 ? '<div style="display:flex;gap:4px">' +
                     '<button class="btn btn-ghost btn-sm" onclick="ptShowEditPanel(' + p.id + ')">Edit</button>' +
@@ -5283,9 +6045,9 @@ function ptExportPanelsExcel() {
             No: i + 1,
             'Panel ID': p.name || '',
             Customer: p.customer || '',
-            'Start Date': ptDateOnly(p.start_date),
-            'End Date': ptDateOnly(p.end_date),
-            'Install Date': ptDateOnly(p.install_date)
+            'Start Date': formatDateDMY(p.start_date),
+            'End Date': formatDateDMY(p.end_date),
+            'Install Date': formatDateDMY(p.install_date)
         };
     });
     ptExportRowsToExcel(rows, 'Panels', 'panels');
@@ -5449,9 +6211,9 @@ function ptRenderDrawerPanel() {
             '<div class="pt-info-grid">' +
                 '<div class="pt-info-item"><span class="pt-info-label">Panel ID</span><span class="pt-info-value">' + esc(panel.name) + '</span></div>' +
                 '<div class="pt-info-item"><span class="pt-info-label">Customer</span><span class="pt-info-value">' + esc(panel.customer || '—') + '</span></div>' +
-                '<div class="pt-info-item"><span class="pt-info-label">Start Date</span><span class="pt-info-value mono">' + (panel.start_date ? panel.start_date.slice(0, 10) : '—') + '</span></div>' +
-                '<div class="pt-info-item"><span class="pt-info-label">End Date</span><span class="pt-info-value mono">' + (panel.end_date ? panel.end_date.slice(0, 10) : '—') + '</span></div>' +
-                '<div class="pt-info-item"><span class="pt-info-label">Install Date</span><span class="pt-info-value mono">' + (panel.install_date ? panel.install_date.slice(0, 10) : '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Start Date</span><span class="pt-info-value mono">' + formatDateDMY(panel.start_date) + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">End Date</span><span class="pt-info-value mono">' + formatDateDMY(panel.end_date) + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Install Date</span><span class="pt-info-value mono">' + formatDateDMY(panel.install_date) + '</span></div>' +
                 '<div class="pt-info-item"><span class="pt-info-label">Materials Count</span><span class="pt-info-value mono">' + materials.length + '</span></div>' +
             '</div>' +
         '</div>' +
@@ -5560,7 +6322,7 @@ function ptRenderDrawerMaterial() {
                 '<div class="pt-info-item"><span class="pt-info-label">YOM</span><span class="pt-info-value mono">' + esc(m.yom || '—') + '</span></div>' +
                 '<div class="pt-info-item"><span class="pt-info-label">Vendor</span><span class="pt-info-value">' + esc(m.vendor || '—') + '</span></div>' +
                 '<div class="pt-info-item"><span class="pt-info-label">Vendor PO No</span><span class="pt-info-value mono">' + esc(m.vendor_po_no || '—') + '</span></div>' +
-                '<div class="pt-info-item"><span class="pt-info-label">Install Date</span><span class="pt-info-value mono">' + (m.install_date ? m.install_date.slice(0, 10) : '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Install Date</span><span class="pt-info-value mono">' + formatDateDMY(m.install_date) + '</span></div>' +
             '</div>' +
         '</div>' +
 
@@ -5570,9 +6332,9 @@ function ptRenderDrawerMaterial() {
             '<div class="pt-info-grid">' +
                 '<div class="pt-info-item"><span class="pt-info-label">Panel ID</span><span class="pt-info-value">' + esc(panel.name) + '</span></div>' +
                 '<div class="pt-info-item"><span class="pt-info-label">Customer</span><span class="pt-info-value">' + esc(panel.customer || '—') + '</span></div>' +
-                '<div class="pt-info-item"><span class="pt-info-label">Start Date</span><span class="pt-info-value mono">' + (panel.start_date ? panel.start_date.slice(0, 10) : '—') + '</span></div>' +
-                '<div class="pt-info-item"><span class="pt-info-label">End Date</span><span class="pt-info-value mono">' + (panel.end_date ? panel.end_date.slice(0, 10) : '—') + '</span></div>' +
-                '<div class="pt-info-item"><span class="pt-info-label">Install Date</span><span class="pt-info-value mono">' + (panel.install_date ? panel.install_date.slice(0, 10) : '—') + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Start Date</span><span class="pt-info-value mono">' + formatDateDMY(panel.start_date) + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">End Date</span><span class="pt-info-value mono">' + formatDateDMY(panel.end_date) + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Install Date</span><span class="pt-info-value mono">' + formatDateDMY(panel.install_date) + '</span></div>' +
                 '<div class="pt-info-item"><span class="pt-info-label">Total Materials</span><span class="pt-info-value mono">' + siblings.length + '</span></div>' +
             '</div>' +
         '</div>' :
@@ -5670,6 +6432,7 @@ function ptGetFilteredMaterials() {
             var haystack = [
                 m.part_no, m.brand, m.description, m.serial_no, m.yom,
                 m.vendor, m.vendor_po_no, m.panel_no, m.install_date,
+                formatDateDMY(m.install_date),
                 m.category, m.unit, m.unit_price
             ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
             if (haystack.indexOf(search) === -1) return false;
@@ -5719,7 +6482,7 @@ function ptFilterMaterials() {
                 '<td>' + esc(m.category || '—') + '</td>' +
                 '<td>' + esc(m.unit || '—') + '</td>' +
                 '<td>' + (m.unit_price != null ? parseFloat(m.unit_price).toLocaleString('en-MY', { maximumFractionDigits: 2 }) : '—') + '</td>' +
-                '<td>' + (m.install_date ? m.install_date.slice(0, 10) : '—') + '</td>' +
+                '<td>' + (m.install_date ? formatDateDMY(m.install_date) : '—') + '</td>' +
                 '<td onclick="event.stopPropagation()">' + (canEdit()
                 ? '<div style="display:flex;gap:4px">' +
                     '<button class="btn btn-ghost btn-sm" onclick="ptShowEditMaterial(' + m.id + ')">Edit</button>' +
@@ -5767,7 +6530,7 @@ function ptExportMaterialsExcel() {
             Category: m.category || '',
             Unit: m.unit || '',
             Price: m.unit_price != null ? Number(m.unit_price) : 0,
-            'Install Date': ptDateOnly(m.install_date)
+            'Install Date': formatDateDMY(m.install_date)
         };
     });
     ptExportRowsToExcel(rows, 'Materials', 'materials');
@@ -6127,6 +6890,17 @@ function changeUsersPageSize(size) { usersPageSize = parseInt(size); usersCurren
 function ptShowAddUser() {
     var posOpts = DB.positions.map(function(p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
     var deptOpts = DB.departments.map(function(d) { return '<option value="' + d.id + '">' + esc(d.name) + '</option>'; }).join('');
+
+    var viewerScopesHtml = '<div id="pt-viewer-scope-fields" style="display:none">' +
+        '<div class="field"><label>Work Category Access</label>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">';
+    DB.scopes.forEach(function(s) {
+        viewerScopesHtml += '<label style="display:flex;align-items:center;gap:4px;font-size:.85rem;padding:4px 8px;border:1px solid var(--main-border);border-radius:var(--radius);cursor:pointer">' +
+            '<input type="checkbox" class="pt-add-viewer-scope-cb" value="' + s.id + '"> ' + esc(s.name) +
+        '</label>';
+    });
+    viewerScopesHtml += '</div></div></div>';
+
     showModal('<h3>Add User</h3>' +
         '<div class="field"><label>Role</label><select class="input" id="pt-adduser-role" onchange="ptToggleAddUserFields()"><option value="employee">Employee</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></div>' +
         '<div id="pt-emp-fields">' +
@@ -6135,6 +6909,7 @@ function ptShowAddUser() {
             '<div class="field"><label>Department</label><select class="input" id="pt-adduser-dept"><option value="">None</option>' + deptOpts + '</select></div>' +
             '<div class="field"><label>Monthly Salary</label><input class="input input-mono" id="pt-adduser-salary" type="number" placeholder="e.g. 15000.00"></div>' +
         '</div>' +
+        viewerScopesHtml +
         '<div class="field"><label>Username</label><input class="input" id="pt-adduser-user" placeholder="Login username"></div>' +
         '<div class="field"><label>Password</label><input class="input" id="pt-adduser-pass" type="password" placeholder="Min. 6 characters"></div>' +
         '<p class="auth-error" id="pt-adduser-error"></p>' +
@@ -6145,6 +6920,7 @@ function ptShowAddUser() {
 function ptToggleAddUserFields() {
     var role = document.getElementById('pt-adduser-role').value;
     document.getElementById('pt-emp-fields').style.display = (role === 'employee' || role === 'viewer') ? '' : 'none';
+    document.getElementById('pt-viewer-scope-fields').style.display = role === 'viewer' ? '' : 'none';
 }
 
 async function ptDoAddUser() {
@@ -6173,13 +6949,22 @@ async function ptDoAddUser() {
                 body: { name: name, positionId: posId ? parseInt(posId) : null, departmentId: deptId ? parseInt(deptId) : null }
             });
             var memberId = memberResult.id;
-            await api('/users', {
+            var result = await api('/users', {
                 method: 'POST',
                 body: { username: username, password: password, role: role, memberId: memberId }
             });
             if (salary && parseFloat(salary) > 0) {
                 var now = new Date().toISOString().slice(0, 7);
                 await api('/salaries', { method: 'PUT', body: { memberId: memberId, month: now, amount: parseFloat(salary) } });
+            }
+            // 保存 viewer scope
+            if (role === 'viewer' && result && result.id) {
+                var cbs = document.querySelectorAll('.pt-add-viewer-scope-cb:checked');
+                var scopeIds = [];
+                cbs.forEach(function(cb) { scopeIds.push(parseInt(cb.value)); });
+                if (scopeIds.length > 0) {
+                    await api('/viewer-scopes/' + result.id, { method: 'PUT', body: { scopeIds: scopeIds } });
+                }
             }
             hideModal(); await ptLoadAllUsers(); await loadDB(); ptRenderUsers();
         } catch (e) { errEl.textContent = e.message; }
@@ -6195,19 +6980,48 @@ function ptShowEditUser(userId) {
     var deptOpts = DB.departments.map(function(d) { var sel = member && member.departmentId === d.id ? 'selected' : ''; return '<option value="' + d.id + '" ' + sel + '>' + esc(d.name) + '</option>'; }).join('');
 
     var html = '<h3>Edit — ' + esc(user.username) + '</h3>';
-    if (user.role !== 'admin' && member) {
-        var curSal = latestSalary(member);
-        html += '<div class="field"><label>Full Name</label><input class="input" id="pt-edituser-name" value="' + esc(member.name) + '"></div>' +
-            '<div class="field"><label>Position</label><select class="input" id="pt-edituser-pos"><option value="">None</option>' + posOpts + '</select></div>' +
-            '<div class="field"><label>Department</label><select class="input" id="pt-edituser-dept"><option value="">None</option>' + deptOpts + '</select></div>' +
-            '<div class="field"><label>Monthly Salary</label><input class="input input-mono" id="pt-edituser-salary" type="number" value="' + (curSal > 0 ? curSal : '') + '" placeholder="e.g. 15000.00"></div>';
-    }
+
+    // Member fields
+    html += '<div id="pt-edit-member-fields"' + (user.role === 'admin' ? ' style="display:none"' : '') + '>';
+    var curSal = member ? latestSalary(member) : 0;
+    html += '<div class="field"><label>Full Name</label><input class="input" id="pt-edituser-name" value="' + (member ? esc(member.name) : '') + '"></div>' +
+        '<div class="field"><label>Position</label><select class="input" id="pt-edituser-pos"><option value="">None</option>' + posOpts + '</select></div>' +
+        '<div class="field"><label>Department</label><select class="input" id="pt-edituser-dept"><option value="">None</option>' + deptOpts + '</select></div>' +
+        '<div class="field"><label>Monthly Salary</label><input class="input input-mono" id="pt-edituser-salary" type="number" value="' + (curSal > 0 ? curSal : '') + '" placeholder="e.g. 15000.00"></div>';
+    html += '</div>';
+
+    // Viewer scope
+    var existing = (DB.viewerScopes || {})[user.id] || [];
+    html += '<div id="pt-edit-viewer-scope-fields"' + (user.role !== 'viewer' ? ' style="display:none"' : '') + '>' +
+        '<div class="field"><label>Work Category Access</label>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">';
+    DB.scopes.forEach(function(s) {
+        var checked = existing.indexOf(s.id) !== -1 ? ' checked' : '';
+        html += '<label style="display:flex;align-items:center;gap:4px;font-size:.85rem;padding:4px 8px;border:1px solid var(--main-border);border-radius:var(--radius);cursor:pointer">' +
+            '<input type="checkbox" class="pt-viewer-scope-cb" value="' + s.id + '"' + checked + '> ' + esc(s.name) +
+        '</label>';
+    });
+    html += '</div></div></div>';
+
     html += '<div class="field"><label>Username</label><input class="input" id="pt-edituser-user" value="' + esc(user.username) + '"></div>' +
         '<div class="field"><label>New Password (blank = keep)</label><input class="input" id="pt-edituser-pass" type="password" placeholder="Leave blank"></div>' +
-        '<div class="field"><label>Role</label><select class="input" id="pt-edituser-role"><option value="admin" ' + (user.role === 'admin' ? 'selected' : '') + '>Admin</option><option value="viewer" ' + (user.role === 'viewer' ? 'selected' : '') + '>Viewer</option><option value="employee" ' + (user.role === 'employee' ? 'selected' : '') + '>Employee</option></select></div>' +
+        '<div class="field"><label>Role</label><select class="input" id="pt-edituser-role" onchange="ptToggleEditUserFields()">' +
+            '<option value="admin" ' + (user.role === 'admin' ? 'selected' : '') + '>Admin</option>' +
+            '<option value="viewer" ' + (user.role === 'viewer' ? 'selected' : '') + '>Viewer</option>' +
+            '<option value="employee" ' + (user.role === 'employee' ? 'selected' : '') + '>Employee</option>' +
+        '</select></div>' +
         '<p class="auth-error" id="pt-edituser-error"></p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="ptDoEditUser(' + user.id + ')">Save</button></div>';
+
     showModal(html);
+}
+
+function ptToggleEditUserFields() {
+    var role = document.getElementById('pt-edituser-role').value;
+    var memberFields = document.getElementById('pt-edit-member-fields');
+    var viewerFields = document.getElementById('pt-edit-viewer-scope-fields');
+    if (memberFields) memberFields.style.display = (role === 'employee' || role === 'viewer') ? '' : 'none';
+    if (viewerFields) viewerFields.style.display = role === 'viewer' ? '' : 'none';
 }
 
 async function ptDoEditUser(userId) {
@@ -6220,12 +7034,43 @@ async function ptDoEditUser(userId) {
     if (!newUsername) { errEl.textContent = 'Username cannot be empty'; return; }
     if (newPass && newPass.length < 6) { errEl.textContent = 'Min 6 characters'; return; }
 
+    // 如果从 admin 改成 employee/viewer，需要创建 member
+    var memberId = user.memberId;
+    if (!memberId && (newRole === 'employee' || newRole === 'viewer')) {
+        var nameEl = document.getElementById('pt-edituser-name');
+        var posEl = document.getElementById('pt-edituser-pos');
+        var deptEl = document.getElementById('pt-edituser-dept');
+        var salEl = document.getElementById('pt-edituser-salary');
+        var name = nameEl ? nameEl.value.trim() : '';
+        if (!name) { errEl.textContent = 'Enter a name'; return; }
+        var posId = posEl ? posEl.value : '';
+        var deptId = deptEl ? deptEl.value : '';
+        var sal = salEl ? parseFloat(salEl.value) : 0;
+        var now = new Date().toISOString().slice(0, 7);
+
+        var memberResult = await api('/members', {
+            method: 'POST',
+            body: {
+                name: name,
+                positionId: posId ? parseInt(posId) : null,
+                departmentId: deptId ? parseInt(deptId) : null
+            }
+        });
+        memberId = memberResult.id;
+
+        if (!isNaN(sal) && sal > 0) {
+            await api('/salaries', { method: 'PUT', body: { memberId: memberId, month: now, amount: sal } });
+        }
+    }
+
+    // 更新 user
     await api('/users/' + userId, {
         method: 'PUT',
-        body: { username: newUsername, password: newPass || null, role: newRole }
+        body: { username: newUsername, password: newPass || null, role: newRole, memberId: memberId }
     });
 
-    if (user.memberId) {
+    // 更新 member
+    if (memberId && (newRole === 'employee' || newRole === 'viewer')) {
         var nameEl = document.getElementById('pt-edituser-name');
         var posEl = document.getElementById('pt-edituser-pos');
         var deptEl = document.getElementById('pt-edituser-dept');
@@ -6235,29 +7080,31 @@ async function ptDoEditUser(userId) {
         var deptId = deptEl ? (deptEl.value ? parseInt(deptEl.value) : null) : undefined;
 
         if (name || posId !== undefined || deptId !== undefined) {
-            var member = DB.members.find(function(m) { return m.id === user.memberId; });
-            if (member) {
-                await api('/members/' + user.memberId, {
-                    method: 'PUT',
-                    body: {
-                        name: name || member.name,
-                        positionId: posId !== undefined ? posId : member.positionId,
-                        departmentId: deptId !== undefined ? deptId : member.departmentId
-                    }
-                });
-            }
+            var member = DB.members.find(function(m) { return m.id === memberId; });
+            await api('/members/' + memberId, {
+                method: 'PUT',
+                body: {
+                    name: name || (member ? member.name : ''),
+                    positionId: posId !== undefined ? posId : (member ? member.positionId : null),
+                    departmentId: deptId !== undefined ? deptId : (member ? member.departmentId : null)
+                }
+            });
         }
 
         if (salEl) {
             var rawVal = salEl.value.trim();
             var val = parseFloat(rawVal);
             var now = new Date().toISOString().slice(0, 7);
-            if (rawVal !== '' && !isNaN(val) && val > 0) {
-                await api('/salaries', { method: 'PUT', body: { memberId: user.memberId, month: now, amount: val } });
-            } else {
-                await api('/salaries', { method: 'PUT', body: { memberId: user.memberId, month: now, amount: 0 } });
-            }
+            await api('/salaries', { method: 'PUT', body: { memberId: memberId, month: now, amount: (!isNaN(val) && val > 0) ? val : 0 } });
         }
+    }
+
+    // 保存 viewer scope
+    if (newRole === 'viewer') {
+        var cbs = document.querySelectorAll('.pt-viewer-scope-cb:checked');
+        var scopeIds = [];
+        cbs.forEach(function(cb) { scopeIds.push(parseInt(cb.value)); });
+        await api('/viewer-scopes/' + userId, { method: 'PUT', body: { scopeIds: scopeIds } });
     }
 
     hideModal(); await ptLoadAllUsers(); await loadDB(); ptRenderUsers();
@@ -6282,23 +7129,23 @@ async function ptDoDeleteUser(id) {
 /* ==========================================================
    Role and Permission
    ========================================================== */
-async function api(path, opts) {
-    opts = opts || {};
-    var url = '/api' + path;
-    var options = {
-        method: opts.method || 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-User-Role': currentUser ? currentUser.role : '',
-            'X-Member-Id': currentUser && currentUser.memberId ? String(currentUser.memberId) : ''
-        }
-    };
-    if (opts.body) options.body = JSON.stringify(opts.body);
-    var res = await fetch(url, options);
-    var data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Request failed');
-    return data;
-}
+// async function api(path, opts) {
+//     opts = opts || {};
+//     var url = '/api' + path;
+//     var options = {
+//         method: opts.method || 'GET',
+//         headers: {
+//             'Content-Type': 'application/json',
+//             'X-User-Role': currentUser ? currentUser.role : '',
+//             'X-Member-Id': currentUser && currentUser.memberId ? String(currentUser.memberId) : ''
+//         }
+//     };
+//     if (opts.body) options.body = JSON.stringify(opts.body);
+//     var res = await fetch(url, options);
+//     var data = await res.json();
+//     if (!res.ok) throw new Error(data.error || 'Request failed');
+//     return data;
+// }
 
 /* ==========================================================
    Pre-load data on page load
@@ -6341,7 +7188,25 @@ async function api(path, opts) {
             document.getElementById('panel-layout').classList.add('active');
             document.getElementById('pt-avatar').textContent = currentUser.username.charAt(0).toUpperCase();
             document.getElementById('pt-user-name').textContent = currentUser.username;
+
+            var isViewer = currentUser.role === 'viewer';
+            document.querySelectorAll('#pt-nav .nav-item').forEach(function(item) {
+                var page = item.getAttribute('data-page');
+                if (page === 'pt-import' || page === 'pt-users') {
+                    item.style.display = isViewer ? 'none' : '';
+                }
+            });
+            document.querySelectorAll('#pt-nav .nav-section').forEach(function(s) {
+                var t = s.textContent.trim();
+                if (t === 'Tools' || t === 'Settings') {
+                    s.style.display = isViewer ? 'none' : '';
+                }
+            });
+            var roleLabel = document.querySelector('#panel-layout .sidebar-user .user-role');
+            if (roleLabel) roleLabel.textContent = isViewer ? 'Viewer' : 'Admin';
+
             var page = localStorage.getItem('multitrade_pt_page') || 'pt-dashboard';
+            if (isViewer && (page === 'pt-import' || page === 'pt-users')) page = 'pt-dashboard';
             activateNav('pt-nav', page);
             ptNav(page);
         } catch(e) {
@@ -6354,9 +7219,26 @@ async function api(path, opts) {
     } else {
         try {
             await loadDB();
-            if (currentUser.role === 'admin') {
+            if (currentUser.role === 'admin' || currentUser.role === 'viewer') {
                 document.getElementById('admin-layout').classList.add('active');
+
+                var isViewer = currentUser.role === 'viewer';
+                document.querySelectorAll('#admin-nav .nav-item').forEach(function(item) {
+                    var page = item.getAttribute('data-page');
+                    if (page === 'users' || page === 'departments' || page === 'positions') {
+                        item.style.display = isViewer ? 'none' : '';
+                    }
+                });
+                document.querySelectorAll('#admin-nav .nav-section').forEach(function(s) {
+                    if (s.textContent.trim() === 'HR') {
+                        s.style.display = isViewer ? 'none' : '';
+                    }
+                });
+                var roleLabel = document.querySelector('#admin-layout .sidebar-user .user-role');
+                if (roleLabel) roleLabel.textContent = isViewer ? 'Viewer' : 'Administrator';
+
                 var page = localStorage.getItem('multitrade_admin_page') || 'projects';
+                if (isViewer && (page === 'users' || page === 'departments' || page === 'positions')) page = 'projects';
                 activateNav('admin-nav', page);
                 await adminNav(page);
             } else {
