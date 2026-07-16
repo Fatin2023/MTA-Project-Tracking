@@ -3895,9 +3895,9 @@ function _ssRender(containerId) {
         '<div class="ss-wrapper" style="position:relative">' +
             '<div class="ss-display" onclick="ssToggle(\'' + containerId + '\')" ' +
                 'style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;' +
-                'background:var(--main-input-bg,#fff);border:1px solid var(--main-border);border-radius:var(--radius,6px);' +
-                'cursor:pointer;font-size:.85rem;min-height:38px;user-select:none">' +
-                '<span style="' + (!inst.selected ? 'color:var(--main-text3)' : '') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' +
+                'background:var(--main-input-bg);border:1px solid var(--main-border);border-radius:var(--radius,6px);' +
+                'cursor:pointer;font-size:.85rem;min-height:38px;user-select:none;color:var(--main-text)">' +
+                '<span style="' + (!inst.selected ? 'color:var(--main-text3)' : 'color:var(--main-text)') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' +
                     esc(selectedLabel) +
                 '</span>' +
                 '<span style="margin-left:8px;color:var(--main-text3);font-size:.7rem;flex-shrink:0">' +
@@ -3915,7 +3915,7 @@ function _ssRender(containerId) {
                             'oninput="ssOnFilter(\'' + containerId + '\', this.value)" ' +
                             'onclick="event.stopPropagation()" ' +
                             'style="width:100%;padding:6px 8px;font-size:.82rem;border:1px solid var(--main-border);' +
-                            'border-radius:4px;outline:none;background:var(--main-input-bg,#fff);color:var(--main-text)">' +
+                            'border-radius:4px;outline:none;background:var(--main-input-bg);color:var(--main-text)">' +
                     '</div>' +
                     '<div class="ss-options" style="overflow-y:auto;max-height:210px">' +
                         (filtered.length === 0
@@ -3931,9 +3931,9 @@ function _ssRender(containerId) {
                                       'onclick="ssSelect(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\')" ' +
                                       'style="padding:8px 12px;cursor:pointer;font-size:.82rem;' +
                                       (isSelected
-                                          ? 'background:var(--main-accent-bg,rgba(99,102,241,.1));color:var(--main-accent,#6366f1);font-weight:600'
+                                          ? 'background:var(--accent-soft);color:var(--accent);font-weight:600'
                                           : 'color:var(--main-text)') +
-                                      ';border-bottom:1px solid var(--main-border,rgba(0,0,0,.05))">' +
+                                      ';border-bottom:1px solid var(--main-border)">' +
                                       esc(o.label) +
                                       '</div>';
                               }).join('')
@@ -4140,9 +4140,9 @@ function _ssmRender(containerId) {
     var html = '<div class="ssm-wrapper" style="position:relative">' +
         '<div class="ssm-display" onclick="ssmToggle(\'' + containerId + '\')" ' +
             'style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;' +
-            'background:var(--main-input-bg,#fff);border:1px solid var(--main-border);border-radius:6px;' +
-            'cursor:pointer;font-size:.82rem;min-height:36px;user-select:none;gap:6px">' +
-            '<span style="' + (count === 0 ? 'color:var(--main-text3)' : '') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' +
+            'background:var(--main-input-bg);border:1px solid var(--main-border);border-radius:6px;' +
+            'cursor:pointer;font-size:.82rem;min-height:36px;user-select:none;gap:6px;color:var(--main-text)">' +
+            '<span style="' + (count === 0 ? 'color:var(--main-text3)' : 'color:var(--main-text)') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' +
                 esc(displayText) +
             '</span>' +
             (count > 0
@@ -4162,11 +4162,11 @@ function _ssmRender(containerId) {
             'oninput="ssmOnFilter(\'' + containerId + '\', this.value)" ' +
             'onclick="event.stopPropagation()" ' +
             'style="width:100%;padding:6px 8px;font-size:.8rem;border:1px solid var(--main-border);' +
-            'border-radius:4px;outline:none;background:var(--main-input-bg,#fff);color:var(--main-text)">' +
+            'border-radius:4px;outline:none;background:var(--main-input-bg);color:var(--main-text)">' +
             '</div>';
 
         html += '<div style="display:flex;gap:10px;padding:5px 8px;border-bottom:1px solid var(--main-border);font-size:.75rem">' +
-            '<a href="javascript:void(0)" onclick="ssmSelectAll(\'' + containerId + '\')" style="color:var(--main-accent,#6366f1);text-decoration:none">Select All</a>' +
+            '<a href="javascript:void(0)" onclick="ssmSelectAll(\'' + containerId + '\')" style="color:var(--accent);text-decoration:none">Select All</a>' +
             '<a href="javascript:void(0)" onclick="ssmClear(\'' + containerId + '\');_ssmRender(\'' + containerId + '\')" style="color:var(--main-text3);text-decoration:none">Clear</a>' +
             '</div>';
 
@@ -4177,10 +4177,10 @@ function _ssmRender(containerId) {
             filtered.forEach(function(o) {
                 var checked = inst.selected.indexOf(String(o.value)) !== -1;
                 html += '<label style="display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;font-size:.82rem;' +
-                    (checked ? 'background:rgba(99,102,241,.06)' : '') + ';border-bottom:1px solid rgba(0,0,0,.03)">' +
+                    (checked ? 'background:var(--accent-soft)' : '') + ';border-bottom:1px solid var(--main-border)">' +
                     '<input type="checkbox" ' + (checked ? 'checked' : '') + ' ' +
                     'onchange="ssmToggleOption(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\',this.checked)" ' +
-                    'style="accent-color:var(--main-accent,#6366f1)">' +
+                    'style="accent-color:var(--accent)">' +
                     '<span style="color:var(--main-text)">' + esc(o.label) + '</span>' +
                     '</label>';
             });
@@ -4238,10 +4238,10 @@ function ssmOnFilter(containerId, val) {
     optionsDiv.innerHTML = filtered.map(function(o) {
         var checked = inst.selected.indexOf(String(o.value)) !== -1;
         return '<label style="display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;font-size:.82rem;' +
-            (checked ? 'background:rgba(99,102,241,.06)' : '') + ';border-bottom:1px solid rgba(0,0,0,.03)">' +
+            (checked ? 'background:var(--accent-soft)' : '') + ';border-bottom:1px solid var(--main-border)">' +
             '<input type="checkbox" ' + (checked ? 'checked' : '') + ' ' +
             'onchange="ssmToggleOption(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\',this.checked)" ' +
-            'style="accent-color:var(--main-accent,#6366f1)">' +
+            'style="accent-color:var(--accent)">' +
             '<span style="color:var(--main-text)">' + esc(o.label) + '</span>' +
             '</label>';
     }).join('');
@@ -4548,21 +4548,21 @@ function renderAdminAttPage() {
             return '<tr>' +
                 '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (startIdx + idx + 1) + '</td>' +
                 '<td style="font-family:var(--font-m)">' + formatDateDMY(r.date) + '</td>' +
+                '<td style="font-family:var(--font-m)">' + startTime + '</td>' +
+                '<td style="font-family:var(--font-m)">' + endTime + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + dur + '</td>' +
                 '<td>' + (dept ? esc(dept) : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
                 '<td>' + (emp ? esc(emp.name) : '?') + '</td>' +
                 '<td>' + itemDisplay + '</td>' +
                 '<td>' + (wp ? esc(wp.title) : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
                 '<td>' + (wd ? esc(wd.title) : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
                 '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.description || '') + '">' + (r.description ? esc(r.description) : '<span style="color:var(--main-text3)">\u2014</span>') + '</td>' +
-                '<td style="font-family:var(--font-m)">' + startTime + '</td>' +
-                '<td style="font-family:var(--font-m)">' + endTime + '</td>' +
-                '<td style="text-align:right;font-family:var(--font-m)">' + dur + '</td>' +
                 '<td>' + (currentUser.role !== 'viewer'
                     ? '<div class="actions-cell">' +
                         '<button class="btn-icon" onclick="showAdminEditAttendance(' + r.id + ')" title="Edit">&#9998;</button>' +
                         '<button class="btn-icon danger" onclick="confirmDeleteAttendance(' + r.id + ')" title="Delete">&#10005;</button>' +
                     '</div>'
-                : '') + '</td></tr>';
+                    : '') + '</td></tr>';
         }).join('');
     }
 
@@ -4598,8 +4598,7 @@ function renderAdminAttPage() {
 
     document.getElementById('admin-att-table-area').innerHTML =
         '<div class="table-wrap"><table>' +
-            '<thead><tr><th style="width:50px">No</th><th>Date</th><th>Department</th><th>Employee</th><th>Category &rarr; ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th></tr></thead>' +
-            '<tbody>' + rows + '</tbody></table></div>' +
+        '<thead><tr><th style="width:50px">No</th><th>Date</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th>Department</th><th>Employee</th><th>Category &rarr; ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th style="width:90px">Actions</th></tr></thead>'+            '<tbody>' + rows + '</tbody></table></div>' +
         paginationHtml;
 }
 

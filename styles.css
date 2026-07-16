@@ -16,6 +16,7 @@
   --main-text:#1a1a1a;
   --main-text2:#555555;
   --main-text3:#888888;
+  --main-input-bg:#ffffff;
 
   /* Shared */
   --accent:#c9a84c;--accent-soft:rgba(201,168,76,0.12);--accent-hover:#dbb95d;
@@ -47,6 +48,7 @@
   --main-text:#e2e0dc;
   --main-text2:#a0a0a0;
   --main-text3:#6b7280;
+  --main-input-bg:#161d33;
 
   --accent:#d4b65c;--accent-soft:rgba(212,182,92,.12);--accent-hover:#e5c96d;
   --green:#22c55e;--green-soft:rgba(34,197,94,.1);--green-border:rgba(34,197,94,.25);
@@ -60,6 +62,65 @@
   --modal-overlay:rgba(0,0,0,.65);
 }
 
+/* Light mode - dropdown */
+.ss-wrapper,
+.ssm-wrapper {
+    color: #1a1a1a !important;
+}
+.ss-wrapper *,
+.ssm-wrapper * {
+    color: #1a1a1a !important;
+}
+.ss-wrapper input,
+.ssm-wrapper input[type="text"] {
+    background: #ffffff !important;
+    color: #1a1a1a !important;
+    border-color: #d9d5ce !important;
+}
+.ss-wrapper .ss-option,
+.ssm-wrapper .ssm-options label span {
+    color: #1a1a1a !important;
+}
+.ss-wrapper input[type="checkbox"],
+.ssm-wrapper input[type="checkbox"] {
+    accent-color: #c9a84c !important;
+}
+
+/* Dark mode - dropdown */
+[data-theme="dark"] .ss-wrapper,
+[data-theme="dark"] .ssm-wrapper {
+    color: #e2e0dc !important;
+}
+[data-theme="dark"] .ss-wrapper *,
+[data-theme="dark"] .ssm-wrapper * {
+    color: #e2e0dc !important;
+}
+[data-theme="dark"] .ss-wrapper input,
+[data-theme="dark"] .ssm-wrapper input[type="text"] {
+    background: #161d33 !important;
+    color: #e2e0dc !important;
+    border-color: #2a3456 !important;
+}
+[data-theme="dark"] .ss-wrapper .ss-option,
+[data-theme="dark"] .ssm-wrapper .ssm-options label span {
+    color: #e2e0dc !important;
+}
+[data-theme="dark"] .ss-wrapper input[type="checkbox"],
+[data-theme="dark"] .ssm-wrapper input[type="checkbox"] {
+    accent-color: #d4b65c !important;
+}
+
+/* Dark mode - date input calendar icon */
+[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.8;
+}
+
+/* Dark mode - time input clock icon */
+[data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.8;
+}
 
 html{scroll-behavior:smooth}
 body{font-family:var(--font-b);background:var(--bg);color:var(--main-text);min-height:100vh}
