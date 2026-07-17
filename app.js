@@ -3565,14 +3565,50 @@ function renderEmpReport() {
     var defaultFrom = thirtyDaysAgo.toISOString().slice(0, 10);
 
     var picScopeIds = getPICScopeIds();
-    var scopeList = DB.scopes.filter(function(s) { return picScopeIds.indexOf(s.id) !== -1; })
+    var picProjectIds = DB.projects
+        .filter(function(p) { return p.categoryId && picScopeIds.indexOf(p.categoryId) !== -1; })
+        .map(function(p) { return p.id; });
+
+    // 找出 PIC scope 项目里的所有员工
+    var picMemberIds = [];
+    DB.projectAssignments.forEach(function(pa) {
+        var proj = DB.projects.find(function(p) { return p.id === pa.projectId; });
+        if (proj && proj.categoryId && picScopeIds.indexOf(proj.categoryId) !== -1) {
+            if (picMemberIds.indexOf(pa.memberId) === -1) picMemberIds.push(pa.memberId);
+        }
+    });
+    DB.attendance.forEach(function(a) {
+        if (a.projectId && picProjectIds.indexOf(a.projectId) !== -1) {
+            if (picMemberIds.indexOf(a.memberId) === -1) picMemberIds.push(a.memberId);
+        }
+    });
+
+    // 找出这些员工有 attendance 的所有 category
+    var empAttendanceScopeIds = [];
+    DB.attendance.forEach(function(a) {
+        if (picMemberIds.indexOf(a.memberId) !== -1 && a.projectId) {
+            var proj = DB.projects.find(function(p) { return p.id === a.projectId; });
+            if (proj && proj.categoryId && empAttendanceScopeIds.indexOf(proj.categoryId) === -1) {
+                empAttendanceScopeIds.push(proj.categoryId);
+            }
+        }
+    });
+
+    // 合并 PIC scope + 员工有 attendance 的 scope
+    var allScopeIds = picScopeIds.slice();
+    empAttendanceScopeIds.forEach(function(sid) {
+        if (allScopeIds.indexOf(sid) === -1) allScopeIds.push(sid);
+    });
+
+    var scopeList = DB.scopes.filter(function(s) { return allScopeIds.indexOf(s.id) !== -1; })
         .sort(function(a, b) { return a.name.localeCompare(b.name); });
+        
     var deptList = DB.departments.slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
 
     var scopeOpts = scopeList.map(function(s) { return { value: s.id, label: s.name }; });
     var deptOpts = deptList.map(function(d) { return { value: d.id, label: d.name }; });
 
-    var picProjects = DB.projects.filter(function(p) { return p.categoryId && picScopeIds.indexOf(p.categoryId) !== -1; });
+    var picProjects = DB.projects.filter(function(p) { return p.categoryId && allScopeIds.indexOf(p.categoryId) !== -1; });
     var seenOther = false;
     var itemOpts = [];
     picProjects.sort(function(a, b) {
@@ -3679,32 +3715,44 @@ function renderEmpReport() {
 
 function buildEmpRptEmpOpts(scopeIds, itemIds) {
     var picScopeIds = getPICScopeIds();
-
-    // 总是基于 PIC scope 的项目
-    var projectIds = DB.projects
+    var picProjectIds = DB.projects
         .filter(function(p) { return p.categoryId && picScopeIds.indexOf(p.categoryId) !== -1; })
         .map(function(p) { return p.id; });
 
-    // 如果选了 category，进一步缩小
-    if (scopeIds && scopeIds.length > 0) {
-        projectIds = DB.projects
-            .filter(function(p) { return p.categoryId && scopeIds.indexOf(p.categoryId) !== -1; })
-            .map(function(p) { return p.id; });
-    }
-
-    // 如果选了 item，进一步缩小
-    if (itemIds && itemIds.length > 0) {
-        var expandedIds = expandOtherItemIds(itemIds);
-        projectIds = projectIds.filter(function(id) { return expandedIds.indexOf(id) !== -1; });
-    }
-
-    // 找出在这些项目里有 attendance 的 member
+    // 找出 PIC scope 项目里的所有员工
     var memberIds = [];
-    DB.attendance.forEach(function(a) {
-        if (a.projectId && projectIds.indexOf(a.projectId) !== -1 && memberIds.indexOf(a.memberId) === -1) {
-            memberIds.push(a.memberId);
+    DB.projectAssignments.forEach(function(pa) {
+        var proj = DB.projects.find(function(p) { return p.id === pa.projectId; });
+        if (proj && proj.categoryId && picScopeIds.indexOf(proj.categoryId) !== -1) {
+            if (memberIds.indexOf(pa.memberId) === -1) memberIds.push(pa.memberId);
         }
     });
+    DB.attendance.forEach(function(a) {
+        if (a.projectId && picProjectIds.indexOf(a.projectId) !== -1) {
+            if (memberIds.indexOf(a.memberId) === -1) memberIds.push(a.memberId);
+        }
+    });
+
+    // 如果选了 category 或 item，只返回在那些项目下有 attendance 的人
+    if ((scopeIds && scopeIds.length > 0) || (itemIds && itemIds.length > 0)) {
+        var filterProjectIds = DB.projects.map(function(p) { return p.id; });
+        if (scopeIds && scopeIds.length > 0) {
+            filterProjectIds = DB.projects
+                .filter(function(p) { return p.categoryId && scopeIds.indexOf(p.categoryId) !== -1; })
+                .map(function(p) { return p.id; });
+        }
+        if (itemIds && itemIds.length > 0) {
+            var expandedIds = expandOtherItemIds(itemIds);
+            filterProjectIds = filterProjectIds.filter(function(id) { return expandedIds.indexOf(id) !== -1; });
+        }
+        var filteredMemberIds = [];
+        DB.attendance.forEach(function(a) {
+            if (a.projectId && filterProjectIds.indexOf(a.projectId) !== -1) {
+                if (filteredMemberIds.indexOf(a.memberId) === -1) filteredMemberIds.push(a.memberId);
+            }
+        });
+        memberIds = memberIds.filter(function(mid) { return filteredMemberIds.indexOf(mid) !== -1; });
+    }
 
     // 排除 viewer
     var viewerMemberIds = getViewerMemberIds();
@@ -3756,14 +3804,36 @@ function generateEmpReport() {
         .filter(function(p) { return p.categoryId && picScopeIds.indexOf(p.categoryId) !== -1; })
         .map(function(p) { return p.id; });
 
-    var filtered = DB.attendance.filter(function(a) {
-        if (!a.date || a.date < fromDate || a.date > toDate) return false;
-        return picProjectIds.indexOf(a.projectId) !== -1;
+    // 找出 PIC scope 项目里的所有员工
+    var picProjectMemberIds = [];
+    DB.projectAssignments.forEach(function(pa) {
+        var proj = DB.projects.find(function(p) { return p.id === pa.projectId; });
+        if (proj && proj.categoryId && picScopeIds.indexOf(proj.categoryId) !== -1) {
+            if (picProjectMemberIds.indexOf(pa.memberId) === -1) {
+                picProjectMemberIds.push(pa.memberId);
+            }
+        }
+    });
+    // 也包括在 PIC scope 项目下有 attendance 记录的人
+    DB.attendance.forEach(function(a) {
+        if (a.projectId && picProjectIds.indexOf(a.projectId) !== -1) {
+            if (picProjectMemberIds.indexOf(a.memberId) === -1) {
+                picProjectMemberIds.push(a.memberId);
+            }
+        }
     });
 
+    // 看这些员工的所有 attendance（不限 category）
+    var filtered = DB.attendance.filter(function(a) {
+        if (!a.date || a.date < fromDate || a.date > toDate) return false;
+        return picProjectMemberIds.indexOf(a.memberId) !== -1;
+    });
+
+    // 排除 viewer
     var viewerMemberIds = getViewerMemberIds();
     filtered = filtered.filter(function(a) { return viewerMemberIds.indexOf(a.memberId) === -1; });
 
+    // 如果选了 category filter
     if (scopeIds.length > 0) {
         var scopeItemIds = DB.projects.filter(function(p) { return scopeIds.indexOf(p.categoryId) !== -1; }).map(function(p) { return p.id; });
         filtered = filtered.filter(function(a) { return scopeItemIds.indexOf(a.projectId) !== -1; });
