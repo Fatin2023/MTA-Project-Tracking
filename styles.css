@@ -615,3 +615,22 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
 .pt-drawer .pagination{padding:12px 0;border-top:none;background:transparent}
 
 @media(max-width:860px){.pt-drawer{width:calc(100vw - 23px);right:calc(-100vw + 23px)}}
+
+/* ===== Desktop: make .app-main scrollable ===== */
+@media(min-width:861px){
+    .app-layout.active{
+        height:100vh;
+        overflow:hidden;
+    }
+    .app-layout.active .app-main{
+        overflow-y:auto;
+        min-height:0;
+    }
+    .filter-sticky{
+        position:sticky;
+        top:0;
+        z-index:10;
+        background:var(--main-bg);
+        padding-bottom:4px;
+    }
+}
