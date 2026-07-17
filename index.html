@@ -156,6 +156,7 @@
     <div class="sidebar-nav" id="emp-nav">
       <div class="nav-item" onclick="empNav('attendance',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span></div>
       <div class="nav-item active" onclick="empNav('myprojects',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Work Category</span></div>
+      <div class="nav-item" id="emp-nav-report" style="display:none" onclick="empNav('report',this)"><span class="nav-icon">&#128200;</span><span class="nav-label">Report</span></div>
       <div class="nav-item" onclick="empNav('settings',this)"><span class="nav-icon">&#9881;</span><span class="nav-label">Settings</span></div>
     </div>
     <div class="sidebar-footer">
@@ -176,6 +177,7 @@
   <div class="app-main">
     <div id="emp-myprojects" class="emp-view"></div>
     <div id="emp-attendance" class="emp-view" style="display:none"></div>
+    <div id="emp-report" class="emp-view" style="display:none"></div>
     <div id="emp-settings" class="emp-view" style="display:none"></div>
   </div>
   <div class="mobile-header">

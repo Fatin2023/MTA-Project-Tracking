@@ -525,8 +525,23 @@ function getViewerVisibleProjects() {
     });
 }
 
+function empIsPIC() {
+    if (!currentUser || !currentUser.memberId) return false;
+    return DB.scopes.some(function(s) {
+        return s.picMemberIds && s.picMemberIds.indexOf(currentUser.memberId) !== -1;
+    });
+}
 
 async function empNav(tab, el) {
+    // PIC 权限检查
+    var reportNav = document.getElementById('emp-nav-report');
+    if (reportNav) {
+        reportNav.style.display = empIsPIC() ? '' : 'none';
+    }
+    if (tab === 'report' && !empIsPIC()) {
+        tab = 'attendance';
+    }
+
     localStorage.setItem('multitrade_emp_page', tab);
     const nav = document.getElementById('emp-nav');
     document.querySelectorAll('#employee-layout .emp-view').forEach(v => v.style.display = 'none');
@@ -543,6 +558,7 @@ async function empNav(tab, el) {
     switch (tab) {
         case 'myprojects': renderEmployeeProjects(); break;
         case 'attendance': renderEmployeeAttendance(); break;
+        case 'report': renderEmpReport(); break;
         case 'settings': renderEmpSettings(); break;
     }
 }
@@ -3523,6 +3539,553 @@ function showToast(message) {
     setTimeout(function() { t.classList.remove('show'); setTimeout(function() { t.remove(); }, 300); }, 2500);
 }
 
+/* ==========================================================
+   SECTION: EMPLOYEE — REPORT (PIC only)
+   ========================================================== */
+
+var empRptItemPage = 1;
+var empRptItemPageSize = 10;
+var empRptItemData_cache = [];
+var empRptEmpPage = 1;
+var empRptEmpPageSize = 10;
+var empRptEmpData_cache = [];
+
+function getPICScopeIds() {
+    if (!currentUser || !currentUser.memberId) return [];
+    return DB.scopes
+        .filter(function(s) { return s.picMemberIds && s.picMemberIds.indexOf(currentUser.memberId) !== -1; })
+        .map(function(s) { return s.id; });
+}
+
+function renderEmpReport() {
+    var view = document.getElementById('emp-report');
+    var today = todayStr();
+    var thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    var defaultFrom = thirtyDaysAgo.toISOString().slice(0, 10);
+
+    var picScopeIds = getPICScopeIds();
+    var scopeList = DB.scopes.filter(function(s) { return picScopeIds.indexOf(s.id) !== -1; })
+        .sort(function(a, b) { return a.name.localeCompare(b.name); });
+    var deptList = DB.departments.slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
+
+    var scopeOpts = scopeList.map(function(s) { return { value: s.id, label: s.name }; });
+    var deptOpts = deptList.map(function(d) { return { value: d.id, label: d.name }; });
+
+    var picProjects = DB.projects.filter(function(p) { return p.categoryId && picScopeIds.indexOf(p.categoryId) !== -1; });
+    var seenOther = false;
+    var itemOpts = [];
+    picProjects.sort(function(a, b) {
+        var ao = a.name.toLowerCase() === 'other' ? 1 : 0;
+        var bo = b.name.toLowerCase() === 'other' ? 1 : 0;
+        if (ao !== bo) return ao - bo;
+        return a.name.localeCompare(b.name);
+    });
+    picProjects.forEach(function(p) {
+        if (p.name.toLowerCase() === 'other') {
+            if (!seenOther) { seenOther = true; itemOpts.push({ value: 0, label: 'Other' }); }
+        } else {
+            itemOpts.push({ value: p.id, label: p.name });
+        }
+    });
+
+    // 初始 employee 列表：PIC scope 下有 attendance 记录的人
+    var empOpts = buildEmpRptEmpOpts([], []);
+
+    view.innerHTML =
+        '<div class="app-header"><h2>Report</h2><div class="header-sub">PIC summary and analytics</div></div>' +
+        '<div class="app-body" style="max-width:none">' +
+            '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.04)">' +
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>' +
+                '<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="date" class="input" id="emp-rpt-from" value="' + defaultFrom + '" onchange="generateEmpReport()" style="width:155px;padding:8px 10px;font-size:.82rem"></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="emp-rpt-to" value="' + today + '" onchange="generateEmpReport()" style="width:155px;padding:8px 10px;font-size:.82rem"></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Department</label><div style="min-width:140px" id="ssm-emp-rpt-dept"></div></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Category</label><div style="min-width:140px" id="ssm-emp-rpt-scope"></div></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">ID/Name</label><div style="min-width:160px" id="ssm-emp-rpt-item"></div></div>' +
+                    '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label><div style="min-width:160px" id="ssm-emp-rpt-emp"></div></div>' +
+                    '<div style="display:flex;gap:8px;margin-left:auto"><button class="btn btn-ghost btn-sm" onclick="resetEmpReport()">Reset</button></div>' +
+                '</div>' +
+            '</div>' +
+            '<div id="emp-rpt-stats"></div>' +
+            '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:24px;margin-bottom:24px" id="emp-rpt-charts-row1"></div>' +
+            '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:24px;margin-bottom:24px" id="emp-rpt-charts-row2"></div>' +
+            '<div id="emp-rpt-tables"></div>' +
+        '</div>';
+
+    ssmCreate('ssm-emp-rpt-dept', deptOpts, 'All Departments');
+    ssmCreate('ssm-emp-rpt-scope', scopeOpts, 'All Categories');
+    ssmCreate('ssm-emp-rpt-item', itemOpts, 'All ID/Names');
+    ssmCreate('ssm-emp-rpt-emp', empOpts, 'All Employees');
+
+    // Category 改变 → 更新 ID/Name 和 Employee
+    ssmOnChange('ssm-emp-rpt-scope', function(selectedScopeIds) {
+        var numIds = selectedScopeIds.map(function(v) { return parseInt(v); });
+        var filtered = numIds.length > 0
+            ? picProjects.filter(function(p) { return numIds.indexOf(p.categoryId) !== -1; })
+            : picProjects;
+        var seenOther2 = false;
+        var opts = [];
+        filtered.forEach(function(p) {
+            if (p.name.toLowerCase() === 'other') {
+                if (!seenOther2) { seenOther2 = true; opts.push({ value: 0, label: 'Other' }); }
+            } else {
+                opts.push({ value: p.id, label: p.name });
+            }
+        });
+        ssmUpdate('ssm-emp-rpt-item', opts, true);
+
+        // 根据 Category 和 ID/Name 更新 Employee
+        var itemIds = ssmGetValues('ssm-emp-rpt-item').map(function(v) { return parseInt(v); });
+        var deptIds = ssmGetValues('ssm-emp-rpt-dept').map(function(v) { return parseInt(v); });
+        var empOpts = buildEmpRptEmpOpts(numIds, itemIds);
+        ssmUpdate('ssm-emp-rpt-emp', empOpts, true);
+
+        generateEmpReport();
+    });
+
+    // Department 改变 → 更新 Employee
+    ssmOnChange('ssm-emp-rpt-dept', function(selectedDeptIds) {
+        var numIds = selectedDeptIds.map(function(v) { return parseInt(v); });
+        var scopeIds = ssmGetValues('ssm-emp-rpt-scope').map(function(v) { return parseInt(v); });
+        var itemIds = ssmGetValues('ssm-emp-rpt-item').map(function(v) { return parseInt(v); });
+        var empOpts = buildEmpRptEmpOpts(scopeIds, itemIds);
+        if (numIds.length > 0) {
+            var deptMemberIds = DB.members.filter(function(m) { return numIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
+            empOpts = empOpts.filter(function(o) { return deptMemberIds.indexOf(parseInt(o.value)) !== -1; });
+        }
+        ssmUpdate('ssm-emp-rpt-emp', empOpts, true);
+        generateEmpReport();
+    });
+
+    // ID/Name 改变 → 更新 Employee
+    ssmOnChange('ssm-emp-rpt-item', function(selectedItemIds) {
+        var scopeIds = ssmGetValues('ssm-emp-rpt-scope').map(function(v) { return parseInt(v); });
+        var itemIds = selectedItemIds.map(function(v) { return parseInt(v); });
+        var deptIds = ssmGetValues('ssm-emp-rpt-dept').map(function(v) { return parseInt(v); });
+        var empOpts = buildEmpRptEmpOpts(scopeIds, itemIds);
+        if (deptIds.length > 0) {
+            var deptMemberIds = DB.members.filter(function(m) { return deptIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
+            empOpts = empOpts.filter(function(o) { return deptMemberIds.indexOf(parseInt(o.value)) !== -1; });
+        }
+        ssmUpdate('ssm-emp-rpt-emp', empOpts, true);
+        generateEmpReport();
+    });
+
+    ssmOnChange('ssm-emp-rpt-emp', function() { generateEmpReport(); });
+
+    generateEmpReport();
+}
+
+function buildEmpRptEmpOpts(scopeIds, itemIds) {
+    // 什么都没选 → 返回全部非 viewer employee
+    if ((!scopeIds || scopeIds.length === 0) && (!itemIds || itemIds.length === 0)) {
+        return getNonViewerMembers()
+            .sort(function(a, b) { return a.name.localeCompare(b.name); })
+            .map(function(m) { return { value: m.id, label: m.name }; });
+    }
+
+    var picScopeIds = getPICScopeIds();
+    var picProjectIds = DB.projects
+        .filter(function(p) { return p.categoryId && picScopeIds.indexOf(p.categoryId) !== -1; })
+        .map(function(p) { return p.id; });
+
+    if (scopeIds && scopeIds.length > 0) {
+        picProjectIds = DB.projects
+            .filter(function(p) { return p.categoryId && scopeIds.indexOf(p.categoryId) !== -1; })
+            .map(function(p) { return p.id; });
+    }
+
+    if (itemIds && itemIds.length > 0) {
+        var expandedIds = expandOtherItemIds(itemIds);
+        picProjectIds = picProjectIds.filter(function(id) { return expandedIds.indexOf(id) !== -1; });
+    }
+
+    var memberIds = [];
+    DB.attendance.forEach(function(a) {
+        if (a.projectId && picProjectIds.indexOf(a.projectId) !== -1 && memberIds.indexOf(a.memberId) === -1) {
+            memberIds.push(a.memberId);
+        }
+    });
+
+    var viewerMemberIds = getViewerMemberIds();
+    memberIds = memberIds.filter(function(mid) { return viewerMemberIds.indexOf(mid) === -1; });
+
+    return memberIds
+        .map(function(mid) { return DB.members.find(function(m) { return m.id === mid; }); })
+        .filter(Boolean)
+        .sort(function(a, b) { return a.name.localeCompare(b.name); })
+        .map(function(m) { return { value: m.id, label: m.name }; });
+}
+
+function resetEmpReport() {
+    var today = todayStr();
+    var thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    document.getElementById('emp-rpt-from').value = thirtyDaysAgo.toISOString().slice(0, 10);
+    document.getElementById('emp-rpt-to').value = today;
+    ssmClear('ssm-emp-rpt-scope');
+    ssmClear('ssm-emp-rpt-dept');
+
+    var picScopeIds = getPICScopeIds();
+    var picProjects = DB.projects.filter(function(p) { return p.categoryId && picScopeIds.indexOf(p.categoryId) !== -1; });
+    var seenOther = false;
+    var itemOpts = [];
+    picProjects.forEach(function(p) {
+        if (p.name.toLowerCase() === 'other') {
+            if (!seenOther) { seenOther = true; itemOpts.push({ value: 0, label: 'Other' }); }
+        } else {
+            itemOpts.push({ value: p.id, label: p.name });
+        }
+    });
+    ssmUpdate('ssm-emp-rpt-item', itemOpts, false);
+    ssmUpdate('ssm-emp-rpt-emp', buildEmpRptEmpOpts([], []), false);
+    generateEmpReport();
+}
+
+function generateEmpReport() {
+    var fromDate = document.getElementById('emp-rpt-from').value;
+    var toDate = document.getElementById('emp-rpt-to').value;
+    var scopeIds = ssmGetValues('ssm-emp-rpt-scope').map(function(v) { return parseInt(v); });
+    var itemIds = ssmGetValues('ssm-emp-rpt-item').map(function(v) { return parseInt(v); });
+    var deptIds = ssmGetValues('ssm-emp-rpt-dept').map(function(v) { return parseInt(v); });
+    var empIds = ssmGetValues('ssm-emp-rpt-emp').map(function(v) { return parseInt(v); });
+    if (!fromDate || !toDate) return;
+
+    var picScopeIds = getPICScopeIds();
+    var picProjectIds = DB.projects
+        .filter(function(p) { return p.categoryId && picScopeIds.indexOf(p.categoryId) !== -1; })
+        .map(function(p) { return p.id; });
+
+    var filtered = DB.attendance.filter(function(a) {
+        if (!a.date || a.date < fromDate || a.date > toDate) return false;
+        return picProjectIds.indexOf(a.projectId) !== -1;
+    });
+
+    var viewerMemberIds = getViewerMemberIds();
+    filtered = filtered.filter(function(a) { return viewerMemberIds.indexOf(a.memberId) === -1; });
+
+    if (scopeIds.length > 0) {
+        var scopeItemIds = DB.projects.filter(function(p) { return scopeIds.indexOf(p.categoryId) !== -1; }).map(function(p) { return p.id; });
+        filtered = filtered.filter(function(a) { return scopeItemIds.indexOf(a.projectId) !== -1; });
+    }
+    if (itemIds.length > 0) {
+        var expandedIds = expandOtherItemIds(itemIds);
+        filtered = filtered.filter(function(a) { return expandedIds.indexOf(a.projectId) !== -1; });
+    }
+    if (deptIds.length > 0) {
+        var deptMemberIds = DB.members.filter(function(m) { return deptIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
+        filtered = filtered.filter(function(a) { return deptMemberIds.indexOf(a.memberId) !== -1; });
+    }
+    if (empIds.length > 0) {
+        filtered = filtered.filter(function(a) { return empIds.indexOf(a.memberId) !== -1; });
+    }
+
+    // ===== STATS =====
+    var totalHours = 0, totalCost = 0;
+    filtered.forEach(function(r) {
+        if (r.clockIn && r.clockOut) {
+            var ms = new Date(r.clockOut) - new Date(r.clockIn);
+            totalHours += ms;
+            totalCost += (getEntryCost(r.memberId, ms) || 0);
+        }
+    });
+    var uniqueEmployees = new Set(filtered.map(function(a) { return a.memberId; })).size;
+    var uniqueItems = new Set(filtered.filter(function(a) { return a.projectId; }).map(function(a) { return a.projectId; })).size;
+    var uniqueScopes = new Set(filtered.filter(function(a) { return a.projectId; }).map(function(a) {
+        var proj = DB.projects.find(function(p) { return p.id === a.projectId; });
+        return proj && proj.categoryId ? proj.categoryId : 0;
+    })).size;
+
+    document.getElementById('emp-rpt-stats').innerHTML =
+        '<div class="stats-grid" style="margin-bottom:24px">' +
+            '<div class="stat-card"><div class="stat-label">Total Records</div><div class="stat-value">' + filtered.length + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Total Hours</div><div class="stat-value">' + formatDuration(totalHours) + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Total Cost</div><div class="stat-value">' + fmtCost(totalCost) + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Active Employees</div><div class="stat-value">' + uniqueEmployees + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Active Categories</div><div class="stat-value">' + uniqueScopes + '</div></div>' +
+            '<div class="stat-card"><div class="stat-label">Active ID/Name</div><div class="stat-value">' + uniqueItems + '</div></div>' +
+        '</div>';
+
+    // ===== CHARTS DATA =====
+    var palette = ['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
+
+    var itemCosts = {};
+    filtered.forEach(function(r) {
+        if (!r.clockIn || !r.clockOut) return;
+        var ms = new Date(r.clockOut) - new Date(r.clockIn);
+        var cost = getEntryCost(r.memberId, ms) || 0;
+        var pid = r.projectId || 0;
+        if (!itemCosts[pid]) itemCosts[pid] = 0;
+        itemCosts[pid] += cost;
+    });
+    var itemLabels = [], itemData = [], itemColors = [];
+    Object.entries(itemCosts).forEach(function(entry, i) {
+        var pid = parseInt(entry[0]);
+        var cost = entry[1];
+        var proj = pid === 0 ? null : DB.projects.find(function(p) { return p.id === pid; });
+        var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
+        var label = proj ? (scope ? scope.name + ' \u2192 ' + proj.name : proj.name) : 'Unassigned';
+        itemLabels.push(label);
+        itemData.push(Math.round(cost * 100) / 100);
+        itemColors.push(palette[i % palette.length]);
+    });
+
+    var scopeCosts = {};
+    filtered.forEach(function(r) {
+        if (!r.clockIn || !r.clockOut) return;
+        var ms = new Date(r.clockOut) - new Date(r.clockIn);
+        var cost = getEntryCost(r.memberId, ms) || 0;
+        var proj = r.projectId ? DB.projects.find(function(p) { return p.id === r.projectId; }) : null;
+        var sid = proj && proj.categoryId ? proj.categoryId : 0;
+        if (!scopeCosts[sid]) scopeCosts[sid] = 0;
+        scopeCosts[sid] += cost;
+    });
+    var scopeLabels = [], scopeData = [], scopeColors = [];
+    Object.entries(scopeCosts).forEach(function(entry, i) {
+        var sid = parseInt(entry[0]);
+        var cost = entry[1];
+        var scope = sid === 0 ? null : DB.scopes.find(function(s) { return s.id === sid; });
+        scopeLabels.push(scope ? scope.name : 'Uncategorized');
+        scopeData.push(Math.round(cost * 100) / 100);
+        scopeColors.push(palette[i % palette.length]);
+    });
+
+    document.getElementById('emp-rpt-charts-row1').innerHTML =
+        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch">' +
+            '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Cost by Category &rarr; ID/Name</h3>' +
+            '<div style="min-width:600px;height:280px"><canvas id="emp-chart-item-cost"></canvas></div>' +
+        '</div>' +
+        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch">' +
+            '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Cost by Category</h3>' +
+            '<div style="min-width:600px;height:280px"><canvas id="emp-chart-scope-cost"></canvas></div>' +
+        '</div>';
+
+    var monthlyHours = {}, monthlyCost = {};
+    filtered.forEach(function(r) {
+        if (!r.clockIn || !r.clockOut || !r.date) return;
+        var m = r.date.substring(0, 7);
+        var ms = new Date(r.clockOut) - new Date(r.clockIn);
+        var cost = getEntryCost(r.memberId, ms) || 0;
+        if (!monthlyHours[m]) { monthlyHours[m] = 0; monthlyCost[m] = 0; }
+        monthlyHours[m] += ms;
+        monthlyCost[m] += cost;
+    });
+    var monthLabels = Object.keys(monthlyHours).sort();
+    var monthHoursData = monthLabels.map(function(m) { return Math.round(monthlyHours[m] / (1000 * 60 * 60) * 10) / 10; });
+    var monthCostData = monthLabels.map(function(m) { return Math.round(monthlyCost[m] * 100) / 100; });
+    var prettyMonths = monthLabels.map(function(m) { var parts = m.split('-'); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(parts[1])-1] + ' ' + parts[0].substring(2); });
+
+    var empHours = {};
+    filtered.forEach(function(r) {
+        if (!r.clockIn || !r.clockOut) return;
+        var ms = new Date(r.clockOut) - new Date(r.clockIn);
+        if (!empHours[r.memberId]) empHours[r.memberId] = 0;
+        empHours[r.memberId] += ms;
+    });
+    var empSorted = Object.entries(empHours).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 10);
+    var empLabels = empSorted.map(function(e) {
+        var m = DB.members.find(function(x) { return x.id === parseInt(e[0]); });
+        return m ? m.name : 'Unknown';
+    });
+    var empData = empSorted.map(function(e) { return Math.round(e[1] / (1000 * 60 * 60) * 10) / 10; });
+
+    document.getElementById('emp-rpt-charts-row2').innerHTML =
+        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch">' +
+            '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Monthly Trend</h3>' +
+            '<div style="min-width:600px;height:280px"><canvas id="emp-chart-monthly"></canvas></div>' +
+        '</div>' +
+        '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch">' +
+            '<h3 style="margin-bottom:16px;font-size:1rem;color:var(--main-text)">Top Employees by Hours</h3>' +
+            '<div style="min-width:600px;height:280px"><canvas id="emp-chart-emp-hours"></canvas></div>' +
+        '</div>';
+
+    // ===== TABLES =====
+    empRptItemData_cache = [];
+    Object.entries(itemCosts).sort(function(a, b) { return b[1] - a[1]; }).forEach(function(entry) {
+        var pid = parseInt(entry[0]);
+        var cost = entry[1];
+        var proj = pid === 0 ? null : DB.projects.find(function(p) { return p.id === pid; });
+        var scope = proj && proj.categoryId ? DB.scopes.find(function(s) { return s.id === proj.categoryId; }) : null;
+        var label = proj ? (scope ? esc(scope.name) + ' &rarr; ' + esc(proj.name) : esc(proj.name)) : '<span style="color:var(--main-text3)">Unassigned</span>';
+        var hours = filtered.filter(function(r) { return (r.projectId || 0) === pid && r.clockIn && r.clockOut; }).reduce(function(s, r) { return s + (new Date(r.clockOut) - new Date(r.clockIn)); }, 0);
+        var entries = filtered.filter(function(r) { return (r.projectId || 0) === pid; }).length;
+        var members = new Set(filtered.filter(function(r) { return (r.projectId || 0) === pid; }).map(function(r) { return r.memberId; })).size;
+        var cd = proj ? getProjectCountdown(proj) : null;
+        var cdHtml = '\u2014';
+        if (cd !== null) {
+            if (cd > 30) cdHtml = '<span style="color:var(--ok);font-weight:600">' + cd + 'd left</span>';
+            else if (cd > 7) cdHtml = '<span style="color:var(--warning);font-weight:600">' + cd + 'd left</span>';
+            else if (cd > 0) cdHtml = '<span style="color:var(--danger);font-weight:600">' + cd + 'd left</span>';
+            else if (cd === 0) cdHtml = '<span style="color:var(--warning);font-weight:600">Today!</span>';
+            else cdHtml = '<span style="color:var(--danger);font-weight:600">' + Math.abs(cd) + 'd overdue</span>';
+        }
+        empRptItemData_cache.push({ label: label, cdHtml: cdHtml, members: members, entries: entries, hours: hours, cost: cost });
+    });
+
+    empRptEmpData_cache = [];
+    var empStats = {};
+    filtered.forEach(function(r) {
+        if (!r.clockIn || !r.clockOut) return;
+        var ms = new Date(r.clockOut) - new Date(r.clockIn);
+        var cost = getEntryCost(r.memberId, ms) || 0;
+        if (!empStats[r.memberId]) empStats[r.memberId] = { ms: 0, cost: 0, entries: 0, days: new Set() };
+        empStats[r.memberId].ms += ms;
+        empStats[r.memberId].cost += cost;
+        empStats[r.memberId].entries++;
+        empStats[r.memberId].days.add(r.date);
+    });
+    Object.entries(empStats).sort(function(a, b) { return b[1].ms - a[1].ms; }).forEach(function(entry) {
+        var mid = parseInt(entry[0]);
+        var data = entry[1];
+        var member = DB.members.find(function(m) { return m.id === mid; });
+        empRptEmpData_cache.push({
+            name: member ? esc(member.name) : 'Unknown',
+            pos: member ? esc(getPositionName(member.positionId)) : '\u2014',
+            dept: member ? esc(getDeptName(member.departmentId)) : '\u2014',
+            entries: data.entries,
+            days: data.days.size,
+            ms: data.ms,
+            cost: data.cost,
+            rate: fmtHourlyRate(member)
+        });
+    });
+
+    document.getElementById('emp-rpt-tables').innerHTML =
+        '<div class="section-head" style="margin-top:8px"><h2>Item Summary</h2></div>' +
+        '<div id="emp-rpt-item-table-area"></div>' +
+        '<div class="section-head" style="margin-top:24px"><h2>Employee Summary</h2></div>' +
+        '<div id="emp-rpt-emp-table-area"></div>';
+
+    empRptItemPage = 1;
+    empRptEmpPage = 1;
+    renderEmpRptItemTable(empRptItemData_cache);
+    renderEmpRptEmpTable(empRptEmpData_cache);
+
+    // ===== RENDER CHARTS =====
+    var chartTextColor = '#7a7570';
+    var chartGridColor = 'rgba(122,117,112,0.15)';
+
+    new Chart(document.getElementById('emp-chart-item-cost'), {
+        type: 'bar',
+        data: { labels: itemLabels, datasets: [{ label: 'Cost (RM)', data: itemData, backgroundColor: itemColors, borderRadius: 6, maxBarThickness: 50 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+            onResize: function(chart, size) { chart.canvas.parentNode.style.width = Math.max(600, size.width) + 'px'; },
+            scales: { y: { beginAtZero: true, ticks: { color: chartTextColor, callback: function(v) { return 'RM' + v; } }, grid: { color: chartGridColor } }, x: { ticks: { color: chartTextColor, maxRotation: 45, font: { size: 10 } }, grid: { display: false } } } }
+    });
+
+    new Chart(document.getElementById('emp-chart-scope-cost'), {
+        type: 'doughnut',
+        data: { labels: scopeLabels, datasets: [{ data: scopeData, backgroundColor: scopeColors, borderWidth: 0, hoverOffset: 8 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: chartTextColor, padding: 12, usePointStyle: true, pointStyleWidth: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: function(ctx) { return ctx.label + ': RM' + ctx.parsed.toFixed(2); } } } },
+            onResize: function(chart, size) { chart.canvas.parentNode.style.width = Math.max(600, size.width) + 'px'; }
+        }
+    });
+
+    new Chart(document.getElementById('emp-chart-monthly'), {
+        type: 'bar',
+        data: { labels: prettyMonths, datasets: [
+            { label: 'Hours', data: monthHoursData, backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 6, yAxisID: 'y', maxBarThickness: 40 },
+            { label: 'Cost (RM)', data: monthCostData, type: 'line', borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', pointRadius: 4, pointBackgroundColor: '#ef4444', tension: 0.3, yAxisID: 'y1', fill: true }
+        ] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: chartTextColor, usePointStyle: true, padding: 16 } } },
+            onResize: function(chart, size) { chart.canvas.parentNode.style.width = Math.max(600, size.width) + 'px'; },
+            scales: { y: { beginAtZero: true, position: 'left', ticks: { color: chartTextColor, callback: function(v) { return v + 'h'; } }, grid: { color: chartGridColor } }, y1: { beginAtZero: true, position: 'right', ticks: { color: '#ef4444', callback: function(v) { return 'RM' + v; } }, grid: { drawOnChartArea: false } }, x: { ticks: { color: chartTextColor }, grid: { display: false } } } }
+    });
+
+    new Chart(document.getElementById('emp-chart-emp-hours'), {
+        type: 'bar',
+        data: { labels: empLabels, datasets: [{ label: 'Hours', data: empData, backgroundColor: 'rgba(34,197,94,0.7)', borderRadius: 6, maxBarThickness: 30 }] },
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+            onResize: function(chart, size) { chart.canvas.parentNode.style.width = Math.max(600, size.width) + 'px'; },
+            scales: { x: { beginAtZero: true, ticks: { color: chartTextColor, callback: function(v) { return v + 'h'; } }, grid: { color: chartGridColor } }, y: { ticks: { color: chartTextColor, font: { size: 11 } }, grid: { display: false } } } }
+    });
+}
+
+function renderEmpRptItemTable(data) {
+    var totalPages = Math.ceil(data.length / empRptItemPageSize) || 1;
+    if (empRptItemPage > totalPages) empRptItemPage = totalPages;
+    if (empRptItemPage < 1) empRptItemPage = 1;
+    var startIdx = (empRptItemPage - 1) * empRptItemPageSize;
+    var pageData = data.slice(startIdx, startIdx + empRptItemPageSize);
+
+    var rows = '';
+    if (data.length === 0) {
+        rows = '<tr><td colspan="6" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>';
+    } else {
+        rows = pageData.map(function(r) {
+            return '<tr><td>' + r.label + '</td>' +
+                '<td>' + r.cdHtml + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + r.members + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + r.entries + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + formatDuration(r.hours) + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + fmtCost(r.cost) + '</td></tr>';
+        }).join('');
+    }
+
+    document.getElementById('emp-rpt-item-table-area').innerHTML =
+        '<div class="table-wrap"><table>' +
+            '<thead><tr><th>Category &rarr; ID/Name</th><th>Countdown</th><th style="text-align:right">Members</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+        '</table></div>' +
+        buildRptPagination(data.length, empRptItemPage, empRptItemPageSize, 'goEmpRptItemPage', 'changeEmpRptItemPageSize');
+}
+
+function renderEmpRptEmpTable(data) {
+    var totalPages = Math.ceil(data.length / empRptEmpPageSize) || 1;
+    if (empRptEmpPage > totalPages) empRptEmpPage = totalPages;
+    if (empRptEmpPage < 1) empRptEmpPage = 1;
+    var startIdx = (empRptEmpPage - 1) * empRptEmpPageSize;
+    var pageData = data.slice(startIdx, startIdx + empRptEmpPageSize);
+
+    var rows = '';
+    if (data.length === 0) {
+        rows = '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>';
+    } else {
+        rows = pageData.map(function(r) {
+            return '<tr><td>' + r.name + '</td>' +
+                '<td>' + r.pos + '</td>' +
+                '<td>' + r.dept + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + r.entries + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + r.days + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + formatDuration(r.ms) + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + fmtCost(r.cost) + '</td>' +
+                '<td style="text-align:right;font-family:var(--font-m)">' + r.rate + '</td></tr>';
+        }).join('');
+    }
+
+    document.getElementById('emp-rpt-emp-table-area').innerHTML =
+        '<div class="table-wrap"><table>' +
+            '<thead><tr><th>Employee</th><th>Position</th><th>Department</th><th style="text-align:right">Entries</th><th style="text-align:right">Days</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th><th style="text-align:right">Rate</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+        '</table></div>' +
+        buildRptPagination(data.length, empRptEmpPage, empRptEmpPageSize, 'goEmpRptEmpPage', 'changeEmpRptEmpPageSize');
+}
+
+function goEmpRptItemPage(page) {
+    var totalPages = Math.ceil(empRptItemData_cache.length / empRptItemPageSize) || 1;
+    empRptItemPage = Math.max(1, Math.min(page, totalPages));
+    renderEmpRptItemTable(empRptItemData_cache);
+}
+
+function changeEmpRptItemPageSize(size) {
+    empRptItemPageSize = parseInt(size);
+    empRptItemPage = 1;
+    renderEmpRptItemTable(empRptItemData_cache);
+}
+
+function goEmpRptEmpPage(page) {
+    var totalPages = Math.ceil(empRptEmpData_cache.length / empRptEmpPageSize) || 1;
+    empRptEmpPage = Math.max(1, Math.min(page, totalPages));
+    renderEmpRptEmpTable(empRptEmpData_cache);
+}
+
+function changeEmpRptEmpPageSize(size) {
+    empRptEmpPageSize = parseInt(size);
+    empRptEmpPage = 1;
+    renderEmpRptEmpTable(empRptEmpData_cache);
+}
+
 
 /* ==========================================================
    SECTION: EMPLOYEE — SETTINGS
@@ -4346,6 +4909,43 @@ function sortedProjects(scopeId) {
     return list;
 }
 
+function buildAttEmpOpts(scopeIds, itemIds) {
+    if ((!scopeIds || scopeIds.length === 0) && (!itemIds || itemIds.length === 0)) {
+        return getNonViewerMembers()
+            .sort(function(a, b) { return a.name.localeCompare(b.name); })
+            .map(function(m) { return { value: m.id, label: m.name }; });
+    }
+
+    var projectIds = DB.projects.map(function(p) { return p.id; });
+
+    if (scopeIds && scopeIds.length > 0) {
+        projectIds = DB.projects
+            .filter(function(p) { return p.categoryId && scopeIds.indexOf(p.categoryId) !== -1; })
+            .map(function(p) { return p.id; });
+    }
+
+    if (itemIds && itemIds.length > 0) {
+        var expandedIds = expandOtherItemIds(itemIds);
+        projectIds = projectIds.filter(function(id) { return expandedIds.indexOf(id) !== -1; });
+    }
+
+    var memberIds = [];
+    DB.attendance.forEach(function(a) {
+        if (a.projectId && projectIds.indexOf(a.projectId) !== -1 && memberIds.indexOf(a.memberId) === -1) {
+            memberIds.push(a.memberId);
+        }
+    });
+
+    var viewerMemberIds = getViewerMemberIds();
+    memberIds = memberIds.filter(function(mid) { return viewerMemberIds.indexOf(mid) === -1; });
+
+    return memberIds
+        .map(function(mid) { return DB.members.find(function(m) { return m.id === mid; }); })
+        .filter(Boolean)
+        .sort(function(a, b) { return a.name.localeCompare(b.name); })
+        .map(function(m) { return { value: m.id, label: m.name }; });
+}
+
 function renderAdminAttendance() {
     adminAttCurrentPage = 1;
     adminAttPageSize = 10;
@@ -4360,11 +4960,10 @@ function renderAdminAttendance() {
         ? DB.scopes.filter(function(s) { return viewerScopeIds.indexOf(s.id) !== -1; })
         : DB.scopes.slice();
     scopeList = scopeList.sort(function(a, b) { return a.name.localeCompare(b.name); });
-    var empList = getNonViewerMembers();
     var deptList = DB.departments.slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
 
     var scopeOpts = scopeList.map(function(s) { return { value: s.id, label: s.name }; });
-    var empOpts = empList.map(function(m) { return { value: m.id, label: m.name }; });
+    var empOpts = buildAttEmpOpts([], []);
     var deptOpts = deptList.map(function(d) { return { value: d.id, label: d.name }; });
 
     var view = document.getElementById('admin-attendance');
@@ -4418,19 +5017,44 @@ function renderAdminAttendance() {
             }
         });
         ssmUpdate('ssm-att-item', opts, true);
+
+        var itemIds = ssmGetValues('ssm-att-item').map(function(v) { return parseInt(v); });
+        var deptIds = ssmGetValues('ssm-att-dept').map(function(v) { return parseInt(v); });
+        var newEmpOpts = buildAttEmpOpts(numIds, itemIds);
+        if (deptIds.length > 0) {
+            var deptMemberIds = DB.members.filter(function(m) { return deptIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
+            newEmpOpts = newEmpOpts.filter(function(o) { return deptMemberIds.indexOf(parseInt(o.value)) !== -1; });
+        }
+        ssmUpdate('ssm-att-emp', newEmpOpts, true);
         applyAdminAttendanceFilter();
     });
 
     ssmOnChange('ssm-att-dept', function(selectedDeptIds) {
         var numIds = selectedDeptIds.map(function(v) { return parseInt(v); });
-        var filtered = numIds.length > 0
-            ? getNonViewerMembers().filter(function(m) { return numIds.indexOf(m.departmentId) !== -1; })
-            : getNonViewerMembers();
-        ssmUpdate('ssm-att-emp', filtered.map(function(m) { return { value: m.id, label: m.name }; }), true);
+        var scopeIds = ssmGetValues('ssm-att-scope').map(function(v) { return parseInt(v); });
+        var itemIds = ssmGetValues('ssm-att-item').map(function(v) { return parseInt(v); });
+        var newEmpOpts = buildAttEmpOpts(scopeIds, itemIds);
+        if (numIds.length > 0) {
+            var deptMemberIds = DB.members.filter(function(m) { return numIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
+            newEmpOpts = newEmpOpts.filter(function(o) { return deptMemberIds.indexOf(parseInt(o.value)) !== -1; });
+        }
+        ssmUpdate('ssm-att-emp', newEmpOpts, true);
         applyAdminAttendanceFilter();
     });
 
-    ssmOnChange('ssm-att-item', function() { applyAdminAttendanceFilter(); });
+    ssmOnChange('ssm-att-item', function(selectedItemIds) {
+        var scopeIds = ssmGetValues('ssm-att-scope').map(function(v) { return parseInt(v); });
+        var itemIds = selectedItemIds.map(function(v) { return parseInt(v); });
+        var deptIds = ssmGetValues('ssm-att-dept').map(function(v) { return parseInt(v); });
+        var newEmpOpts = buildAttEmpOpts(scopeIds, itemIds);
+        if (deptIds.length > 0) {
+            var deptMemberIds = DB.members.filter(function(m) { return deptIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
+            newEmpOpts = newEmpOpts.filter(function(o) { return deptMemberIds.indexOf(parseInt(o.value)) !== -1; });
+        }
+        ssmUpdate('ssm-att-emp', newEmpOpts, true);
+        applyAdminAttendanceFilter();
+    });
+
     ssmOnChange('ssm-att-emp', function() { applyAdminAttendanceFilter(); });
 
     applyAdminAttendanceFilter();
@@ -4444,9 +5068,8 @@ function resetAdminAttendanceFilter() {
     document.getElementById('att-to').value = today;
     ssmClear('ssm-att-scope');
     ssmClear('ssm-att-dept');
-    ssmClear('ssm-att-emp');
     ssmUpdate('ssm-att-item', buildFilterItemOpts(), false);
-    ssmUpdate('ssm-att-emp', getNonViewerMembers().map(function(m) { return { value: m.id, label: m.name }; }), false);
+    ssmUpdate('ssm-att-emp', buildAttEmpOpts([], []), false);
     adminAttCurrentPage = 1;
     applyAdminAttendanceFilter();
 }
@@ -5142,11 +5765,10 @@ function renderAdminReport() {
         : DB.scopes.slice();
     scopeList = scopeList.sort(function(a, b) { return a.name.localeCompare(b.name); });
     var deptList = DB.departments.slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
-    var empList = getNonViewerMembers().slice().sort(function(a, b) { return a.name.localeCompare(b.name); });
 
     var scopeOpts = scopeList.map(function(s) { return { value: s.id, label: s.name }; });
     var deptOpts = deptList.map(function(d) { return { value: d.id, label: d.name }; });
-    var empOpts = empList.map(function(m) { return { value: m.id, label: m.name }; });
+    var empOpts = buildAdminRptEmpOpts([], []);
 
     view.innerHTML =
         '<div class="app-header"><h2>Report</h2><div class="header-sub">Summary and analytics</div></div>' +
@@ -5174,6 +5796,7 @@ function renderAdminReport() {
     ssmCreate('ssm-rpt-item', buildFilterItemOpts(), 'All ID/Names');
     ssmCreate('ssm-rpt-emp', empOpts, 'All Employees');
 
+    // Category 改变 → 更新 ID/Name 和 Employee
     ssmOnChange('ssm-rpt-scope', function(selectedScopeIds) {
         var numIds = selectedScopeIds.map(function(v) { return parseInt(v); });
         var filtered = numIds.length > 0
@@ -5189,22 +5812,89 @@ function renderAdminReport() {
             }
         });
         ssmUpdate('ssm-rpt-item', opts, true);
+
+        // 更新 Employee
+        var itemIds = ssmGetValues('ssm-rpt-item').map(function(v) { return parseInt(v); });
+        var deptIds = ssmGetValues('ssm-rpt-dept').map(function(v) { return parseInt(v); });
+        var newEmpOpts = buildAdminRptEmpOpts(numIds, itemIds);
+        if (deptIds.length > 0) {
+            var deptMemberIds = DB.members.filter(function(m) { return deptIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
+            newEmpOpts = newEmpOpts.filter(function(o) { return deptMemberIds.indexOf(parseInt(o.value)) !== -1; });
+        }
+        ssmUpdate('ssm-rpt-emp', newEmpOpts, true);
+
         generateReport();
     });
 
+    // Department 改变 → 更新 Employee
     ssmOnChange('ssm-rpt-dept', function(selectedDeptIds) {
         var numIds = selectedDeptIds.map(function(v) { return parseInt(v); });
-        var filtered = numIds.length > 0
-            ? sortedMembers().filter(function(m) { return numIds.indexOf(m.departmentId) !== -1; })
-            : sortedMembers();
-        ssmUpdate('ssm-rpt-emp', filtered.map(function(m) { return { value: m.id, label: m.name }; }), true);
+        var scopeIds = ssmGetValues('ssm-rpt-scope').map(function(v) { return parseInt(v); });
+        var itemIds = ssmGetValues('ssm-rpt-item').map(function(v) { return parseInt(v); });
+        var newEmpOpts = buildAdminRptEmpOpts(scopeIds, itemIds);
+        if (numIds.length > 0) {
+            var deptMemberIds = DB.members.filter(function(m) { return numIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
+            newEmpOpts = newEmpOpts.filter(function(o) { return deptMemberIds.indexOf(parseInt(o.value)) !== -1; });
+        }
+        ssmUpdate('ssm-rpt-emp', newEmpOpts, true);
         generateReport();
     });
 
-    ssmOnChange('ssm-rpt-item', function() { generateReport(); });
+    // ID/Name 改变 → 更新 Employee
+    ssmOnChange('ssm-rpt-item', function(selectedItemIds) {
+        var scopeIds = ssmGetValues('ssm-rpt-scope').map(function(v) { return parseInt(v); });
+        var itemIds = selectedItemIds.map(function(v) { return parseInt(v); });
+        var deptIds = ssmGetValues('ssm-rpt-dept').map(function(v) { return parseInt(v); });
+        var newEmpOpts = buildAdminRptEmpOpts(scopeIds, itemIds);
+        if (deptIds.length > 0) {
+            var deptMemberIds = DB.members.filter(function(m) { return deptIds.indexOf(m.departmentId) !== -1; }).map(function(m) { return m.id; });
+            newEmpOpts = newEmpOpts.filter(function(o) { return deptMemberIds.indexOf(parseInt(o.value)) !== -1; });
+        }
+        ssmUpdate('ssm-rpt-emp', newEmpOpts, true);
+        generateReport();
+    });
+
     ssmOnChange('ssm-rpt-emp', function() { generateReport(); });
 
     generateReport();
+}
+
+function buildAdminRptEmpOpts(scopeIds, itemIds) {
+    // 什么都没选 → 返回全部非 viewer employee
+    if ((!scopeIds || scopeIds.length === 0) && (!itemIds || itemIds.length === 0)) {
+        return getNonViewerMembers()
+            .sort(function(a, b) { return a.name.localeCompare(b.name); })
+            .map(function(m) { return { value: m.id, label: m.name }; });
+    }
+
+    var projectIds = DB.projects.map(function(p) { return p.id; });
+
+    if (scopeIds && scopeIds.length > 0) {
+        projectIds = DB.projects
+            .filter(function(p) { return p.categoryId && scopeIds.indexOf(p.categoryId) !== -1; })
+            .map(function(p) { return p.id; });
+    }
+
+    if (itemIds && itemIds.length > 0) {
+        var expandedIds = expandOtherItemIds(itemIds);
+        projectIds = projectIds.filter(function(id) { return expandedIds.indexOf(id) !== -1; });
+    }
+
+    var memberIds = [];
+    DB.attendance.forEach(function(a) {
+        if (a.projectId && projectIds.indexOf(a.projectId) !== -1 && memberIds.indexOf(a.memberId) === -1) {
+            memberIds.push(a.memberId);
+        }
+    });
+
+    var viewerMemberIds = getViewerMemberIds();
+    memberIds = memberIds.filter(function(mid) { return viewerMemberIds.indexOf(mid) === -1; });
+
+    return memberIds
+        .map(function(mid) { return DB.members.find(function(m) { return m.id === mid; }); })
+        .filter(Boolean)
+        .sort(function(a, b) { return a.name.localeCompare(b.name); })
+        .map(function(m) { return { value: m.id, label: m.name }; });
 }
 
 function resetReport() {
@@ -5215,9 +5905,8 @@ function resetReport() {
     document.getElementById('rpt-to').value = today;
     ssmClear('ssm-rpt-scope');
     ssmClear('ssm-rpt-dept');
-    ssmClear('ssm-rpt-emp');
     ssmUpdate('ssm-rpt-item', buildFilterItemOpts(), false);
-    ssmUpdate('ssm-rpt-emp', sortedMembers().map(function(m) { return { value: m.id, label: m.name }; }), false);
+    ssmUpdate('ssm-rpt-emp', buildAdminRptEmpOpts([], []), false);
     generateReport();
 }
 
@@ -5654,7 +6343,7 @@ function selectModule(mod, el) {
     document.querySelectorAll('.login-tab').forEach(function(t) { t.classList.remove('active'); });
     if (el) el.classList.add('active');
     document.getElementById('login-subtitle').textContent =
-        mod === 'attendance' ? 'Project Salary Management' : 'Panel Tracking System';
+        mod === 'attendance' ? 'Project Tracking Management' : 'Panel Tracking System';
 }
 
 function ptLogout() {
