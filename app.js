@@ -3678,36 +3678,35 @@ function renderEmpReport() {
 }
 
 function buildEmpRptEmpOpts(scopeIds, itemIds) {
-    // 什么都没选 → 返回全部非 viewer employee
-    if ((!scopeIds || scopeIds.length === 0) && (!itemIds || itemIds.length === 0)) {
-        return getNonViewerMembers()
-            .sort(function(a, b) { return a.name.localeCompare(b.name); })
-            .map(function(m) { return { value: m.id, label: m.name }; });
-    }
-
     var picScopeIds = getPICScopeIds();
-    var picProjectIds = DB.projects
+
+    // 总是基于 PIC scope 的项目
+    var projectIds = DB.projects
         .filter(function(p) { return p.categoryId && picScopeIds.indexOf(p.categoryId) !== -1; })
         .map(function(p) { return p.id; });
 
+    // 如果选了 category，进一步缩小
     if (scopeIds && scopeIds.length > 0) {
-        picProjectIds = DB.projects
+        projectIds = DB.projects
             .filter(function(p) { return p.categoryId && scopeIds.indexOf(p.categoryId) !== -1; })
             .map(function(p) { return p.id; });
     }
 
+    // 如果选了 item，进一步缩小
     if (itemIds && itemIds.length > 0) {
         var expandedIds = expandOtherItemIds(itemIds);
-        picProjectIds = picProjectIds.filter(function(id) { return expandedIds.indexOf(id) !== -1; });
+        projectIds = projectIds.filter(function(id) { return expandedIds.indexOf(id) !== -1; });
     }
 
+    // 找出在这些项目里有 attendance 的 member
     var memberIds = [];
     DB.attendance.forEach(function(a) {
-        if (a.projectId && picProjectIds.indexOf(a.projectId) !== -1 && memberIds.indexOf(a.memberId) === -1) {
+        if (a.projectId && projectIds.indexOf(a.projectId) !== -1 && memberIds.indexOf(a.memberId) === -1) {
             memberIds.push(a.memberId);
         }
     });
 
+    // 排除 viewer
     var viewerMemberIds = getViewerMemberIds();
     memberIds = memberIds.filter(function(mid) { return viewerMemberIds.indexOf(mid) === -1; });
 
