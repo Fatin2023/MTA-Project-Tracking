@@ -2975,7 +2975,14 @@ function renderEmployeeAttendance() {
                 if (picMemberIds.indexOf(pa.memberId) === -1) picMemberIds.push(pa.memberId);
             }
         });
-        var viewerMemberIds = getViewerMemberIds();
+        DB.attendance.forEach(function(a) {
+            if (!a.projectId) return;
+            var proj = DB.projects.find(function(p) { return p.id === a.projectId; });
+            if (proj && proj.categoryId && picScopeIds.indexOf(proj.categoryId) !== -1) {
+                if (picMemberIds.indexOf(a.memberId) === -1) picMemberIds.push(a.memberId);
+            }
+        });
+            var viewerMemberIds = getViewerMemberIds();
         picMemberIds = picMemberIds.filter(function(mid) { return viewerMemberIds.indexOf(mid) === -1; });
         picEmpOpts = picMemberIds
             .map(function(mid) { return DB.members.find(function(m) { return m.id === mid; }); })
