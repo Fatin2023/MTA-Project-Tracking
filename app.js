@@ -646,10 +646,10 @@ document.addEventListener('mousedown', function(e) {
     }
 });
 
+var itemStatusSelected = [];
 function renderMainScope() {
     var view = document.getElementById('admin-projects');
 
-    // viewer 只看到自己 department + 手动指定的 scope
     var viewerScopeIds = getViewerVisibleScopeIds();
     var visibleScopes = viewerScopeIds !== null
         ? DB.scopes.filter(function(s) { return viewerScopeIds.indexOf(s.id) !== -1; })
@@ -682,7 +682,6 @@ function renderMainScope() {
     var addCatBtn = canEdit() ? '<button class="btn btn-accent" onclick="showAddCategory()">+ Add Category</button>' : '';
     var addItemBtn = canEdit() ? '<button class="btn btn-green" onclick="showAddItem()">+ Add Item</button>' : '';
 
-    // 存起来给 switchScopeTab 用
     window._viewerVisibleScopeIds = viewerScopeIds;
     window._viewerVisibleProjectIds = viewerScopeIds !== null ? allProjects.map(function(p) { return p.id; }) : null;
 
@@ -705,6 +704,7 @@ function renderMainScope() {
                 '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">End Date</label><input type="date" class="input" id="item-filter-end" onchange="itemDateChanged()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
                 '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Install From</label><input type="date" class="input" id="item-filter-inst-from" onchange="itemInstDateChanged()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
                 '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="item-filter-inst-to" onchange="itemInstDateChanged()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
+                '<div style="min-width:140px">' + msGenerate('item-filter-status', STATUS_OPTS, 'All Status') + '</div>' +
                 '<button class="btn btn-ghost btn-sm" onclick="resetItemFilters()">Reset</button>' +
                 '<span id="item-count" style="font-size:.82rem;color:var(--main-text3)"></span>' +
                 '<div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">' +
@@ -717,6 +717,13 @@ function renderMainScope() {
             '</div>' +
             '<div id="items-table-area"></div>' +
         '</div>';
+
+    msOnChange('item-filter-status', function() {
+        var raw = msGetTextValues('item-filter-status');
+        itemStatusSelected = raw.filter(function(v) { return v != null && v !== ''; });
+        itemCurrentPage = 1;
+        renderItemsTable();
+    });
 
     renderItemsTable();
 }
@@ -746,6 +753,8 @@ function resetItemFilters() {
     document.getElementById('item-filter-end').value = '';
     document.getElementById('item-filter-inst-from').value = '';
     document.getElementById('item-filter-inst-to').value = '';
+    itemStatusSelected = [];
+    msClear('item-filter-status');
     itemCurrentPage = 1;
     renderItemsTable();
 }
@@ -902,6 +911,7 @@ function renderItemsTable() {
                 '<td style="font-family:var(--font-m);font-size:.82rem">' + formatDateDMY(p.startDate) + '</td>' +
                 '<td style="font-family:var(--font-m);font-size:.82rem">' + formatDateDMY(p.endDate) + '</td>' +
                 '<td style="font-family:var(--font-m);font-size:.82rem">' + formatDateDMY(p.installDate) + '</td>' +
+                '<td>' + statusBadge(p.status) + '</td>' +
                 '<td>' + cdHtml + '</td>' +
                 '<td>' + memberAvatars + '</td>' +
                 '<td style="text-align:right;font-family:var(--font-m)">' + fmtCost(cost) + '</td>' +
@@ -956,6 +966,7 @@ function renderItemsTable() {
                 '<th style="width:100px">Start Date</th>' +
                 '<th style="width:100px">End Date</th>' +
                 '<th style="width:100px">Install Date</th>' +
+                '<th style="width:110px">Status</th>' +
                 '<th style="width:100px">Countdown</th>' +
                 '<th>Members</th>' +
                 '<th style="width:100px;text-align:right">Cost</th>' +
@@ -991,7 +1002,7 @@ function getFilteredItems() {
         ? baseItems.filter(function(p) { return p.categoryId === activeCategoryId; })
         : baseItems;
 
-    if (itemSearchQuery) {
+        if (itemSearchQuery) {
         allItems = allItems.filter(function(p) {
             var cat = p.categoryId ? DB.scopes.find(function(s) { return s.id === p.categoryId; }) : null;
             var haystack = [
@@ -1003,7 +1014,8 @@ function getFilteredItems() {
                 p.installDate || '',
                 formatDateDMY(p.startDate),
                 formatDateDMY(p.endDate),
-                formatDateDMY(p.installDate)
+                formatDateDMY(p.installDate),
+                p.status || ''
             ].map(function(v) { return String(v).toLowerCase(); }).join(' ');
             return haystack.indexOf(itemSearchQuery) !== -1;
         });
@@ -1036,6 +1048,12 @@ function getFilteredItems() {
         allItems = allItems.filter(function(p) {
             var id = p.installDate ? p.installDate.slice(0, 10) : '';
             return id && id <= instTo;
+        });
+    }
+    if (itemStatusSelected.length > 0) {
+        allItems = allItems.filter(function(p) {
+            var ps = (p.status || 'pending').toLowerCase();
+            return itemStatusSelected.indexOf(ps) !== -1;
         });
     }
 
@@ -1185,6 +1203,7 @@ function showAddItem() {
         '<div class="field"><label>Start Date</label><input class="input" id="inp-item-start" type="date"></div>' +
         '<div class="field"><label>End Date</label><input class="input" id="inp-item-end" type="date"></div>' +
         '<div class="field"><label>Install Date</label><input class="input" id="inp-item-install" type="date"></div>' +
+        '<div class="field"><label>Status</label><select class="input" id="inp-item-status"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>' +
     '</div>' +
     '<p class="auth-error" id="item-error"></p>' +
     '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddItem()">Create</button></div>');
@@ -1295,6 +1314,11 @@ function showEditItem(pid) {
         <div class="field"><label>Start Date</label><input class="input" id="inp-item-start-edit" type="date" value="${proj.startDate || ''}"></div>
         <div class="field"><label>End Date</label><input class="input" id="inp-item-end-edit" type="date" value="${proj.endDate || ''}"></div>
         <div class="field"><label>Install Date</label><input class="input" id="inp-item-install-edit" type="date" value="${proj.installDate || ''}"></div>
+        <div class="field"><label>Status</label><select class="input" id="inp-item-status-edit">
+            <option value="pending">Pending</option>
+            <option value="in progress">In Progress</option>
+            <option value="completed">Completed</option>
+        </select></div>
     </div>
 
     <div style="display:flex;gap:24px;margin:14px 0 8px;padding:10px 0;border-top:1px solid var(--main-border);border-bottom:1px solid var(--main-border)">
@@ -1318,7 +1342,12 @@ function showEditItem(pid) {
     <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditItemFull(${pid})">Save</button></div>
     `);
 
-    setTimeout(() => { const el = document.getElementById('inp-item-edit'); el.focus(); el.select(); }, 100);
+    setTimeout(() => {
+        const el = document.getElementById('inp-item-edit');
+        el.focus();
+        el.select();
+        document.getElementById('inp-item-status-edit').value = proj.status || 'pending';
+    }, 100);
 }
 
 async function doEditItemFull(pid) {
@@ -1329,6 +1358,7 @@ async function doEditItemFull(pid) {
     const startDate = document.getElementById('inp-item-start-edit').value || null;
     const endDate = document.getElementById('inp-item-end-edit').value || null;
     const installDate = document.getElementById('inp-item-install-edit').value || null;
+    const status = document.getElementById('inp-item-status-edit').value || 'pending';
 
     if (!name) { errEl.textContent = 'ID / Name is required'; return; }
 
@@ -1341,7 +1371,8 @@ async function doEditItemFull(pid) {
                 startDate: startDate,
                 endDate: endDate,
                 customer: customer || '',
-                installDate: installDate
+                installDate: installDate,
+                status: status
             }
         });
 
@@ -2419,32 +2450,33 @@ function renderEmployeeProjects() {
             var isPic = g.isPic;
 
             var itemsData = g.items.map(function(p) {
-                var mc = getProjectMembers(p.id).length;
-                var cd = getProjectCountdown(p);
-                var cdHtml = '\u2014';
-                if (cd !== null) {
-                    if (cd > 30) cdHtml = '<span style="color:var(--ok);font-weight:600">' + cd + ' days left</span>';
-                    else if (cd > 7) cdHtml = '<span style="color:var(--warning);font-weight:600">' + cd + ' days left</span>';
-                    else if (cd > 0) cdHtml = '<span style="color:var(--danger);font-weight:600">' + cd + ' days left</span>';
-                    else if (cd === 0) cdHtml = '<span style="color:var(--warning);font-weight:600">Due today!</span>';
-                    else cdHtml = '<span style="color:var(--danger);font-weight:600">' + Math.abs(cd) + ' days overdue</span>';
-                }
-                var fmtDate = function(d) { return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '\u2014'; };
-                return {
-                    id: p.id,
-                    name: esc(p.name),
-                    customer: esc(p.customer || '\u2014'),
-                    timeline: fmtDate(p.startDate) + ' \u2014 ' + fmtDate(p.endDate),
-                    startDateRaw: p.startDate ? p.startDate.slice(0, 10) : '',
-                    endDateRaw: p.endDate ? p.endDate.slice(0, 10) : '',
-                    installDateRaw: p.installDate ? p.installDate.slice(0, 10) : '',
-                    startDateFmt: formatDateDMY(p.startDate),
-                    endDateFmt: formatDateDMY(p.endDate),
-                    installDateFmt: formatDateDMY(p.installDate),
-                    team: mc + ' member' + (mc !== 1 ? 's' : ''),
-                    cdHtml: cdHtml
-                };
-            });
+            var mc = getProjectMembers(p.id).length;
+            var cd = getProjectCountdown(p);
+            var cdHtml = '\u2014';
+            if (cd !== null) {
+                if (cd > 30) cdHtml = '<span style="color:var(--ok);font-weight:600">' + cd + ' days left</span>';
+                else if (cd > 7) cdHtml = '<span style="color:var(--warning);font-weight:600">' + cd + ' days left</span>';
+                else if (cd > 0) cdHtml = '<span style="color:var(--danger);font-weight:600">' + cd + ' days left</span>';
+                else if (cd === 0) cdHtml = '<span style="color:var(--warning);font-weight:600">Due today!</span>';
+                else cdHtml = '<span style="color:var(--danger);font-weight:600">' + Math.abs(cd) + ' days overdue</span>';
+            }
+            var fmtDate = function(d) { return d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '\u2014'; };
+            return {
+                id: p.id,
+                name: esc(p.name),
+                customer: esc(p.customer || '\u2014'),
+                timeline: fmtDate(p.startDate) + ' \u2014 ' + fmtDate(p.endDate),
+                startDateRaw: p.startDate ? p.startDate.slice(0, 10) : '',
+                endDateRaw: p.endDate ? p.endDate.slice(0, 10) : '',
+                installDateRaw: p.installDate ? p.installDate.slice(0, 10) : '',
+                startDateFmt: formatDateDMY(p.startDate),
+                endDateFmt: formatDateDMY(p.endDate),
+                installDateFmt: formatDateDMY(p.installDate),
+                status: p.status || 'pending',
+                team: mc + ' member' + (mc !== 1 ? 's' : ''),
+                cdHtml: cdHtml
+            };
+        });
 
             empScopePages[scopeId] = { page: 1, pageSize: 5, data: itemsData, isPic: isPic, scopeId: scopeId };
 
@@ -2611,6 +2643,7 @@ function empShowAddItem(scopeId) {
             '<div class="field"><label>Start Date</label><input class="input" id="emp-inp-item-start" type="date"></div>' +
             '<div class="field"><label>End Date</label><input class="input" id="emp-inp-item-end" type="date"></div>' +
             '<div class="field"><label>Install Date</label><input class="input" id="emp-inp-item-install" type="date"></div>' +
+            '<div class="field"><label>Status</label><select class="input" id="emp-inp-item-status"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>' +
         '</div>' +
         '<p class="auth-error" id="emp-item-error"></p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="empDoAddItem(' + scopeId + ')">Create</button></div>');
@@ -2624,11 +2657,12 @@ async function empDoAddItem(scopeId) {
     var startDate = document.getElementById('emp-inp-item-start').value || null;
     var endDate = document.getElementById('emp-inp-item-end').value || null;
     var installDate = document.getElementById('emp-inp-item-install').value || null;
+    var status = document.getElementById('emp-inp-item-status').value || 'pending';
     if (!name) { errEl.textContent = 'ID / Name is required'; return; }
     try {
         await api('/projects', { method: 'POST', body: {
             name: name, categoryId: scopeId, startDate: startDate, endDate: endDate,
-            customer: customerName || null, installDate: installDate
+            customer: customerName || null, installDate: installDate, status: status
         }});
         hideModal(); await loadDB(); renderEmployeeProjects();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
@@ -2656,11 +2690,17 @@ function empShowEditItem(pid) {
             '<div class="field"><label>Start Date</label><input class="input" id="emp-inp-item-start-edit" type="date" value="' + (proj.startDate || '') + '"></div>' +
             '<div class="field"><label>End Date</label><input class="input" id="emp-inp-item-end-edit" type="date" value="' + (proj.endDate || '') + '"></div>' +
             '<div class="field"><label>Install Date</label><input class="input" id="emp-inp-item-install-edit" type="date" value="' + (proj.installDate || '') + '"></div>' +
+            '<div class="field"><label>Status</label><select class="input" id="emp-inp-item-status-edit"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>' +
             '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase">Countdown</span><span style="font-size:.9rem">' + cdHtml + '</span></div>' +
         '</div>' +
         '<p class="auth-error" id="emp-item-error"></p>' +
         '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="empDoEditItem(' + pid + ')">Save</button></div>');
-    setTimeout(function() { var el = document.getElementById('emp-inp-item-edit'); el.focus(); el.select(); }, 100);
+    setTimeout(function() {
+        var el = document.getElementById('emp-inp-item-edit');
+        el.focus();
+        el.select();
+        document.getElementById('emp-inp-item-status-edit').value = proj.status || 'pending';
+    }, 100);
 }
 
 async function empDoEditItem(pid) {
@@ -2671,12 +2711,13 @@ async function empDoEditItem(pid) {
     var startDate = document.getElementById('emp-inp-item-start-edit').value || null;
     var endDate = document.getElementById('emp-inp-item-end-edit').value || null;
     var installDate = document.getElementById('emp-inp-item-install-edit').value || null;
+    var status = document.getElementById('emp-inp-item-status-edit').value || 'pending';
     if (!name) { errEl.textContent = 'ID / Name is required'; return; }
     try {
         await api('/projects/' + pid, { method: 'PUT', body: {
             name: name, categoryId: proj ? proj.categoryId : null,
             startDate: startDate, endDate: endDate,
-            customer: customerName || null, installDate: installDate
+            customer: customerName || null, installDate: installDate, status: status
         }});
         hideModal(); await loadDB(); renderEmployeeProjects();
     } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
@@ -2811,7 +2852,8 @@ function renderScopeItemsTable(scopeId) {
                 r.startDateFmt,
                 r.endDateFmt,
                 r.installDateFmt,
-                r.team
+                r.team,
+                r.status
             ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
             return haystack.indexOf(query) !== -1;
         });
@@ -2826,7 +2868,7 @@ function renderScopeItemsTable(scopeId) {
     var actionsCol = isPic ? '<th style="width:80px">Actions</th>' : '';
     var rows = '';
     if (data.length === 0) {
-        var colCount = isPic ? 9 : 8;
+        var colCount = isPic ? 10 : 9;
         rows = '<tr><td colspan="' + colCount + '" style="text-align:center;color:var(--main-text3);padding:30px">' +
             (query ? 'No items matching "' + esc(query) + '"' : 'No items. ' + (isPic ? 'Click "+ Add Item" to create one.' : '')) +
             '</td></tr>';
@@ -2843,6 +2885,7 @@ function renderScopeItemsTable(scopeId) {
                 '<td style="font-family:var(--font-m);font-size:.85rem">' + (r.startDateFmt || '\u2014') + '</td>' +
                 '<td style="font-family:var(--font-m);font-size:.85rem">' + (r.endDateFmt || '\u2014') + '</td>' +
                 '<td style="font-family:var(--font-m);font-size:.85rem">' + (r.installDateFmt || '\u2014') + '</td>' +
+                '<td>' + statusBadge(r.status) + '</td>' +
                 '<td>' + r.cdHtml + '</td>' +
                 '<td style="font-size:.85rem">' + r.team + '</td>' +
                 actionCell +
@@ -2888,6 +2931,7 @@ function renderScopeItemsTable(scopeId) {
                 '<th style="width:100px">Start Date</th>' +
                 '<th style="width:100px">End Date</th>' +
                 '<th style="width:100px">Install Date</th>' +
+                '<th style="width:110px">Status</th>' +
                 '<th>Countdown</th>' +
                 '<th>Team</th>' +
                 actionsCol +
@@ -2982,7 +3026,7 @@ function renderEmployeeAttendance() {
                 if (picMemberIds.indexOf(a.memberId) === -1) picMemberIds.push(a.memberId);
             }
         });
-            var viewerMemberIds = getViewerMemberIds();
+        var viewerMemberIds = getViewerMemberIds();
         picMemberIds = picMemberIds.filter(function(mid) { return viewerMemberIds.indexOf(mid) === -1; });
         picEmpOpts = picMemberIds
             .map(function(mid) { return DB.members.find(function(m) { return m.id === mid; }); })
@@ -6618,10 +6662,26 @@ function msGetTextValues(id) {
     return Array.from(_msState[id]);
 }
 
+//------------Status Helper --------------
+var STATUS_OPTS = [
+    { value: 'pending', label: 'Pending' },
+    { value: 'in progress', label: 'In Progress' },
+    { value: 'completed', label: 'Completed' }
+];
+
+function statusBadge(status) {
+    if (!status) return '<span style="color:var(--main-text3)">—</span>';
+    var s = status.toLowerCase();
+    if (s === 'completed') return '<span style="background:rgba(22,163,74,.1);color:#16a34a;padding:3px 10px;border-radius:12px;font-size:.72rem;font-weight:600;text-transform:uppercase">Completed</span>';
+    if (s === 'in progress') return '<span style="background:rgba(217,119,6,.1);color:#d97706;padding:3px 10px;border-radius:12px;font-size:.72rem;font-weight:600;text-transform:uppercase">In Progress</span>';
+    return '<span style="background:rgba(136,136,136,.1);color:#888;padding:3px 10px;border-radius:12px;font-size:.72rem;font-weight:600;text-transform:uppercase">Pending</span>';
+}
+
 // ---------- DASHBOARD ----------
 var dashCurrentPage = 1;
 var dashPageSize = 10;
 var dashCustSelected = [];
+var dashStatusSelected = [];
 
 function ptRenderDashboard() {
     var d = ptDB.dashboard;
@@ -6635,17 +6695,27 @@ function ptRenderDashboard() {
     });
     customers.sort();
     var custOpts = customers.map(function(c) { return { value: c, label: c }; });
-
     dashCustSelected = [];
 
+    var statusCounts = { total: 0, pending: 0, 'in progress': 0, completed: 0 };
+    allPanels.forEach(function(p) {
+        statusCounts.total++;
+        var s = (p.status || 'pending').toLowerCase();
+        if (statusCounts[s] !== undefined) statusCounts[s]++;
+    });
+
     el.innerHTML =
-        '<div class="stats">' +
-            '<div class="stat"><div class="label">Total Panels</div><div class="value">' + d.total_panels + '</div></div>' +
-            '<div class="stat"><div class="label">Total Materials</div><div class="value">' + d.total_materials + '</div></div>' +
-        '</div>' +
+            '<div class="stats">' +
+                '<div class="stat"><div class="label">Pending</div><div class="value" style="color:var(--main-text3)">' + statusCounts.pending + '</div></div>' +
+                '<div class="stat"><div class="label">In Progress</div><div class="value" style="color:var(--warning)">' + statusCounts['in progress'] + '</div></div>' +
+                '<div class="stat"><div class="label">Completed</div><div class="value" style="color:var(--green)">' + statusCounts.completed + '</div></div>' +
+                '<div class="stat"><div class="label">Total Panels</div><div class="value">' + statusCounts.total + '</div></div>' +
+                '<div class="stat"><div class="label">Total Materials</div><div class="value">' + d.total_materials + '</div></div>' +
+            '</div>' +
         '<div class="filter">' +
             '<input class="input" type="text" placeholder="Search all columns..." id="pt-dash-search" oninput="ptFilterDashboard()" style="max-width:320px">' +
             '<div style="min-width:180px">' + msGenerate('pt-dash-cust', custOpts, 'All Customers') + '</div>' +
+            '<div style="min-width:160px">' + msGenerate('pt-dash-status', STATUS_OPTS, 'All Status') + '</div>' +
             '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Install From</label><input type="date" class="input" id="pt-dash-inst-from" onchange="ptFilterDashboard()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
             '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="pt-dash-inst-to" onchange="ptFilterDashboard()" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetDashFilter()">Reset</button>' +
@@ -6657,6 +6727,12 @@ function ptRenderDashboard() {
     msOnChange('pt-dash-cust', function() {
         var raw = msGetTextValues('pt-dash-cust');
         dashCustSelected = raw.filter(function(v) { return v != null && v !== ''; });
+        dashCurrentPage = 1;
+        ptFilterDashboard();
+    });
+    msOnChange('pt-dash-status', function() {
+        var raw = msGetTextValues('pt-dash-status');
+        dashStatusSelected = raw.filter(function(v) { return v != null && v !== ''; });
         dashCurrentPage = 1;
         ptFilterDashboard();
     });
@@ -6678,7 +6754,8 @@ function ptGetFilteredDashboard() {
                 p.install_date,
                 formatDateDMY(p.start_date),
                 formatDateDMY(p.end_date),
-                formatDateDMY(p.install_date)
+                formatDateDMY(p.install_date),
+                p.status
             ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
             if (haystack.indexOf(search) === -1) return false;
         }
@@ -6686,10 +6763,15 @@ function ptGetFilteredDashboard() {
             var pc = (p.customer || '').trim();
             if (dashCustSelected.indexOf(pc) === -1) return false;
         }
+        if (dashStatusSelected.length > 0) {
+            var ps = (p.status || '').toLowerCase();
+            if (dashStatusSelected.indexOf(ps) === -1) return false;
+        }
         var id = p.install_date ? p.install_date.slice(0, 10) : '';
         if (instFrom && (!id || id < instFrom)) return false;
         if (instTo && (!id || id > instTo)) return false;
         return true;
+        
     });
 }
 
@@ -6709,7 +6791,7 @@ function ptFilterDashboard() {
         return;
     }
     area.innerHTML =
-        '<div class="table-wrap"><table><thead><tr><th>No</th><th>Panel ID</th><th>Customer</th><th>Start Date</th><th>End Date</th><th>Install Date</th></tr></thead><tbody>' +
+        '<div class="table-wrap"><table><thead><tr><th>No</th><th>Panel ID</th><th>Customer</th><th>Start Date</th><th>End Date</th><th>Install Date</th><th>Status</th></tr></thead><tbody>' +
         pageData.map(function(p, i) {
             return '<tr style="cursor:pointer" onclick="ptOpenDrawer(' + p.id + ')">' +
                 '<td>' + (startIdx + i + 1) + '</td>' +
@@ -6718,6 +6800,7 @@ function ptFilterDashboard() {
                 '<td>' + formatDateDMY(p.start_date) + '</td>' +
                 '<td>' + formatDateDMY(p.end_date) + '</td>' +
                 '<td>' + formatDateDMY(p.install_date) + '</td>' +
+                '<td>' + statusBadge(p.status) + '</td>' +
             '</tr>';
         }).join('') + '</tbody></table></div>' +
         ptPagination(filtered.length, dashCurrentPage, dashPageSize, 'goDashPage', 'changeDashPageSize');
@@ -6729,8 +6812,10 @@ function ptResetDashFilter() {
     document.getElementById('pt-dash-inst-to').value = '';
     dashCustSelected = [];
     msClear('pt-dash-cust');
+    dashStatusSelected = [];    
+    msClear('pt-dash-status');   
     dashCurrentPage = 1;
-    ptFilterDashboard();
+    ptFilterDashboard();         
 }
 
 function goDashPage(page) {
@@ -6747,6 +6832,7 @@ function changeDashPageSize(size) {
 var panelCurrentPage = 1;
 var panelPageSize = 10;
 var panelCustSelected = [];
+var panelStatusSelected = [];
 
 function ptRenderPanel() {
     var el = document.getElementById('pt-panel-content');
@@ -6770,6 +6856,7 @@ function ptRenderPanel() {
             '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">End Date</label><input type="date" class="input" id="pt-panel-end" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)" onchange="var f=document.getElementById(\'pt-panel-start\').value,t=this.value;if(f&&t&&t<f)this.value=f;ptFilterPanels()"></div>' +
             '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Install From</label><input type="date" class="input" id="pt-panel-inst-from" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)" onchange="var f=this.value,t=document.getElementById(\'pt-panel-inst-to\').value;if(f){document.getElementById(\'pt-panel-inst-to\').min=f;if(t&&t<f)document.getElementById(\'pt-panel-inst-to\').value=this.value}ptFilterPanels()"></div>' +
             '<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="pt-panel-inst-to" style="width:155px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)" onchange="var f=document.getElementById(\'pt-panel-inst-from\').value,t=this.value;if(f&&t&&t<f)this.value=f;ptFilterPanels()"></div>' +
+            '<div style="min-width:160px">' + msGenerate('pt-panel-status', STATUS_OPTS, 'All Status') + '</div>' +
             '<button class="btn btn-ghost btn-sm" onclick="ptResetPanelFilter()">Reset</button>' +
             '<span id="pt-panel-count" style="font-size:.82rem;color:var(--main-text3)"></span>' +
         '</div>' +
@@ -6785,6 +6872,12 @@ function ptRenderPanel() {
     msOnChange('pt-panel-cust', function() {
         var raw = msGetTextValues('pt-panel-cust');
         panelCustSelected = raw.filter(function(v) { return v != null && v !== ''; });
+        panelCurrentPage = 1;
+        ptFilterPanels();
+    });
+    msOnChange('pt-panel-status', function() {
+        var raw = msGetTextValues('pt-panel-status');
+        panelStatusSelected = raw.filter(function(v) { return v != null && v !== ''; });
         panelCurrentPage = 1;
         ptFilterPanels();
     });
@@ -6808,13 +6901,19 @@ function ptGetFilteredPanels() {
                 p.install_date,
                 formatDateDMY(p.start_date),
                 formatDateDMY(p.end_date),
-                formatDateDMY(p.install_date)
+                formatDateDMY(p.install_date),
+                p.status
             ].map(function(v) { return String(v || '').toLowerCase(); }).join(' ');
             if (haystack.indexOf(search) === -1) return false;
         }
         if (panelCustSelected.length > 0) {
             var pc = (p.customer || '').trim();
             if (panelCustSelected.indexOf(pc) === -1) return false;
+        }
+
+        if (panelStatusSelected.length > 0) {
+            var ps = (p.status || '').toLowerCase();
+            if (panelStatusSelected.indexOf(ps) === -1) return false;
         }
 
         var sd = p.start_date ? p.start_date.slice(0, 10) : '';
@@ -6843,7 +6942,7 @@ function ptFilterPanels() {
     var area = document.getElementById('pt-panel-table-area');
     if (filtered.length === 0) { area.innerHTML = '<div class="empty-msg">No panels found</div>'; return; }
     area.innerHTML =
-        '<div class="table-wrap"><table><thead><tr><th>No</th><th>Panel ID</th><th>Customer</th><th>Start Date</th><th>End Date</th><th>Install Date</th><th>Actions</th></tr></thead><tbody>' +
+        '<div class="table-wrap"><table><thead><tr><th>No</th><th>Panel ID</th><th>Customer</th><th>Start Date</th><th>End Date</th><th>Install Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>' +
         pageData.map(function(p, i) {
             return '<tr style="cursor:pointer" onclick="ptOpenDrawer(' + p.id + ')">' +
                 '<td>' + (startIdx + i + 1) + '</td>' +
@@ -6852,6 +6951,7 @@ function ptFilterPanels() {
                 '<td>' + formatDateDMY(p.start_date) + '</td>' +
                 '<td>' + formatDateDMY(p.end_date) + '</td>' +
                 '<td>' + formatDateDMY(p.install_date) + '</td>' +
+                '<td>' + statusBadge(p.status) + '</td>' +
                 '<td onclick="event.stopPropagation()">' + (canEdit()
                 ? '<div style="display:flex;gap:4px">' +
                     '<button class="btn btn-ghost btn-sm" onclick="ptShowEditPanel(' + p.id + ')">Edit</button>' +
@@ -6873,6 +6973,8 @@ function ptResetPanelFilter() {
     msClear('pt-panel-cust');
     panelCurrentPage = 1;
     ptFilterPanels();
+    panelStatusSelected = [];
+    msClear('pt-panel-status');
 }
 
 function goPanelPage(page) {
@@ -6893,7 +6995,8 @@ function ptExportPanelsExcel() {
             Customer: p.customer || '',
             'Start Date': formatDateDMY(p.start_date),
             'End Date': formatDateDMY(p.end_date),
-            'Install Date': formatDateDMY(p.install_date)
+            'Install Date': formatDateDMY(p.install_date),
+            Status: p.status || 'pending'
         };
     });
     ptExportRowsToExcel(rows, 'Panels', 'panels');
@@ -6925,7 +7028,8 @@ async function ptDoAddPanel() {
             startDate: document.getElementById('pt-ap-start').value || null,
             endDate: document.getElementById('pt-ap-end').value || null,
             customer: document.getElementById('pt-ap-customer').value.trim(),
-            installDate: document.getElementById('pt-ap-instdate').value || null
+            installDate: document.getElementById('pt-ap-instdate').value || null,
+            status: document.getElementById('pt-ap-status').value || 'pending'
         }});
         ptCloseModal('modal-pt-add-panel');
         await ptLoadDB();
@@ -6942,6 +7046,7 @@ function ptShowEditPanel(id) {
     document.getElementById('pt-ep-start').value = p.start_date ? p.start_date.slice(0, 10) : '';
     document.getElementById('pt-ep-end').value = p.end_date ? p.end_date.slice(0, 10) : '';
     document.getElementById('pt-ep-instdate').value = p.install_date ? p.install_date.slice(0, 10) : '';
+    document.getElementById('pt-ep-status').value = p.status || 'pending';
     document.getElementById('pt-ep-error').textContent = '';
     ptOpenModal('modal-pt-edit-panel');
 }
@@ -6961,7 +7066,8 @@ async function ptDoEditPanel() {
             startDate: document.getElementById('pt-ep-start').value || null,
             endDate: document.getElementById('pt-ep-end').value || null,
             customer: document.getElementById('pt-ep-customer').value.trim(),
-            installDate: document.getElementById('pt-ep-instdate').value || null
+            installDate: document.getElementById('pt-ep-instdate').value || null,
+            status: document.getElementById('pt-ep-status').value || 'pending'
         }});
         ptCloseModal('modal-pt-edit-panel');
         await ptLoadDB();
@@ -7061,6 +7167,7 @@ function ptRenderDrawerPanel() {
                 '<div class="pt-info-item"><span class="pt-info-label">End Date</span><span class="pt-info-value mono">' + formatDateDMY(panel.end_date) + '</span></div>' +
                 '<div class="pt-info-item"><span class="pt-info-label">Install Date</span><span class="pt-info-value mono">' + formatDateDMY(panel.install_date) + '</span></div>' +
                 '<div class="pt-info-item"><span class="pt-info-label">Materials Count</span><span class="pt-info-value mono">' + materials.length + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Status</span><span class="pt-info-value">' + statusBadge(panel.status) + '</span></div>' +
             '</div>' +
         '</div>' +
 
@@ -7182,6 +7289,7 @@ function ptRenderDrawerMaterial() {
                 '<div class="pt-info-item"><span class="pt-info-label">End Date</span><span class="pt-info-value mono">' + formatDateDMY(panel.end_date) + '</span></div>' +
                 '<div class="pt-info-item"><span class="pt-info-label">Install Date</span><span class="pt-info-value mono">' + formatDateDMY(panel.install_date) + '</span></div>' +
                 '<div class="pt-info-item"><span class="pt-info-label">Total Materials</span><span class="pt-info-value mono">' + siblings.length + '</span></div>' +
+                '<div class="pt-info-item"><span class="pt-info-label">Status</span><span class="pt-info-value">' + statusBadge(panel.status) + '</span></div>' +
             '</div>' +
         '</div>' :
         '<div class="pt-drawer-section">' +

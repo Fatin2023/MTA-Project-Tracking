@@ -175,7 +175,8 @@ app.get('/api/projects', requireAuth, async (req, res) => {
             endDate: r.end_date,
             customer: r.customer || '',
             location: r.location || '',
-            installDate: r.install_date
+            installDate: r.install_date,
+            status: r.status || 'pending'
         }));
         res.json(projects);
     } catch (err) {
@@ -184,7 +185,7 @@ app.get('/api/projects', requireAuth, async (req, res) => {
 });
 
 app.post('/api/projects', requireEditOrPic, async (req, res) => {
-    const { name, categoryId, startDate, endDate, customer, location, installDate } = req.body;
+    const { name, categoryId, startDate, endDate, customer, location, installDate, status } = req.body;
     try {
         if (categoryId && name) {
             const exists = await pool.query(
@@ -196,8 +197,8 @@ app.post('/api/projects', requireEditOrPic, async (req, res) => {
             }
         }
         const result = await pool.query(
-            'INSERT INTO projects (name, category_id, start_date, end_date, customer, location, install_date) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-            [name, categoryId || null, startDate || null, endDate || null, customer || '', location || '', installDate || null]
+            'INSERT INTO projects (name, category_id, start_date, end_date, customer, location, install_date, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id',
+            [name, categoryId || null, startDate || null, endDate || null, customer || '', location || '', installDate || null, status || 'pending']
         );
         res.json({ id: result.rows[0].id });
     } catch (err) {
@@ -206,7 +207,7 @@ app.post('/api/projects', requireEditOrPic, async (req, res) => {
 });
 
 app.put('/api/projects/:id', requireEditOrPic, async (req, res) => {
-    const { name, categoryId, startDate, endDate, customer, location, installDate } = req.body;
+    const { name, categoryId, startDate, endDate, customer, location, installDate, status } = req.body;
     try {
         if (categoryId && name) {
             const exists = await pool.query(
@@ -218,8 +219,8 @@ app.put('/api/projects/:id', requireEditOrPic, async (req, res) => {
             }
         }
         await pool.query(
-            'UPDATE projects SET name = $1, category_id = $2, start_date = $3, end_date = $4, customer = $5, location = $6, install_date = $7 WHERE id = $8',
-            [name, categoryId || null, startDate || null, endDate || null, customer || '', location || '', installDate || null, req.params.id]
+            'UPDATE projects SET name = $1, category_id = $2, start_date = $3, end_date = $4, customer = $5, location = $6, install_date = $7, status = $8 WHERE id = $9',
+            [name, categoryId || null, startDate || null, endDate || null, customer || '', location || '', installDate || null, status || 'pending', req.params.id]
         );
         res.json({ success: true });
     } catch (err) {
@@ -1030,7 +1031,9 @@ app.get('/api/m-panel-ids', requireAuth, async (req, res) => {
             return res.json([]);
         }
         const result = await pool.query(
-            `SELECT id, name, start_date, end_date, customer, location, install_date FROM projects WHERE category_id = $1 ORDER BY name`,
+            `SELECT id, name, start_date, end_date, customer, location, install_date,
+                    COALESCE(status, 'pending') as status
+             FROM projects WHERE category_id = $1 ORDER BY name`,
             [scopeResult.rows[0].id]
         );
         res.json(result.rows);
@@ -1098,12 +1101,17 @@ app.post('/api/m-import/panels', requireEdit, async (req, res) => {
                 skipped++; errors.push(`Row ${i + 2}: Panel ID "${name}" already exists`); continue;
             }
 
+            var status = String(r['Status'] || 'pending').trim().toLowerCase();
+            var validStatuses = ['pending', 'in progress', 'completed'];
+            if (validStatuses.indexOf(status) === -1) status = 'pending';
+
             try {
                 await pool.query(
-                    `INSERT INTO projects (name, category_id, start_date, end_date, customer, install_date) VALUES ($1, $2, $3, $4, $5, $6)`,
+                    `INSERT INTO projects (name, category_id, start_date, end_date, customer, install_date, status) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
                     [name, panelScopeId, parseDMY(r['Start Date']), parseDMY(r['End Date']),
                     String(r['Customer'] || '').trim(),
-                    parseDMY(r['Install Date'])]
+                    parseDMY(r['Install Date']),
+                    status]
                 );
                 existingNames.add(name.toLowerCase());
                 inserted++;
@@ -1196,10 +1204,10 @@ app.post('/api/m-import/materials', requireEdit, async (req, res) => {
 app.get('/api/m-template/panels', (req, res) => {
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([
-        ['Panel ID', 'Customer', 'Start Date', 'End Date', 'Install Date'],
-        ['P10093', 'Petronas', '15/01/2025', '30/06/2025', '15/06/2025'],
+        ['Panel ID', 'Customer', 'Start Date', 'End Date', 'Install Date', 'Status'],
+        ['P10093', 'Petronas', '15/01/2025', '30/06/2025', '15/06/2025', 'pending'],
     ]);
-    ws['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+    ws['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Panels');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     res.setHeader('Content-Disposition', 'attachment; filename="panel_import_template.xlsx"');
@@ -1228,27 +1236,29 @@ app.post('/api/import/projects', requireEditOrPic, async (req, res) => {
     try {
         const { filename, data, categoryId } = req.body;
         if (!data) return res.status(400).json({ error: 'No file data' });
-        if (!categoryId) return res.status(400).json({ error: 'Category ID required' });
-
         const buffer = Buffer.from(data, 'base64');
         const wb = XLSX.read(buffer, { type: 'buffer' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-
         if (rows.length === 0) return res.status(400).json({ error: 'File is empty' });
 
         let inserted = 0, skipped = 0, errors = [];
+        const catId = categoryId ? parseInt(categoryId) : null;
 
         for (let i = 0; i < rows.length; i++) {
             const r = rows[i];
-            const name = String(r['ID/Name'] || r['ID'] || r['Name'] || r['Project'] || r['Item'] || '').trim();
-            if (!name) { skipped++; errors.push('Row ' + (i + 2) + ': missing ID/Name'); continue; }
+            const name = String(r['Panel ID'] || r['Name'] || r['ID'] || r['Panel Name'] || r['name'] || '').trim();
+            if (!name) { skipped++; errors.push('Row ' + (i + 2) + ': missing Panel ID'); continue; }
+
+            var status = String(r['Status'] || 'pending').trim().toLowerCase();
+            var validStatuses = ['pending', 'in progress', 'completed'];
+            if (validStatuses.indexOf(status) === -1) status = 'pending';
 
             try {
                 await pool.query(
-                    `INSERT INTO projects (name, category_id, start_date, end_date, customer) VALUES ($1, $2, $3, $4, $5)`,
-                    [name, categoryId, r['Start Date'] || null, r['End Date'] || null,
-                    String(r['Customer'] || '').trim()]
+                    'INSERT INTO projects (name, category_id, start_date, end_date, customer, install_date, status) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+                    [name, catId, parseDMY(r['Start Date']), parseDMY(r['End Date']),
+                    String(r['Customer'] || '').trim(), parseDMY(r['Install Date']), status]
                 );
                 inserted++;
             } catch (e) { skipped++; errors.push('Row ' + (i + 2) + ': ' + e.message); }
@@ -1258,23 +1268,22 @@ app.post('/api/import/projects', requireEditOrPic, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/template/projects/:scopeId', (req, res) => {
-    pool.query('SELECT name FROM scopes WHERE id = $1', [req.params.scopeId]).then(function(scope) {
-        const scopeName = scope.rows.length > 0 ? scope.rows[0].name : 'Items';
+app.get('/api/template/projects/:scopeId', async (req, res) => {
+    try {
+        const scope = await pool.query('SELECT name FROM scopes WHERE id = $1', [req.params.scopeId]);
+        const scopeName = scope.rows.length > 0 ? scope.rows[0].name : 'Projects';
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet([
-            ['ID/Name', 'Customer', 'Start Date', 'End Date', 'Install Date'],
-            ['PLC-001', 'Petronas', '2025-01-15', '2025-06-30', ''],
+            ['Panel ID', 'Customer', 'Start Date', 'End Date', 'Install Date', 'Status'],
+            ['P10093', 'Petronas', '15/01/2025', '30/06/2025', '15/06/2025', 'pending'],
         ]);
-        ws['!cols'] = [{ wch: 14 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+        ws['!cols'] = [{ wch: 14 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 }];
         XLSX.utils.book_append_sheet(wb, ws, scopeName.substring(0, 31));
         const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
         res.setHeader('Content-Disposition', 'attachment; filename="' + scopeName + '_template.xlsx"');
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.send(buf);
-    }).catch(function(err) {
-        res.status(500).json({ error: err.message });
-    });
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 async function initDB() {
@@ -1417,6 +1426,7 @@ async function initDB() {
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS customer VARCHAR(200) DEFAULT ''",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS location VARCHAR(300) DEFAULT ''",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS install_date DATE",
+        "ALTER TABLE projects ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending'",
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'projects_name_cat_unique') THEN ALTER TABLE projects ADD CONSTRAINT projects_name_cat_unique UNIQUE (name, category_id); END IF; END $$",
     ];
 
