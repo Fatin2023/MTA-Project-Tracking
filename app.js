@@ -331,6 +331,28 @@ function doLogout() {
 }
 
 /* ==========================================================
+   Side Bar Colapsed
+   ========================================================== */
+function toggleSidebar() {
+    const sidebars = document.querySelectorAll('.sidebar');
+    const isCollapsed = sidebars[0]?.classList.contains('collapsed');
+    sidebars.forEach(s => s.classList.toggle('collapsed'));
+    localStorage.setItem('multitrade_sidebar_collapsed', !isCollapsed);
+}
+
+function restoreSidebarState() {
+    if (localStorage.getItem('multitrade_sidebar_collapsed') === 'true') {
+        document.querySelectorAll('.sidebar').forEach(s => {
+            s.classList.add('collapsed');
+            // 不改 innerHTML，CSS 自动处理三条线/箭头
+        });
+    }
+}
+
+// 在初始化代码末尾加
+restoreSidebarState();
+
+/* ==========================================================
    SECTION 5: NAVIGATION
    ========================================================== */
 
@@ -440,13 +462,20 @@ async function empNav(tab, el) {
     const target = document.getElementById('emp-' + tab);
     if (target) target.style.display = '';
 
+    // 直接用 el 切换 active，不依赖 dataset
     if (nav) {
-        nav.querySelectorAll('.nav-item').forEach(n => {
-            n.classList.toggle('active', n.dataset.page === tab);
-        });
+        nav.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        if (el) {
+            el.classList.add('active');
+        } else {
+            // fallback: 页面初始化时没有 el，靠 onclick 的 tab 名匹配
+            nav.querySelectorAll('.nav-item').forEach(n => {
+                const handler = n.getAttribute('onclick') || '';
+                if (handler.includes("'" + tab + "'")) n.classList.add('active');
+            });
+        }
     }
 
-    // await loadDB();   ← 删掉这行
     switch (tab) {
         case 'myprojects': renderEmployeeProjects(); break;
         case 'attendance': renderEmployeeAttendance(); break;
@@ -1054,8 +1083,7 @@ const renderWorklistTable = () => {
                 <td style="font-family:var(--font-m);color:var(--main-text3)">${startIdx + idx + 1}</td>
                 <td>${scope ? `<span class="badge badge-scope">${esc(scope.name)}</span>` : '<span style="color:var(--main-text3)">\u2014</span>'}</td>
                 <td style="font-weight:500">${esc(w.title)}</td>
-                <td>${canEdit() ? `<div class="actions-cell"><button class="btn-icon" onclick="showEditWorklist(${w.id})" title="Edit">&#9998;</button><button class="btn-icon danger" onclick="confirmDeleteWorklist(${w.id})" title="Delete">&#10005;</button></div>` : '<td></td>'}</td>
-            </tr>`;
+                <td>${canEdit() ? `<div class="actions-cell"><button class="btn-icon" onclick="showEditWorklist(${w.id})" title="Edit">&#9998;</button><button class="btn-icon danger" onclick="confirmDeleteWorklist(${w.id})" title="Delete">&#10005;</button></div>` : ''}</td>            </tr>`;
         }).join('');
 
     let pagHtml = '';
@@ -4248,10 +4276,10 @@ const renderAdminAttendance = () => {
           </div>
         </div>
       </div>
-      <div class="pt-anim-head"><div class="stats-grid" id="att-stats" style="margin:0"></div></div>
-      <div class="pt-anim-table">
-        <div class="section-head time-entry-head">
-          <h2>Time Entries</h2>
+        <div class="pt-anim-head"><div class="stats-grid" id="att-stats" style="margin:0"></div></div>
+        <div class="pt-anim-table">
+            <div class="section-head time-entry-head">
+            <h2 style="margin:0">Time Entries</h2>
           <div style="display:flex;gap:8px">
             ${currentUser.role !== 'viewer' ? '<button class="btn btn-green" onclick="showAdminAddAttendance()">+ Add Attendance</button>' : ''}
           </div>
@@ -5453,7 +5481,7 @@ function ptDoLogout() {
     selectedModule = 'attendance';
     document.querySelectorAll('.login-tab').forEach(function(t) { t.classList.remove('active'); });
     document.querySelector('.login-tab').classList.add('active');
-    document.getElementById('login-subtitle').textContent = 'Project Salary Management';
+    document.getElementById('login-subtitle').textContent = 'Project Tracking Management';
     hideModal();
 }
 
@@ -7126,7 +7154,9 @@ const ptDoDeleteUser = (id) => {
 
     const activateNav = (navId, page) => {
         document.querySelectorAll(`#${navId} .nav-item`).forEach(n => {
-            n.classList.toggle('active', n.dataset.page === page);
+            n.classList.remove('active');
+            const handler = n.getAttribute('onclick') || '';
+            if (handler.includes("'" + page + "'")) n.classList.add('active');
         });
     };
 

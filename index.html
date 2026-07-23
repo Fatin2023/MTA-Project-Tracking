@@ -20,13 +20,13 @@
       <button class="login-tab active" onclick="selectModule('attendance',this)">Project Management</button>
       <button class="login-tab" onclick="selectModule('panel',this)">Panel Tracking</button>
     </div>
-    <p class="subtitle" id="login-subtitle">Project Salary Management</p>
+    <p class="subtitle" id="login-subtitle">Project Tracking Management</p>
     <form onsubmit="handleLogin(event)">
       <div class="field"><label>Username</label>
         <input class="input" id="login-user" placeholder="Enter username" autocomplete="off"></div>
       <div class="field"><label>Password</label>
         <input class="input" id="login-pass" type="password" placeholder="Enter password"></div>
-      <button class="btn btn-accent" type="submit" style="width:100%;justify-content:center;padding:14px;margin-top:8px;font-size:.95rem">Sign In</button>
+      <button class="btn btn-accent" type="submit">Sign In</button>
       <p class="auth-error" id="login-error"></p>
     </form>
   </div>
@@ -57,22 +57,27 @@
 <!-- ===== ADMIN LAYOUT ===== -->
 <div id="admin-layout" class="app-layout">
   <div class="sidebar">
+    <div class="sidebar-toggle" onclick="toggleSidebar()">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
     <div class="sidebar-brand">
       <h1>Multi<span>trade</span></h1>
       <div class="brand-sub">Management</div>
     </div>
     <div class="sidebar-nav" id="admin-nav">
       <div class="nav-section">Overview</div>
-      <div class="nav-item active" data-page="projects" onclick="adminNav('projects',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Work Category</span></div>
-      <div class="nav-item" data-page="worklist" onclick="adminNav('worklist',this)"><span class="nav-icon">&#9745;</span><span class="nav-label">Work List</span></div>
+      <div class="nav-item active" data-page="projects" data-tooltip="Work Category" onclick="adminNav('projects',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Work Category</span></div>
+      <div class="nav-item" data-page="worklist" data-tooltip="Work List" onclick="adminNav('worklist',this)"><span class="nav-icon">&#9745;</span><span class="nav-label">Work List</span></div>
       <div class="nav-section">HR</div>
-      <div class="nav-item" data-page="users" onclick="adminNav('users',this)"><span class="nav-icon">&#128100;</span><span class="nav-label">Users</span></div>
-      <div class="nav-item" data-page="departments" onclick="adminNav('departments',this)"><span class="nav-icon">&#9635;</span><span class="nav-label">Departments</span></div>
-      <div class="nav-item" data-page="positions" onclick="adminNav('positions',this)"><span class="nav-icon">&#9733;</span><span class="nav-label">Positions</span></div>
+      <div class="nav-item" data-page="users" data-tooltip="Users" onclick="adminNav('users',this)"><span class="nav-icon">&#128100;</span><span class="nav-label">Users</span></div>
+      <div class="nav-item" data-page="departments" data-tooltip="Departments" onclick="adminNav('departments',this)"><span class="nav-icon">&#9635;</span><span class="nav-label">Departments</span></div>
+      <div class="nav-item" data-page="positions" data-tooltip="Positions" onclick="adminNav('positions',this)"><span class="nav-icon">&#9733;</span><span class="nav-label">Positions</span></div>
       <div class="nav-section">Time</div>
-      <div class="nav-item" data-page="attendance" onclick="adminNav('attendance',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span></div>
+      <div class="nav-item" data-page="attendance" data-tooltip="Attendance" onclick="adminNav('attendance',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span></div>
       <div class="nav-section">Summary</div>
-      <div class="nav-item" data-page="report" onclick="adminNav('report',this)"><span class="nav-icon">&#128202;</span><span class="nav-label">Report</span></div>
+      <div class="nav-item" data-page="report" data-tooltip="Report" onclick="adminNav('report',this)"><span class="nav-icon">&#128202;</span><span class="nav-label">Report</span></div>
     </div>
     <div class="sidebar-footer">
       <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
@@ -102,23 +107,28 @@
     <div id="admin-worklist" class="admin-view" style="display:none"></div>
   </div>
   <div class="mobile-header">
-    <button class="mobile-menu-btn" onclick="toggleMobileMenu('admin-layout')">&#9776;</button>
+    <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
     <div class="brand">Multi<span>trade</span></div>
     <button class="mobile-logout-hdr" onclick="confirmLogout()">Sign Out</button>
   </div>
-  <div class="mobile-overlay" onclick="closeMobileMenu('admin-layout')"></div>
+  <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
 </div>
 
 <!-- ===== DETAIL LAYOUT ===== -->
 <div id="detail-layout" class="app-layout">
   <div class="sidebar">
+    <div class="sidebar-toggle" onclick="toggleSidebar()">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
     <div class="sidebar-brand">
       <h1>Multi<span>trade</span></h1>
       <div class="brand-sub">Management</div>
     </div>
     <div class="sidebar-nav">
       <div class="nav-section">Navigation</div>
-      <div class="nav-item" onclick="showPage('admin-layout');renderMainScope()"><span class="nav-icon">&#8592;</span><span class="nav-label">Back to Work Category</span></div>
+      <div class="nav-item" data-tooltip="Back" onclick="showPage('admin-layout');renderMainScope()"><span class="nav-icon">&#8592;</span><span class="nav-label">Back to Work Category</span></div>
     </div>
     <div class="sidebar-footer">
       <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
@@ -139,25 +149,30 @@
     <div id="project-detail-content"></div>
   </div>
   <div class="mobile-header">
-    <button class="mobile-menu-btn" onclick="toggleMobileMenu('detail-layout')">&#9776;</button>
+    <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
     <div class="brand">Multi<span>trade</span></div>
     <button class="mobile-logout-hdr" onclick="confirmLogout()">Sign Out</button>
   </div>
-  <div class="mobile-overlay" onclick="closeMobileMenu('detail-layout')"></div>
+  <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
 </div>
 
 <!-- ===== EMPLOYEE LAYOUT ===== -->
 <div id="employee-layout" class="app-layout">
   <div class="sidebar">
+    <div class="sidebar-toggle" onclick="toggleSidebar()">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
     <div class="sidebar-brand">
       <h1>Multi<span>trade</span></h1>
       <div class="brand-sub">Employee Portal</div>
     </div>
     <div class="sidebar-nav" id="emp-nav">
-      <div class="nav-item" onclick="empNav('attendance',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span></div>
-      <div class="nav-item active" onclick="empNav('myprojects',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Work Category</span></div>
-      <div class="nav-item" id="emp-nav-report" style="display:none" onclick="empNav('report',this)"><span class="nav-icon">&#128200;</span><span class="nav-label">Report</span></div>
-      <div class="nav-item" onclick="empNav('settings',this)"><span class="nav-icon">&#9881;</span><span class="nav-label">Settings</span></div>
+      <div class="nav-item" data-tooltip="Attendance" onclick="empNav('attendance',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span></div>
+      <div class="nav-item active" data-tooltip="Work Category" onclick="empNav('myprojects',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Work Category</span></div>
+      <div class="nav-item" id="emp-nav-report" data-tooltip="Report" style="display:none" onclick="empNav('report',this)"><span class="nav-icon">&#128200;</span><span class="nav-label">Report</span></div>
+      <div class="nav-item" data-tooltip="Settings" onclick="empNav('settings',this)"><span class="nav-icon">&#9881;</span><span class="nav-label">Settings</span></div>
     </div>
     <div class="sidebar-footer">
       <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
@@ -181,29 +196,34 @@
     <div id="emp-settings" class="emp-view" style="display:none"></div>
   </div>
   <div class="mobile-header">
-    <button class="mobile-menu-btn" onclick="toggleMobileMenu('employee-layout')">&#9776;</button>
+    <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
     <div class="brand">Multi<span>trade</span></div>
     <button class="mobile-logout-hdr" onclick="confirmLogout()">Sign Out</button>
   </div>
-  <div class="mobile-overlay" onclick="closeMobileMenu('employee-layout')"></div>
+  <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
 </div>
 
 <!-- ===== PANEL TRACKING LAYOUT ===== -->
 <div id="panel-layout" class="app-layout">
   <div class="sidebar">
+    <div class="sidebar-toggle" onclick="toggleSidebar()">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
     <div class="sidebar-brand">
       <h1>Multi<span>trade</span></h1>
       <div class="brand-sub">Panel Tracking</div>
     </div>
     <div class="sidebar-nav" id="pt-nav">
       <div class="nav-section">Main</div>
-      <div class="nav-item active" data-page="pt-dashboard" onclick="ptNav('pt-dashboard',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Dashboard</span></div>
-      <div class="nav-item" data-page="pt-panel" onclick="ptNav('pt-panel',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Panel</span></div>
-      <div class="nav-item" data-page="pt-material" onclick="ptNav('pt-material',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Material</span></div>
+      <div class="nav-item active" data-page="pt-dashboard" data-tooltip="Dashboard" onclick="ptNav('pt-dashboard',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Dashboard</span></div>
+      <div class="nav-item" data-page="pt-panel" data-tooltip="Panel" onclick="ptNav('pt-panel',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Panel</span></div>
+      <div class="nav-item" data-page="pt-material" data-tooltip="Material" onclick="ptNav('pt-material',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Material</span></div>
       <div class="nav-section">Tools</div>
-      <div class="nav-item" data-page="pt-import" onclick="ptNav('pt-import',this)"><span class="nav-icon">&#9660;</span><span class="nav-label">Import Excel</span></div>
+      <div class="nav-item" data-page="pt-import" data-tooltip="Import" onclick="ptNav('pt-import',this)"><span class="nav-icon">&#9660;</span><span class="nav-label">Import Excel</span></div>
       <div class="nav-section">Settings</div>
-      <div class="nav-item" data-page="pt-users" onclick="ptNav('pt-users',this)"><span class="nav-icon">&#128100;</span><span class="nav-label">Users</span></div>
+      <div class="nav-item" data-page="pt-users" data-tooltip="Users" onclick="ptNav('pt-users',this)"><span class="nav-icon">&#128100;</span><span class="nav-label">Users</span></div>
     </div>
     <div class="sidebar-footer">
       <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
@@ -247,11 +267,11 @@
     </div>
   </div>
   <div class="mobile-header">
-    <button class="mobile-menu-btn" onclick="toggleMobileMenu('panel-layout')">&#9776;</button>
+    <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
     <div class="brand">Multi<span>trade</span></div>
     <button class="mobile-logout-hdr" onclick="ptLogout()">Sign Out</button>
   </div>
-  <div class="mobile-overlay" onclick="closeMobileMenu('panel-layout')"></div>
+  <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
 </div>
 
 <!-- ===== MODAL ===== -->
@@ -268,9 +288,7 @@
         <h3 id="pt-drawer-title">Panel Details</h3>
         <button class="pt-drawer-close" onclick="ptCloseDrawer()">&#10005;</button>
     </div>
-    <div class="pt-drawer-body" id="pt-drawer-body">
-        <!-- JS fills this -->
-    </div>
+    <div class="pt-drawer-body" id="pt-drawer-body"></div>
 </div>
 
 <!-- Add Panel -->
