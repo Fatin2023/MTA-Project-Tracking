@@ -5543,7 +5543,13 @@ function ptNav(tab, el) {
     if (tab === 'pt-dashboard') ptRenderDashboard();
     else if (tab === 'pt-panel') ptRenderPanel();
     else if (tab === 'pt-material') ptRenderMaterial();
-    else if (tab === 'pt-users') { loadDB().then(function() { ptRenderUsers(); }); }
+    else if (tab === 'pt-users') {
+        if (ptDB.allUsers && ptDB.allUsers.length) {
+            ptRenderUsers();
+        } else {
+            loadDB().then(function() { ptRenderUsers(); });
+        }
+    }
     else if (tab === 'pt-import') ptRenderImport();
     window.scrollTo(0, 0);
 }
