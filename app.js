@@ -4248,7 +4248,7 @@ const renderAdminAttendance = () => {
           </div>
         </div>
       </div>
-      <div class="pt-anim-head"><div class="stats-grid" id="att-stats"></div></div>
+      <div class="pt-anim-head"><div class="stats-grid" id="att-stats" style="margin:0"></div></div>
       <div class="pt-anim-table">
         <div class="section-head time-entry-head">
           <h2>Time Entries</h2>
