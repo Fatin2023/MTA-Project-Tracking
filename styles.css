@@ -562,7 +562,7 @@ tbody tr:last-child td{border-bottom:none}
   .app-layout.active{display:flex;flex-direction:column;height:100vh;overflow:hidden}
   .app-main{flex:1;margin-left:0;padding-top:56px;overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0}
   .app-body{padding:20px 16px 40px}
-  .app-header{padding:18px 16px;position:sticky;top:0;z-index:10}
+  .app-header{padding:18px 16px;position:sticky;top:0;z-index:60}
   .app-header h2{font-size:1.1rem}
   .project-grid{grid-template-columns:1fr}
   body.menu-open{overflow:hidden;position:fixed;width:100%;top:0;left:0}
