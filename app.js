@@ -5694,22 +5694,9 @@ let dashPageSize = 10;
 let dashCustSelected = [];
 let dashStatusSelected = [];
 
-const ptRenderDashboard = () => {
-    const d = ptDB.dashboard;
-    const el = document.getElementById('pt-dashboard-content');
-    const allPanels = ptDB.panelIds || [];
-
-    const customers = [];
-    allPanels.forEach(p => {
-        const c = (p.customer || '').trim();
-        if (c && customers.indexOf(c) === -1) customers.push(c);
-    });
-    customers.sort();
-    const custOpts = customers.map(c => ({ value: c, label: c }));
-    dashCustSelected = [];
-
+const ptRenderDashStats = (panels, d, animate, materialCount) => {
     const statusCounts = { total: 0, pending: 0, 'in progress': 0, completed: 0 };
-    allPanels.forEach(p => {
+    panels.forEach(p => {
         statusCounts.total++;
         const s = (p.status || 'pending').toLowerCase();
         if (statusCounts[s] !== undefined) statusCounts[s]++;
@@ -5721,11 +5708,111 @@ const ptRenderDashboard = () => {
 
     const now = new Date();
     const sevenDaysAgo = new Date(now); sevenDaysAgo.setDate(now.getDate() - 7);
-    const upcomingInstalls = allPanels.filter(p => {
+    const upcomingInstalls = panels.filter(p => {
         if (!p.install_date) return false;
-        const d = new Date(p.install_date);
-        return d >= sevenDaysAgo && d <= new Date(now.getTime() + 30 * 86400000);
+        const dd = new Date(p.install_date);
+        return dd >= sevenDaysAgo && dd <= new Date(now.getTime() + 30 * 86400000);
     }).length;
+
+    const statsEl = document.getElementById('pt-dash-stats');
+    if (!statsEl) return;
+
+    if (animate) {
+        statsEl.innerHTML =
+            `<div class="dash-stat stat-card" style="display:flex;align-items:center;gap:14px;padding:16px">
+                <div class="dash-ring-wrap">
+                    <svg viewBox="0 0 64 64" width="64" height="64">
+                        <circle class="dash-ring-bg" cx="32" cy="32" r="26"/>
+                        <circle class="dash-ring-fill" id="dash-ring" cx="32" cy="32" r="26"/>
+                    </svg>
+                    <div class="dash-ring-text">${completionRate}%</div>
+                </div>
+                <div>
+                    <div class="stat-label">Completion</div>
+                    <div class="stat-sub">${statusCounts.completed} of ${statusCounts.total} done</div>
+                </div>
+            </div>
+
+            <div class="dash-stat stat-card" style="padding:16px">
+                <div class="stat-label">Pending</div>
+                <div class="stat-value" style="color:var(--main-text3)">${statusCounts.pending}</div>
+                <div class="dash-progress-bar"><div class="dash-progress-fill" style="width:${statusCounts.total ? Math.round(statusCounts.pending/statusCounts.total*100) : 0}%;background:var(--main-text3)"></div></div>
+            </div>
+
+            <div class="dash-stat stat-card" style="padding:16px">
+                <div class="stat-label">In Progress</div>
+                <div class="stat-value" style="color:var(--warning)">${statusCounts['in progress']}</div>
+                <div class="dash-progress-bar"><div class="dash-progress-fill" style="width:${statusCounts.total ? Math.round(statusCounts['in progress']/statusCounts.total*100) : 0}%;background:var(--warning)"></div></div>
+            </div>
+
+            <div class="dash-stat stat-card" style="padding:16px">
+                <div class="stat-label">Completed</div>
+                <div class="stat-value" style="color:var(--green)">${statusCounts.completed}</div>
+                <div class="dash-progress-bar"><div class="dash-progress-fill" style="width:${statusCounts.total ? Math.round(statusCounts.completed/statusCounts.total*100) : 0}%;background:var(--green)"></div></div>
+            </div>
+
+            <div class="dash-stat stat-card" style="padding:16px">
+                <div class="stat-label">Total Panels</div>
+                <div class="stat-value">${statusCounts.total}</div>
+            </div>
+
+            <div class="dash-stat stat-card" style="padding:16px">
+                <div class="stat-label">Total Materials</div>
+                <div class="stat-value">${materialCount}</div>
+            </div>`;
+
+        setTimeout(() => {
+            const ring = document.getElementById('dash-ring');
+            if (ring) {
+                const circumference = 2 * Math.PI * 26;
+                ring.style.strokeDashoffset = circumference - (completionRate / 100) * circumference;
+            }
+        }, 100);
+    } else {
+        const children = statsEl.children;
+        if (children.length < 6) return;
+
+        children[0].querySelector('.dash-ring-text').textContent = completionRate + '%';
+        children[0].querySelector('.stat-sub').textContent = statusCounts.completed + ' of ' + statusCounts.total + ' done';
+        const ring = document.getElementById('dash-ring');
+        if (ring) {
+            const circumference = 2 * Math.PI * 26;
+            ring.style.transition = 'stroke-dashoffset 0.5s ease';
+            ring.style.strokeDashoffset = circumference - (completionRate / 100) * circumference;
+        }
+
+        children[1].querySelector('.stat-value').textContent = statusCounts.pending;
+        children[1].querySelector('.dash-progress-fill').style.width = (statusCounts.total ? Math.round(statusCounts.pending / statusCounts.total * 100) : 0) + '%';
+
+        children[2].querySelector('.stat-value').textContent = statusCounts['in progress'];
+        children[2].querySelector('.dash-progress-fill').style.width = (statusCounts.total ? Math.round(statusCounts['in progress'] / statusCounts.total * 100) : 0) + '%';
+
+        children[3].querySelector('.stat-value').textContent = statusCounts.completed;
+        children[3].querySelector('.dash-progress-fill').style.width = (statusCounts.total ? Math.round(statusCounts.completed / statusCounts.total * 100) : 0) + '%';
+
+        children[4].querySelector('.stat-value').textContent = statusCounts.total;
+
+        children[5].querySelector('.stat-value').textContent = materialCount;
+    }
+};
+
+const ptRenderDashboard = () => {
+    const d = ptDB.dashboard;
+    const el = document.getElementById('pt-dashboard-content');
+    const allPanels = ptDB.panelIds || [];
+
+    dashCustSelected = [];
+    dashStatusSelected = [];
+    dashCurrentPage = 1;
+
+    const customers = [];
+    allPanels.forEach(p => {
+        const c = (p.customer || '').trim();
+        if (c && customers.indexOf(c) === -1) customers.push(c);
+    });
+    customers.sort();
+    const custOpts = customers.map(c => ({ value: c, label: c }));
+    dashCustSelected = [];
 
     el.innerHTML =
         `<style>
@@ -5785,50 +5872,7 @@ const ptRenderDashboard = () => {
             }
         </style>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:20px">
-            <div class="dash-stat stat-card" style="display:flex;align-items:center;gap:14px;padding:16px">
-                <div class="dash-ring-wrap">
-                    <svg viewBox="0 0 64 64" width="64" height="64">
-                        <circle class="dash-ring-bg" cx="32" cy="32" r="26"/>
-                        <circle class="dash-ring-fill" id="dash-ring" cx="32" cy="32" r="26"/>
-                    </svg>
-                    <div class="dash-ring-text">${completionRate}%</div>
-                </div>
-                <div>
-                    <div class="stat-label">Completion</div>
-                    <div class="stat-sub">${statusCounts.completed} of ${statusCounts.total} done</div>
-                </div>
-            </div>
-
-            <div class="dash-stat stat-card" style="padding:16px">
-                <div class="stat-label">Pending</div>
-                <div class="stat-value" style="color:var(--main-text3)">${statusCounts.pending}</div>
-                <div class="dash-progress-bar"><div class="dash-progress-fill" style="width:${statusCounts.total ? Math.round(statusCounts.pending/statusCounts.total*100) : 0}%;background:var(--main-text3)"></div></div>
-            </div>
-
-            <div class="dash-stat stat-card" style="padding:16px">
-                <div class="stat-label">In Progress</div>
-                <div class="stat-value" style="color:var(--warning)">${statusCounts['in progress']}</div>
-                <div class="dash-progress-bar"><div class="dash-progress-fill" style="width:${statusCounts.total ? Math.round(statusCounts['in progress']/statusCounts.total*100) : 0}%;background:var(--warning)"></div></div>
-            </div>
-
-            <div class="dash-stat stat-card" style="padding:16px">
-                <div class="stat-label">Completed</div>
-                <div class="stat-value" style="color:var(--green)">${statusCounts.completed}</div>
-                <div class="dash-progress-bar"><div class="dash-progress-fill" style="width:${statusCounts.total ? Math.round(statusCounts.completed/statusCounts.total*100) : 0}%;background:var(--green)"></div></div>
-            </div>
-
-            <div class="dash-stat stat-card" style="padding:16px">
-                <div class="stat-label">Total Panels</div>
-                <div class="stat-value">${statusCounts.total}</div>
-            </div>
-
-            <div class="dash-stat stat-card" style="padding:16px">
-                <div class="stat-label">Total Materials</div>
-                <div class="stat-value">${d.total_materials}</div>
-                <div class="stat-sub">${upcomingInstalls} installs upcoming</div>
-            </div>
-        </div>
+        <div id="pt-dash-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:20px"></div>
 
         <div class="pt-anim-filter filter">
             <input class="input" type="text" placeholder="Search all columns..." id="pt-dash-search" oninput="ptFilterDashboard()" style="max-width:320px">
@@ -5845,13 +5889,7 @@ const ptRenderDashboard = () => {
             <div id="pt-dash-table-area"></div>
         </div>`;
 
-    setTimeout(() => {
-        const ring = document.getElementById('dash-ring');
-        if (ring) {
-            const circumference = 2 * Math.PI * 26;
-            ring.style.strokeDashoffset = circumference - (completionRate / 100) * circumference;
-        }
-    }, 100);
+    ptRenderDashStats(allPanels, d, true, d.total_materials);
 
     _buildStatusButtons('pt-dash-status-btns');
 
@@ -5890,6 +5928,12 @@ const ptGetFilteredDashboard = () => {
 const ptFilterDashboard = () => {
     const filtered = ptGetFilteredDashboard();
     document.getElementById('pt-dash-count').textContent = filtered.length + ' panels';
+
+    const filteredPanelIds = filtered.map(p => p.id);
+    const filteredPanelNames = filtered.map(p => p.name);
+    const filteredMatCount = (ptDB.materials || []).filter(m => m.panel_no && filteredPanelNames.indexOf(m.panel_no) !== -1).length;
+
+    ptRenderDashStats(filtered, ptDB.dashboard, false, filteredMatCount);
 
     const totalPages = Math.ceil(filtered.length / dashPageSize) || 1;
     if (dashCurrentPage > totalPages) dashCurrentPage = totalPages;
