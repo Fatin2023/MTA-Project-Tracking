@@ -7311,4 +7311,54 @@ const ptDoDeleteUser = (id) => {
     }
 })();
 
+
+// ============================================================
+// AUTO LOGOUT — 30 min inactivity
+// ============================================================
+(function() {
+    let logoutTimer;
+    const TIMEOUT = 45 * 60 * 1000; // 45 minutes
+
+    function resetTimer() {
+        clearTimeout(logoutTimer);
+        logoutTimer = setTimeout(autoLogout, TIMEOUT);
+    }
+
+    function autoLogout() {
+        const saved = localStorage.getItem('multitrade_session');
+        if (!saved) return;
+
+        localStorage.removeItem('multitrade_session');
+        localStorage.removeItem('multitrade_module');
+        localStorage.removeItem('multitrade_admin_page');
+        localStorage.removeItem('multitrade_emp_page');
+        localStorage.removeItem('multitrade_pt_page');
+
+        // 关闭所有 modal 和 drawer
+        document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
+        document.querySelectorAll('.pt-drawer').forEach(d => d.classList.remove('active'));
+        document.querySelectorAll('.pt-drawer-overlay').forEach(d => d.classList.remove('active'));
+        document.querySelectorAll('.sidebar').forEach(s => s.classList.remove('open'));
+        document.querySelectorAll('.mobile-overlay').forEach(o => o.classList.remove('active'));
+
+        // 清除 modal 内容（避免 PT 的静态 modal 残留）
+        const modalBox = document.getElementById('modal-box');
+        if (modalBox) modalBox.innerHTML = '';
+
+        document.getElementById('login-pass').value = '';
+
+        alert('Session expired due to 45 minutes of inactivity. Please sign in again.');
+
+        document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
+        document.getElementById('login-page').classList.add('active');
+    }
+
+    // 监听所有用户操作
+    const events = ['mousemove', 'mousedown', 'keypress', 'scroll', 'touchstart', 'click'];
+    events.forEach(e => document.addEventListener(e, resetTimer, { passive: true }));
+
+    // 初始化
+    resetTimer();
+})();
+
 // ← file end, empty from here
