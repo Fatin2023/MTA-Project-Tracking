@@ -570,7 +570,12 @@ const renderScopeTabs = () => {
         </div>`;
     }
     tabsBar.innerHTML = `${allTab}${tabs}${dotsHtml}${canEdit() ? '<button class="btn btn-accent" onclick="showAddCategory()">+ Add Category</button>' : ''}`;
-    // 更新右侧按钮区域
+
+    // 更新 label
+    const labelEl = document.querySelector('#admin-projects .section-head h2');
+    if (labelEl) labelEl.textContent = activeScope ? activeScope.name : 'All';
+
+    // 更新右侧按钮
     const btnArea = document.querySelector('#admin-projects .action-btns-area');
     if (btnArea) {
         const importBtn = activeCategoryId && canEdit() ? `<a class="btn btn-accent btn-sm" href="/api/template/projects/${activeCategoryId}" style="text-decoration:none">Template</a><label class="btn btn-blue btn-sm" style="cursor:pointer">Import Excel<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="adminHandleItemImport(this)"></label>` : '';
@@ -612,13 +617,13 @@ const renderMainScope = () => {
         </div>`;
     }
 
+    const activeLabel = activeScope ? esc(activeScope.name) : 'All';
+
     window._viewerVisibleProjectIds = vScopeIds ? allProjects.map(p => p.id) : null;
 
     view.innerHTML = `
     <div class="app-header">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
-            <div><h2>Work Category</h2><div class="header-sub">Manage work categories and items</div></div>
-        </div>
+        <div><h2>Work Category</h2><div class="header-sub">Manage work categories and items</div></div>
     </div>
     <div class="app-body">
         <div class="pt-anim-filter tabs-wrapper">
@@ -627,8 +632,9 @@ const renderMainScope = () => {
                 ${canEdit() ? '<button class="btn btn-accent" onclick="showAddCategory()">+ Add Category</button>' : ''}
             </div>
         </div>
-        <div class="pt-anim-head" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
-            <input class="input" id="item-search" placeholder="Search all columns..." value="${esc(itemSearchQuery)}" oninput="itemSearchChanged()" style="max-width:320px;padding:8px 12px;font-size:.85rem">
+
+        <div class="pt-anim-filter filter">
+            <input class="input" id="item-search" placeholder="Search all columns..." value="${esc(itemSearchQuery)}" oninput="itemSearchChanged()" style="max-width:320px">
             <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Start</label><input type="date" class="input" id="item-filter-start" onchange="itemDateChanged()" style="width:130px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>
             <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">End</label><input type="date" class="input" id="item-filter-end" onchange="itemDateChanged()" style="width:130px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>
             <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Inst From</label><input type="date" class="input" id="item-filter-inst-from" onchange="itemInstDateChanged()" style="width:130px;padding:8px 10px;font-size:.82rem;background:var(--main-surface)"></div>
@@ -636,7 +642,11 @@ const renderMainScope = () => {
             <div style="min-width:140px">${msGenerate('item-filter-status', STATUS_OPTS, 'All Status')}</div>
             <button class="btn btn-ghost btn-sm" onclick="resetItemFilters()">Reset</button>
             <span id="item-count" style="font-size:.82rem;color:var(--main-text3)"></span>
-            <div class="action-btns-area" style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+        </div>
+
+        <div class="pt-anim-head section-head">
+            <h2>${activeLabel}</h2>
+            <div class="action-btns-area" style="display:flex;gap:6px;flex-wrap:wrap">
                 ${activeCategoryId && canEdit() ?
                     `<a class="btn btn-accent btn-sm" href="/api/template/projects/${activeCategoryId}" style="text-decoration:none">Template</a>
                     <label class="btn btn-blue btn-sm" style="cursor:pointer">Import Excel<input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="adminHandleItemImport(this)"></label>`
@@ -644,6 +654,7 @@ const renderMainScope = () => {
                 ${canEdit() ? '<button class="btn btn-green" onclick="showAddItem()">+ Add Item</button>' : ''}
             </div>
         </div>
+
         <div class="pt-anim-table">
             <div id="items-table-area"></div>
         </div>
@@ -5939,7 +5950,7 @@ const ptClampDatePair = (fromId, toId) => {
 
 const ptRenderPanel = () => {
     const el = document.getElementById('pt-panel-content');
-    const addBtn = canEdit() ? '<button class="btn btn-green btn-sm" onclick="ptOpenAddPanel()">+ Add Panel</button>' : '';
+    const addBtn = canEdit() ? '<button class="btn btn-green btn" onclick="ptOpenAddPanel()">+ Add Panel</button>' : '';
 
     const customers = [];
     (ptDB.panelIds || []).forEach(p => {
@@ -5966,7 +5977,7 @@ const ptRenderPanel = () => {
         <div class="pt-anim-head section-head">
             <h3>All Panels</h3>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <button class="btn btn-blue btn-sm" onclick="ptExportPanelsExcel()">&#128196; Export Excel</button>
+                <button class="btn btn-blue btn" onclick="ptExportPanelsExcel()">&#128196; Export Excel</button>
                 ${addBtn}
             </div>
         </div>
@@ -6044,7 +6055,7 @@ const ptFilterPanels = () => {
                     <td>${statusBadge(p.status)}</td>
                     <td onclick="event.stopPropagation()">${canEdit()
                         ? `<div style="display:flex;gap:4px">
-                            <button class="btn btn-ghost btn-sm" onclick="ptShowEditPanel(${p.id})">Edit</button>
+                            <button class="btn btn-ghost btn-sm" onclick="ptShowEditPanel(${p.id})">&#9998;</button>
                             <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ptDeletePanel(${p.id})">&#10005;</button>
                           </div>`
                         : ''}</td>
@@ -6398,7 +6409,7 @@ let matCatSelected = [];
 
 const ptRenderMaterial = () => {
     const el = document.getElementById('pt-material-content');
-    const addBtn = canEdit() ? '<button class="btn btn-green btn-sm" onclick="ptOpenAddMaterial()">+ Add Material</button>' : '';
+    const addBtn = canEdit() ? '<button class="btn btn-green btn" onclick="ptOpenAddMaterial()">+ Add Material</button>' : '';
 
     const brands = [];
     const cats = [];
@@ -6430,7 +6441,7 @@ const ptRenderMaterial = () => {
         <div class="pt-anim-head section-head">
             <h3>All Materials</h3>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <button class="btn btn-blue btn-sm" onclick="ptExportMaterialsExcel()">&#128196; Export Excel</button>
+                <button class="btn btn-blue btn" onclick="ptExportMaterialsExcel()">&#128196; Export Excel</button>
                 ${addBtn}
             </div>
         </div>
@@ -6511,7 +6522,7 @@ const ptFilterMaterials = () => {
                     <td>${m.install_date ? formatDateDMY(m.install_date) : '\u2014'}</td>
                     <td onclick="event.stopPropagation()">${canEdit()
                         ? `<div style="display:flex;gap:4px">
-                            <button class="btn btn-ghost btn-sm" onclick="ptShowEditMaterial(${m.id})">Edit</button>
+                            <button class="btn btn-ghost btn-sm" onclick="ptShowEditMaterial(${m.id})">&#9998;</button>
                             <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ptDeleteMaterial(${m.id})">&#10005;</button>
                           </div>`
                         : ''}</td>
@@ -6831,7 +6842,7 @@ const ptLoadAllUsers = async () => {
 };
 
 const ptRenderUsers = () => {
-    const addBtn = canEdit() ? '<button class="btn btn-green btn-sm" onclick="ptShowAddUser()">+ Add User</button>' : '';
+    const addBtn = canEdit() ? '<button class="btn btn-green btn" onclick="ptShowAddUser()">+ Add User</button>' : '';
     const el = document.getElementById('pt-users-content');
     el.innerHTML =
         `<div class="pt-anim-filter filter">
@@ -6901,7 +6912,7 @@ const ptFilterUsers = () => {
                     <td>${_roleBadge(u.role)}</td>
                     <td>${canEdit()
                         ? `<div style="display:flex;gap:4px">
-                            <button class="btn btn-ghost btn-sm" onclick="ptShowEditUser(${u.id})">Edit</button>
+                            <button class="btn btn-ghost btn-sm" onclick="ptShowEditUser(${u.id})">&#9998;</button>
                             ${u.username !== 'adminMTA' ? `<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="ptDeleteUser(${u.id})">&#10005;</button>` : ''}
                           </div>`
                         : '<span style="color:var(--main-text3);font-size:.82rem">View only</span>'}</td>
