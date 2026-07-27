@@ -457,7 +457,7 @@ tbody tr:last-child td{border-bottom:none}
 .modal-overlay.active{display:flex;animation:overlayIn .25s ease both}
 .modal{background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);
   padding:32px;width:100%;max-width:600px;animation:modalIn .35s cubic-bezier(.34,1.56,.64,1) both;
-  max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg)}
+  margin:20px auto;overflow:visible;box-shadow:var(--shadow-lg)}
 .modal h3{font-size:1.15rem;margin-bottom:24px;color:var(--main-text);animation:modalContentIn .3s ease .1s both}
 .modal .field{margin-bottom:18px;opacity:0;animation:modalContentIn .3s ease both}
 .modal .field:nth-child(1){animation-delay:.12s}

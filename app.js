@@ -191,6 +191,14 @@ const animCrud = (...ids) => {
 function showModal(html) {
     document.getElementById('modal-box').innerHTML = html;
     document.getElementById('modal-overlay').classList.add('active');
+
+    setTimeout(function() {
+        document.querySelectorAll('.modal .field').forEach(function(el) {
+            el.style.animation = 'none';
+            el.style.opacity = '1';
+            el.style.position = 'relative';
+        });
+    }, 500);
 }
 
 function hideModal() {
@@ -3856,6 +3864,13 @@ function ssToggle(containerId) {
     inst.open = !inst.open;
     inst.filter = '';
     _ssRender(containerId);
+
+    // 提升当前 field 的 z-index
+    var container = document.getElementById(containerId);
+    if (container) {
+        var field = container.closest('.field');
+        if (field) field.style.zIndex = inst.open ? '50' : '';
+    }
 }
 
 function ssOnFilter(containerId, val) {
@@ -4100,6 +4115,13 @@ function ssmToggle(containerId) {
     inst.open = !inst.open;
     inst.filter = '';
     _ssmRender(containerId);
+
+    // 提升当前 field 的 z-index
+    var container = document.getElementById(containerId);
+    if (container) {
+        var field = container.closest('.field');
+        if (field) field.style.zIndex = inst.open ? '50' : '';
+    }
 }
 
 function ssmOnFilter(containerId, val) {
