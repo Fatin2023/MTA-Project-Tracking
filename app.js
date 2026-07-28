@@ -193,12 +193,12 @@ function showModal(html) {
     document.getElementById('modal-overlay').classList.add('active');
 
     setTimeout(function() {
-        document.querySelectorAll('.modal .field').forEach(function(el) {
+        document.querySelectorAll('.modal, .modal .field').forEach(function(el) {
             el.style.animation = 'none';
             el.style.opacity = '1';
-            el.style.position = 'relative';
+            el.style.transform = 'none';
         });
-    }, 500);
+    }, 400);
 }
 
 function hideModal() {
@@ -3817,10 +3817,12 @@ function _ssRender(containerId) {
                                   var isSelected = String(o.value) === String(inst.selected);
                                   return '<div class="ss-option" data-value="' + o.value + '" ' +
                                       'onclick="ssSelect(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\')" ' +
+                                      'onmouseover="this.style.background=\'#2563eb\';this.style.color=\'#fff\'" ' +
+                                      'onmouseout="this.style.background=\'' + (isSelected ? '#2563eb' : 'transparent') + '\';this.style.color=\'' + (isSelected ? '#fff' : 'var(--main-text)') + '\'" ' +
                                       'style="padding:8px 12px;cursor:pointer;font-size:.82rem;' +
                                       (isSelected
-                                          ? 'background:var(--accent-soft);color:var(--accent);font-weight:600'
-                                          : 'color:var(--main-text)') +
+                                          ? 'background:#2563eb;color:#fff;font-weight:600'
+                                          : 'background:transparent;color:var(--main-text)') +
                                       ';border-bottom:1px solid var(--main-border)">' +
                                       esc(o.label) +
                                       '</div>';
@@ -3864,13 +3866,6 @@ function ssToggle(containerId) {
     inst.open = !inst.open;
     inst.filter = '';
     _ssRender(containerId);
-
-    // 提升当前 field 的 z-index
-    var container = document.getElementById(containerId);
-    if (container) {
-        var field = container.closest('.field');
-        if (field) field.style.zIndex = inst.open ? '50' : '';
-    }
 }
 
 function ssOnFilter(containerId, val) {
@@ -4071,12 +4066,13 @@ function _ssmRender(containerId) {
         } else {
             filtered.forEach(function(o) {
                 var checked = inst.selected.indexOf(String(o.value)) !== -1;
-                html += '<label style="display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;font-size:.82rem;' +
-                    (checked ? 'background:var(--accent-soft)' : '') + ';border-bottom:1px solid var(--main-border)">' +
+                html += '<label onmouseover="this.style.background=\'#2563eb\';this.style.color=\'#fff\';this.querySelector(\'span\').style.color=\'#fff\'" onmouseout="this.style.background=\'' + (checked ? '#2563eb' : 'transparent') + '\';this.style.color=\'' + (checked ? '#fff' : 'var(--main-text)') + '\';this.querySelector(\'span\').style.color=\'' + (checked ? '#fff' : 'var(--main-text)') + '\'" ' +
+                    'style="display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;font-size:.82rem;' +
+                    (checked ? 'background:#2563eb;color:#fff;font-weight:600' : 'background:transparent;color:var(--main-text)') + ';border-bottom:1px solid var(--main-border)">' +
                     '<input type="checkbox" ' + (checked ? 'checked' : '') + ' ' +
                     'onchange="ssmToggleOption(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\',this.checked)" ' +
                     'style="accent-color:var(--accent)">' +
-                    '<span style="color:var(--main-text)">' + esc(o.label) + '</span>' +
+                    '<span>' + esc(o.label) + '</span>' +
                     '</label>';
             });
         }
@@ -4115,13 +4111,6 @@ function ssmToggle(containerId) {
     inst.open = !inst.open;
     inst.filter = '';
     _ssmRender(containerId);
-
-    // 提升当前 field 的 z-index
-    var container = document.getElementById(containerId);
-    if (container) {
-        var field = container.closest('.field');
-        if (field) field.style.zIndex = inst.open ? '50' : '';
-    }
 }
 
 function ssmOnFilter(containerId, val) {
