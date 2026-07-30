@@ -4193,7 +4193,24 @@ const empConfirmDeleteFile = id => {
     showModal(`<h3>Delete File</h3>
         <p style="color:var(--main-text2);line-height:1.6">Delete <strong>${esc(file.name)}</strong>?<br>
         <span style="font-size:.82rem;color:var(--main-text3)">File will also be deleted from Google Drive.</span></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteFile(${id})">Delete</button></div>`);
+        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteEmpFile(${id})">Delete</button></div>`);
+};
+
+const doDeleteEmpFile = id => {
+    const file = (DB.files||[]).find(f => f.id === id);
+    if (!file) return;
+
+    // 先删 Google Drive 上的文件
+    const drive = (DB.driveSettings||[]).find(d => d.id === file.driveSettingId);
+    const deletePromise = (drive && file.driveFileId)
+        ? api('/delete-drive-file', { method: 'POST', body: { fileId: file.driveFileId } }).catch(() => {})
+        : Promise.resolve();
+
+    deletePromise
+        .then(() => api('/files/' + id, { method: 'DELETE' }))
+        .then(() => { hideModal(); return loadDB(); })
+        .then(() => { applyEmpFileFilter(); showToast('File deleted successfully'); })
+        .catch(e => { alert('Delete failed: ' + e.message); });
 };
 
 
