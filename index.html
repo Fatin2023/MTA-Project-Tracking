@@ -78,6 +78,8 @@
       <div class="nav-item" data-page="attendance" data-tooltip="Attendance" onclick="adminNav('attendance',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span></div>
       <div class="nav-section">Summary</div>
       <div class="nav-item" data-page="report" data-tooltip="Report" onclick="adminNav('report',this)"><span class="nav-icon">&#128202;</span><span class="nav-label">Report</span></div>
+      <div class="nav-section">Google Drive</div>
+      <div class="nav-item" data-page="files" data-tooltip="Files" onclick="adminNav('files',this)"><span class="nav-icon">&#128194;</span><span class="nav-label">Files</span></div>
     </div>
     <div class="sidebar-footer">
       <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
@@ -105,6 +107,7 @@
     <div id="admin-attendance" class="admin-view" style="display:none"></div>
     <div id="admin-report" class="admin-view" style="display:none"></div>
     <div id="admin-worklist" class="admin-view" style="display:none"></div>
+    <div id="admin-files" class="admin-view" style="display:none"></div>
   </div>
   <div class="mobile-header">
     <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>
@@ -169,9 +172,13 @@
       <div class="brand-sub">Employee Portal</div>
     </div>
     <div class="sidebar-nav" id="emp-nav">
+      <div class="nav-section">Main</div>
       <div class="nav-item" data-tooltip="Attendance" onclick="empNav('attendance',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span></div>
       <div class="nav-item active" data-tooltip="Work Category" onclick="empNav('myprojects',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Work Category</span></div>
       <div class="nav-item" id="emp-nav-report" data-tooltip="Report" style="display:none" onclick="empNav('report',this)"><span class="nav-icon">&#128200;</span><span class="nav-label">Report</span></div>
+      <div class="nav-section">Google Drive</div>
+      <div class="nav-item" data-tooltip="Files" onclick="empNav('files',this)"><span class="nav-icon">&#128194;</span><span class="nav-label">Files</span></div>
+      <div class="nav-section">Setting</div>
       <div class="nav-item" data-tooltip="Settings" onclick="empNav('settings',this)"><span class="nav-icon">&#9881;</span><span class="nav-label">Settings</span></div>
     </div>
     <div class="sidebar-footer">
@@ -194,6 +201,7 @@
     <div id="emp-attendance" class="emp-view" style="display:none"></div>
     <div id="emp-report" class="emp-view" style="display:none"></div>
     <div id="emp-settings" class="emp-view" style="display:none"></div>
+    <div id="emp-files" class="emp-view" style="display:none"></div>
   </div>
   <div class="mobile-header">
     <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>

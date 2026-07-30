@@ -353,7 +353,7 @@ select.input option{background:var(--main-surface);color:var(--main-text)}
 .card{background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:28px;
   transition:all .25s ease;box-shadow:var(--shadow-sm)}
 .card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--shadow-md)}
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:36px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:16px;margin-bottom:36px}
 .stat-card{background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:24px;
   position:relative;overflow:hidden;box-shadow:var(--shadow-sm)}
 .stat-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),transparent)}
@@ -412,13 +412,13 @@ tbody tr:last-child td{border-bottom:none}
 .b-yellow{background:rgba(217,119,6,.1);color:var(--warning);border:1px solid rgba(217,119,6,.2)}
 
 /* Sticky actions column */
-.table-wrap table thead th:last-child,
-.table-wrap table tbody td:last-child{position:sticky;right:0;z-index:2;background:var(--sticky-bg);
-  box-shadow:-4px 0 8px rgba(0,0,0,.08);-webkit-tap-highlight-color:transparent}
-.table-wrap table thead th:last-child{background:var(--main-surface2);z-index:3}
-.table-wrap table tbody tr:hover td:last-child,
-.table-wrap table tbody tr:active td:last-child{background:var(--sticky-bg)!important;-webkit-tap-highlight-color:transparent;opacity:1}
-.table-wrap table tbody tr:nth-child(even) td:last-child{background:var(--sticky-bg)}
+
+@media (min-width: 768px) {
+    .table-wrap table thead th:last-child, .table-wrap table tbody td:last-child{position:sticky;right:0;z-index:2;background:var(--sticky-bg);box-shadow:-4px 0 8px rgba(0,0,0,.08);-webkit-tap-highlight-color:transparent}
+    .table-wrap table thead th:last-child{background:var(--main-surface2);z-index:3}
+    .table-wrap table tbody tr:hover td:last-child, .table-wrap table tbody tr:active td:last-child{background:var(--sticky-bg)!important;-webkit-tap-highlight-color:transparent;opacity:1}
+    .table-wrap table tbody tr:nth-child(even) td:last-child{background:var(--sticky-bg)}
+}
 
 /* Column widths */
 .table-wrap table th,.table-wrap table td{white-space:nowrap}
@@ -800,6 +800,8 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
 .stat-anim:nth-child(4){animation-delay:.20s}
 .stat-anim:nth-child(5){animation-delay:.25s}
 .stat-anim:nth-child(6){animation-delay:.30s}
+.stat-anim:nth-child(7){animation-delay:.35s}
+.stat-anim:nth-child(8){animation-delay:.40s}
 @keyframes statFadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
 
 .stat-anim .stat-value{animation:statCount .4s ease forwards}

@@ -86,13 +86,14 @@ let DB = {
 
 const loadDB = async () => {
     try {
-        const [projects, members, users, positions, departments, scopes, subScopes, details, assignments, attendance, worklist] =
+        const [projects, members, users, positions, departments, scopes, subScopes, details, assignments, attendance, worklist, driveSettings, appConfig, files] =
             await Promise.all([
                 api('/projects'), api('/members'), api('/users'), api('/positions'),
                 api('/departments'), api('/scopes'), api('/subscopes'), api('/details'),
-                api('/assignments'), api('/attendance'), api('/worklist')
+                api('/assignments'), api('/attendance'), api('/worklist'),
+                api('/drive-settings'), api('/app-config'), api('/files')
             ]);
-        Object.assign(DB, { projects, members, users, positions, departments, scopes, subScopes, details, projectAssignments: assignments, attendance, worklist });
+        Object.assign(DB, { projects, members, users, positions, departments, scopes, subScopes, details, projectAssignments: assignments, attendance, worklist, driveSettings, appConfig, files });
 
         DB.viewerScopes = {};
         const viewerUsers = (DB.users || []).filter(u => u.role === 'viewer');
@@ -136,9 +137,16 @@ const getProjectCost = (projectId) =>
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
 const formatDuration = (ms) => {
-    if (!ms || ms <= 0) return '0h 0m';
+    if (!ms || ms <= 0) return '0h';
     const t = Math.floor(ms / 1000);
-    return `${Math.floor(t / 3600)}h ${Math.floor((t % 3600) / 60)}m ${t % 60}s`;
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    const s = t % 60;
+    let parts = [];
+    if (h > 0) parts.push(h + 'h');
+    if (m > 0) parts.push(m + 'm');
+    if (s > 0) parts.push(s + 's');
+    return parts.length ? parts.join(' ') : '0h';
 };
 
 const formatDateDMY = (dateStr) => {
@@ -148,7 +156,7 @@ const formatDateDMY = (dateStr) => {
 };
 
 const formatTime = (isoStr) =>
-    isoStr ? new Date(isoStr).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '\u2014';
+    isoStr ? new Date(isoStr).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' }) : '\u2014';
 
 const getHourlyRate = (member) => {
     const salary = latestSalary(member);
@@ -169,6 +177,11 @@ const fmtHourlyRate = (member) => {
     return rate ? 'RM ' + Number(rate).toFixed(2) + '/hr' : '\u2014';
 };
 
+const fmtStdHours = (h) => {
+    if (!h || h <= 0) return '\u2014';
+    return (h % 1 === 0 ? h.toFixed(0) : h.toFixed(1)) + 'h';
+};
+
 const _optsHtml = (list, selectedId, noneLabel) =>
     `<option value="">-- ${noneLabel} --</option>` +
     list.map(i => `<option value="${i.id}"${i.id === selectedId ? ' selected' : ''}>${esc(i.name)}</option>`).join('');
@@ -183,6 +196,36 @@ const animCrud = (...ids) => {
         if (el) { el.classList.remove('crud-anim'); void el.offsetWidth; el.classList.add('crud-anim'); }
     });
 };
+
+// ── Time calculation helpers ──
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const getStandardHours = (memberId, dateStr) => {
+    const member = DB.members.find(m => m.id === memberId);
+    const dept = member ? DB.departments.find(d => d.id === member.departmentId) : null;
+    const dayNum = new Date(dateStr).getDay();
+    if (dayNum === 0) return 0;
+    if (dayNum === 6) return dept ? (dept.saturdayHours ?? 0) : 0;
+    return dept ? (dept.normalDayHours ?? 9) : 9;
+};
+
+const calcOT = (clockIn, clockOut, memberId, dateStr) => {
+    if (!clockIn || !clockOut) return { hours: 0, standardHours: 0, ot: 0, otMs: 0 };
+    const ms = new Date(clockOut) - new Date(clockIn);
+    const hours = ms / 3600000;
+    const stdHrs = getStandardHours(memberId, dateStr);
+    const ot = Math.max(0, hours - stdHrs);
+    return { hours, standardHours: stdHrs, ot, otMs: ot * 3600000, ms };
+};
+
+//Upload File
+const formatFileSize = (bytes) => {
+    if (!bytes || bytes <= 0) return '—';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+};
+
 
 /* ==========================================================
    SECTION 3: MODAL
@@ -392,7 +435,6 @@ async function adminNav(tab, el) {
         });
     }
 
-    // await loadDB();   ← 删掉这行
     switch (tab) {
         case 'projects': renderMainScope(); break;
         case 'users': renderUsersList(); break;
@@ -403,6 +445,7 @@ async function adminNav(tab, el) {
         case 'details': renderAdminDetails(); break;
         case 'report': renderAdminReport(); break;
         case 'worklist': renderWorkList(); break;
+        case 'files': renderAdminFiles(); break;
     }
 }
 
@@ -489,6 +532,7 @@ async function empNav(tab, el) {
         case 'attendance': renderEmployeeAttendance(); break;
         case 'report': renderEmpReport(); break;
         case 'settings': renderEmpSettings(); break;
+        case 'files': renderEmployeeFiles(); break;
     }
 }
 
@@ -1470,7 +1514,7 @@ const showEditUser = userId => {
     const existing = (DB.viewerScopes || {})[user.id] || [];
 
     const html = `<h3>Edit — ${esc(user.username)}</h3>
-    <div id="edit-member-fields"${user.role==='admin'?' style="display:none"':''}>
+    <div id="edit-member-fields">
         <div class="field"><label>Full Name</label><input class="input" id="edituser-name" value="${member?esc(member.name):''}"></div>
         <div class="field"><label>Position</label><select class="input" id="edituser-pos">${posOpts}</select></div>
         <div class="field"><label>Department</label><select class="input" id="edituser-dept">${deptOpts}</select></div>
@@ -1510,21 +1554,24 @@ const doEditUser = async userId => {
     if (newPass && newPass.length < 6) { errEl.textContent = 'Min 6 characters'; return; }
 
     let memberId = user.memberId;
-    if (!memberId && (newRole === 'employee' || newRole === 'viewer')) {
+
+    // 如果没有 member，先建一个
+    if (!memberId) {
         const name = document.getElementById('edituser-name')?.value.trim();
-        if (!name) { errEl.textContent = 'Enter a name'; return; }
-        const posId = document.getElementById('edituser-pos')?.value;
-        const deptId = document.getElementById('edituser-dept')?.value;
-        const sal = parseFloat(document.getElementById('edituser-salary')?.value);
-        const now = new Date().toISOString().slice(0,7);
-        const memberRes = await api('/members', { method:'POST', body:{ name, positionId: posId?parseInt(posId):null, departmentId: deptId?parseInt(deptId):null } });
-        memberId = memberRes.id;
-        if (!isNaN(sal) && sal > 0) await api('/salaries', { method:'PUT', body:{ memberId, month:now, amount:sal } });
+        if (name) {
+            const posId = document.getElementById('edituser-pos')?.value;
+            const deptId = document.getElementById('edituser-dept')?.value;
+            const sal = parseFloat(document.getElementById('edituser-salary')?.value);
+            const now = new Date().toISOString().slice(0,7);
+            const memberRes = await api('/members', { method:'POST', body:{ name, positionId: posId?parseInt(posId):null, departmentId: deptId?parseInt(deptId):null } });
+            memberId = memberRes.id;
+            if (!isNaN(sal) && sal > 0) await api('/salaries', { method:'PUT', body:{ memberId, month:now, amount:sal } });
+        }
     }
 
     await api('/users/'+userId, { method:'PUT', body:{ username:newUsername, password:newPass || null, role:newRole, memberId } });
 
-    if (memberId && (newRole === 'employee' || newRole === 'viewer')) {
+    if (memberId) {
         const nameEl = document.getElementById('edituser-name');
         const posEl = document.getElementById('edituser-pos');
         const deptEl = document.getElementById('edituser-dept');
@@ -1705,7 +1752,7 @@ const doDeletePosition = async id => {
 
 
 /* ==========================================================
-   SECTION 9: ADMIN — DEPARTMENTS (optimized)
+   SECTION 9: ADMIN — DEPARTMENTS (optimized + work hours)
    ========================================================== */
 let deptCurrentPage = 1, deptPageSize = 10;
 
@@ -1724,13 +1771,19 @@ const renderDepartmentsTable = () => {
     }, {});
 
     const rows = total === 0
-        ? '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:30px">No departments defined</td></tr>'
+        ? '<tr><td colspan="7" style="text-align:center;color:var(--main-text3);padding:30px">No departments defined</td></tr>'
         : page.map((d, idx) => {
             const count = memberCounts[d.id] || 0;
+            const days = d.workDaysPerWeek ?? 6;
+            const normal = d.normalDayHours ?? 9;
+            const sat = d.saturdayHours ?? 9;
             return `<tr>
                 <td style="font-family:var(--font-m);color:var(--main-text3)">${start + idx + 1}</td>
                 <td style="font-weight:500">${esc(d.name)}</td>
                 <td style="text-align:center;font-family:var(--font-m)">${count}</td>
+                <td style="text-align:center;font-family:var(--font-m)">${days}</td>
+                <td style="text-align:center;font-family:var(--font-m)">${normal}h</td>
+                <td style="text-align:center;font-family:var(--font-m)">${sat}h</td>
                 <td><div class="actions-cell">
                     <button class="btn-icon" onclick="showEditDepartment(${d.id})">&#9998;</button>
                     <button class="btn-icon danger" onclick="confirmDeleteDepartment(${d.id})">&#10005;</button>
@@ -1764,7 +1817,7 @@ const renderDepartmentsTable = () => {
 
     document.getElementById('departments-table-area').innerHTML =
         `<div class="table-wrap"><table><thead><tr>
-            <th style="width:50px">No</th><th>Department Name</th><th style="width:100px">Members</th><th style="width:90px">Actions</th>
+            <th style="width:50px">No</th><th>Department Name</th><th style="width:80px">Members</th><th style="width:80px">Days/Wk</th><th style="width:90px">Normal Hr</th><th style="width:90px">Sat Hr</th><th style="width:90px">Actions</th>
         </tr></thead><tbody>${rows}</tbody></table></div>${pagHtml}`;
 };
 
@@ -1803,10 +1856,15 @@ const renderDepartmentsList = () => {
     setTimeout(() => { deptListRenderLock = false; }, 850);
 };
 
-// ── CRUD（只刷表格，无动画） ──
+// ── CRUD ──
 const showAddDepartment = () => {
     showModal(`<h3>New Department</h3>
     <div class="field"><label>Department Name</label><input class="input" id="inp-dept-name" placeholder="e.g. Engineering"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div class="field"><label>Days Per Week</label><input class="input" type="number" id="inp-dept-days" value="6" min="1" max="7"></div>
+        <div class="field"><label>Normal Day Hours</label><input class="input" type="number" id="inp-dept-normal" value="9" min="0" max="24" step="0.5"></div>
+        <div class="field"><label>Saturday Hours</label><input class="input" type="number" id="inp-dept-sat" value="9" min="0" max="24" step="0.5"></div>
+    </div>
     <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddDepartment()">Create</button></div>`);
     setTimeout(() => document.getElementById('inp-dept-name')?.focus(), 100);
 };
@@ -1814,7 +1872,10 @@ const showAddDepartment = () => {
 const doAddDepartment = async () => {
     const name = document.getElementById('inp-dept-name').value.trim();
     if (!name) return;
-    await api('/departments', { method: 'POST', body: { name } });
+    const work_days_per_week = parseInt(document.getElementById('inp-dept-days').value) ?? 6;
+    const normal_day_hours = parseFloat(document.getElementById('inp-dept-normal').value) ?? 9;
+    const saturday_hours = parseFloat(document.getElementById('inp-dept-sat').value) ?? 5;
+    await api('/departments', { method: 'POST', body: { name, work_days_per_week, normal_day_hours, saturday_hours } });
     hideModal(); await loadDB(); renderDepartmentsTable();
 };
 
@@ -1822,6 +1883,11 @@ const showEditDepartment = id => {
     const dept = DB.departments.find(d => d.id === id); if (!dept) return;
     showModal(`<h3>Edit Department</h3>
     <div class="field"><label>Department Name</label><input class="input" id="inp-dept-name" value="${esc(dept.name)}"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div class="field"><label>Days Per Week</label><input class="input" type="number" id="inp-dept-days" value="${dept.workDaysPerWeek ?? 6}" min="1" max="7"></div>
+        <div class="field"><label>Normal Day Hours</label><input class="input" type="number" id="inp-dept-normal" value="${dept.normalDayHours ?? 9}" min="0" max="24" step="0.5"></div>
+        <div class="field"><label>Saturday Hours</label><input class="input" type="number" id="inp-dept-sat" value="${dept.saturdayHours ?? 5}" min="0" max="24" step="0.5"><div style="font-size:.72rem;color:var(--main-text3);margin-top:2px">Set 0 if Saturday off</div></div>
+    </div>
     <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditDepartment(${id})">Save</button></div>`);
     setTimeout(() => { const el = document.getElementById('inp-dept-name'); el.focus(); el.select(); }, 100);
 };
@@ -1829,7 +1895,10 @@ const showEditDepartment = id => {
 const doEditDepartment = async id => {
     const name = document.getElementById('inp-dept-name').value.trim();
     if (!name) return;
-    await api('/departments/' + id, { method: 'PUT', body: { name } });
+    const work_days_per_week = parseInt(document.getElementById('inp-dept-days').value) ?? 6;
+    const normal_day_hours = parseFloat(document.getElementById('inp-dept-normal').value) ?? 9;
+    const saturday_hours = parseFloat(document.getElementById('inp-dept-sat').value) ?? 5;
+    await api('/departments/' + id, { method: 'PUT', body: { name, work_days_per_week, normal_day_hours, saturday_hours } });
     hideModal(); await loadDB(); renderDepartmentsTable();
 };
 
@@ -2384,6 +2453,7 @@ let empAttFilteredData = [];
 let empAttSelectedMemberIds = [];
 let _empModalMember = null, _empModalExtraProjectId = null;
 var _empAttInitialLoad = false;
+let _empOtPerEntry = new Map();
 
 // ---------- Helpers ----------
 const getEmployeeProjects = memberId =>
@@ -2639,7 +2709,10 @@ const _doRenderEmpAttendance = (member, animate) => {
         <div class="app-header"><h2>My Attendance</h2><div class="header-sub">Log and track your work hours</div></div>
         <div class="app-body" style="max-width:none">
             <div class="${af} filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                    <span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span>
+                    <button class="btn btn-blue btn-sm" onclick="exportEmpAttendanceExcel()">&#128196; Export Excel</button>
+                </div>
                 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
                     <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="date" class="input" id="emp-att-from" value="${defaultFrom}" onchange="applyEmpAttendanceFilter()" style="width:145px;padding:8px 10px;font-size:.82rem"></div>
                     <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="emp-att-to" value="${today}" onchange="applyEmpAttendanceFilter()" style="width:145px;padding:8px 10px;font-size:.82rem"></div>
@@ -2648,7 +2721,6 @@ const _doRenderEmpAttendance = (member, animate) => {
                     ${isPIC ? `<div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label><div style="min-width:180px" id="ssm-pic-emp"></div></div>` : ''}
                     <div style="display:flex;gap:8px;margin-left:auto">
                         <button class="btn btn-ghost btn-sm" onclick="resetEmpAttendanceFilter()">Reset</button>
-                        <button class="btn btn-blue btn-sm" onclick="exportEmpAttendanceCSV()">&#128196; Export CSV</button>
                     </div>
                 </div>
             </div>
@@ -2764,14 +2836,63 @@ const applyEmpAttendanceFilter = () => {
     filtered.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
     empAttFilteredData = filtered;
 
-    const totalMs = filtered.reduce((sum, r) => r.clockIn && r.clockOut ? sum + new Date(r.clockOut) - new Date(r.clockIn) : sum, 0);
-    const totalCost = filtered.reduce((sum, r) => r.clockIn && r.clockOut ? sum + (getEntryCost(r.memberId, new Date(r.clockOut) - new Date(r.clockIn)) || 0) : sum, 0);
+        // Group by member+date for daily OT
+    const dayMap = new Map();
+    filtered.forEach(r => {
+        const key = r.memberId + '_' + r.date;
+        if (!dayMap.has(key)) dayMap.set(key, []);
+        dayMap.get(key).push(r);
+    });
+
+    _empOtPerEntry = new Map();
+    let totalMs = 0, totalCost = 0, totalOtMs = 0;
+
+    dayMap.forEach((dayEntries) => {
+        const memberId = dayEntries[0].memberId;
+        const date = dayEntries[0].date;
+
+        // Sort by clockIn time to track cumulative correctly
+        dayEntries.sort((a, b) => (a.clockIn || '').localeCompare(b.clockIn || ''));
+
+        const anyWithClock = dayEntries.find(r => r.clockIn && r.clockOut);
+        if (!anyWithClock) return;
+        const stdResult = calcOT(anyWithClock.clockIn, anyWithClock.clockOut, memberId, date);
+        const standardMs = stdResult.standardHours * 3600000;
+
+        let cumulativeMs = 0;
+        let dayOtMs = 0;
+
+        dayEntries.forEach(r => {
+            const result = calcOT(r.clockIn, r.clockOut, memberId, r.date);
+            const entryMs = result.ms || 0;
+            const prevCumulative = cumulativeMs;
+            cumulativeMs += entryMs;
+            totalMs += entryMs;
+            totalCost += getEntryCost(memberId, entryMs) || 0;
+
+            // OT only for the portion that crosses standard
+            let entryOtMs = 0;
+            if (prevCumulative < standardMs) {
+                if (cumulativeMs > standardMs) {
+                    entryOtMs = cumulativeMs - standardMs;
+                }
+            } else {
+                entryOtMs = entryMs;
+            }
+
+            _empOtPerEntry.set(r.id, entryOtMs);
+            dayOtMs += entryOtMs;
+        });
+
+        totalOtMs += dayOtMs;
+    });
 
     const ac = _empAttInitialLoad ? ' stat-anim' : '';
     document.getElementById('emp-att-stats-area').innerHTML = `
         <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:16px">
             <div class="stat-card${ac}"><div class="stat-label">Filtered Entries</div><div class="stat-value" style="font-size:1.2rem">${filtered.length}</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Filtered Hours</div><div class="stat-value" style="font-size:1.2rem">${formatDuration(totalMs)}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Filtered OT</div><div class="stat-value" style="font-size:1.2rem;color:var(--warning)">${formatDuration(totalOtMs)}</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Filtered Cost</div><div class="stat-value" style="font-size:1.2rem">${fmtCost(totalCost)}</div></div>
         </div>`;
 
@@ -2790,32 +2911,41 @@ const renderEmpAttendancePage = () => {
     const showEmpCol = empAttSelectedMemberIds.length > 1 || (empAttSelectedMemberIds.length && empAttSelectedMemberIds[0] !== currentUser.memberId);
 
     const thead = `<tr>
-        <th style="width:50px">No</th><th>Date</th>${showEmpCol ? '<th>Employee</th>' : ''}<th>Category → ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="width:90px">Actions</th></tr>`;
+        <th style="width:50px">No</th><th>Date</th><th>Day</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="text-align:right">OT</th>${showEmpCol ? '<th>Employee</th>' : ''}<th>Category → ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th style="width:90px">Actions</th></tr>`;
 
     const rows = filtered.length === 0
-        ? `<tr><td colspan="${showEmpCol ? 11 : 10}" style="text-align:center;color:var(--main-text3);padding:30px">No time entries found</td></tr>`
+        ? `<tr><td colspan="${showEmpCol ? 13 : 12}" style="text-align:center;color:var(--main-text3);padding:30px">No time entries found</td></tr>`
         : page.map((r, idx) => {
             const emp = r.memberId ? DB.members.find(m => m.id === r.memberId) : null;
             const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
             const scope = proj?.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
-            const dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '\u2014';
-            const sTime = r.clockIn ? r.clockIn.split('T')[1].substring(0,5) : '\u2014';
-            const eTime = r.clockOut ? r.clockOut.split('T')[1].substring(0,5) : '\u2014';
+            const result = calcOT(r.clockIn, r.clockOut, r.memberId, r.date);
+            const dur = result.ms ? formatDuration(result.ms) : '\u2014';
+            const entryOtMs = _empOtPerEntry.get(r.id) || 0;
+            const otDisp = entryOtMs > 0 ? formatDuration(entryOtMs) : '\u2014';
+            const otColor = entryOtMs > 0 ? 'color:var(--warning)' : 'color:var(--main-text3)';
+            const sTime = r.clockIn ? formatTime(r.clockIn) : '\u2014';
+            const eTime = r.clockOut ? formatTime(r.clockOut) : '\u2014';
             const itemDisp = proj ? (scope ? `${esc(scope.name)} → ${esc(proj.name)}` : esc(proj.name)) : '\u2014';
             const wp = r.work_plan_id ? DB.worklist.find(w => w.id === r.work_plan_id) : null;
             const wd = r.work_done_id ? DB.worklist.find(w => w.id === r.work_done_id) : null;
             const isOwn = r.memberId === currentUser.memberId;
+            const dayNum = new Date(r.date).getDay();
+            const dayName = DAY_NAMES[dayNum];
+            const dayColor = dayName === 'Sun' ? 'var(--danger)' : dayName === 'Sat' ? 'var(--warning)' : 'var(--main-text)';
             return `<tr>
                 <td style="font-family:var(--font-m);color:var(--main-text3)">${start + idx + 1}</td>
                 <td style="font-family:var(--font-m)">${formatDateDMY(r.date)}</td>
+                <td style="color:${dayColor};font-weight:600">${dayName}</td>
+                <td style="font-family:var(--font-m)">${sTime}</td>
+                <td style="font-family:var(--font-m)">${eTime}</td>
+                <td style="text-align:right;font-family:var(--font-m)">${dur}</td>
+                <td style="text-align:right;font-family:var(--font-m);${otColor}">${otDisp}</td>
                 ${showEmpCol ? `<td>${emp ? esc(emp.name) : '?'}</td>` : ''}
                 <td>${itemDisp}</td>
                 <td>${wp ? esc(wp.title) : '<span style="color:var(--main-text3)">\u2014</span>'}</td>
                 <td>${wd ? esc(wd.title) : '<span style="color:var(--main-text3)">\u2014</span>'}</td>
                 <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.description||'')}">${r.description ? esc(r.description) : '<span style="color:var(--main-text3)">\u2014</span>'}</td>
-                <td style="font-family:var(--font-m)">${sTime}</td>
-                <td style="font-family:var(--font-m)">${eTime}</td>
-                <td style="text-align:right;font-family:var(--font-m)">${dur}</td>
                 <td>${isOwn ? `<div class="actions-cell"><button class="btn-icon" onclick="showEditTimeEntry(${r.id})">&#9998;</button><button class="btn-icon danger" onclick="confirmDeleteTimeEntry(${r.id})">&#10005;</button></div>` : ''}</td>
             </tr>`;
         }).join('');
@@ -2856,25 +2986,44 @@ const goEmpAttPage = page => {
 const changeEmpAttPageSize = size => { empAttPageSize = parseInt(size); empAttCurrentPage = 1; renderEmpAttendancePage(); };
 
 // CSV export
-const exportEmpAttendanceCSV = () => {
+const exportEmpAttendanceExcel = () => {
     const data = empAttFilteredData;
     if (!data.length) { alert('No data to export'); return; }
-    const headers = ['Date','Category','ID/Name','Work Plan','Work Done','Start','End','Duration','Remark'];
-    const rows = data.map(r => {
+
+    const showEmpCol = empAttSelectedMemberIds.length > 1 || (empAttSelectedMemberIds.length && empAttSelectedMemberIds[0] !== currentUser.memberId);
+
+    const headers = showEmpCol
+        ? ['No', 'Date', 'Day', 'Start', 'End', 'Duration', 'OT', 'Employee', 'Category', 'ID/Name', 'Work Plan', 'Work Done', 'Remark']
+        : ['No', 'Date', 'Day', 'Start', 'End', 'Duration', 'OT', 'Category', 'ID/Name', 'Work Plan', 'Work Done', 'Remark'];
+
+    const rows = data.map((r, idx) => {
         const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
         const scope = proj?.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
-        const dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '';
-        const sT = r.clockIn ? r.clockIn.split('T')[1].substring(0,5) : '';
-        const eT = r.clockOut ? r.clockOut.split('T')[1].substring(0,5) : '';
+        const emp = DB.members.find(m => m.id === r.memberId);
+        const result = calcOT(r.clockIn, r.clockOut, r.memberId, r.date);
+        const dur = result.ms ? formatDuration(result.ms) : '';
+        const entryOtMs = _empOtPerEntry.get(r.id) || 0;
+        const ot = entryOtMs > 0 ? formatDuration(entryOtMs) : '';
+        const sT = r.clockIn ? formatTime(r.clockIn) : '';
+        const eT = r.clockOut ? formatTime(r.clockOut) : '';
         const wp = r.work_plan_id ? DB.worklist.find(w => w.id === r.work_plan_id) : null;
         const wd = r.work_done_id ? DB.worklist.find(w => w.id === r.work_done_id) : null;
-        return [formatDateDMY(r.date), scope ? scope.name : '', proj ? proj.name : '', wp ? wp.title : '', wd ? wd.title : '', sT, eT, dur, r.description || ''];
+        const dayNum = new Date(r.date).getDay();
+        const dayName = DAY_NAMES[dayNum];
+        const base = [idx + 1, r.date, dayName, sT, eT, dur, ot];
+        if (showEmpCol) base.push(emp ? emp.name : '');
+        base.push(scope ? scope.name : '', proj ? proj.name : '', wp ? wp.title : '', wd ? wd.title : '', r.description || '');
+        return base;
     });
-    const csv = [headers.join(',')].concat(rows.map(row => row.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','))).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'my_attendance_' + new Date().toISOString().slice(0,10) + '.csv';
-    a.click(); URL.revokeObjectURL(url);
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws['!cols'] = showEmpCol
+        ? [{wch:6},{wch:12},{wch:6},{wch:8},{wch:8},{wch:12},{wch:12},{wch:18},{wch:15},{wch:25},{wch:20},{wch:20},{wch:30}]
+        : [{wch:6},{wch:12},{wch:6},{wch:8},{wch:8},{wch:12},{wch:12},{wch:15},{wch:25},{wch:20},{wch:20},{wch:30}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
+
+    XLSX.writeFile(wb, 'my_attendance_' + new Date().toISOString().slice(0, 10) + '.xlsx');
 };
 
 // Toast
@@ -2891,6 +3040,7 @@ const showToast = message => {
    ========================================================== */
 let empRptItemPage = 1, empRptItemPageSize = 10, empRptItemData_cache = [];
 let empRptEmpPage = 1, empRptEmpPageSize = 10, empRptEmpData_cache = [];
+let empRptTimePage = 1, empRptTimePageSize = 10, empRptTimeData_cache = [];
 var _empRptInitialLoad = false;
 
 // ---------- helpers ----------
@@ -2928,7 +3078,6 @@ const buildProjectOpts = (projects) => {
     return opts;
 };
 
-// Build employee options filtered by scope and item
 const buildEmpRptEmpOpts = (scopeIds, itemIds) => {
     const memberIds = getPICMemberIds();
     if ((scopeIds && scopeIds.length) || (itemIds && itemIds.length)) {
@@ -2992,7 +3141,10 @@ const renderEmpReport = () => {
         <div class="app-header"><h2>Report</h2><div class="header-sub">PIC summary and analytics</div></div>
         <div class="app-body" style="max-width:none">
             <div class="pt-anim-filter filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                    <span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span>
+                    <button class="btn btn-blue btn-sm" onclick="exportEmpReportExcel()">&#128196; Export Excel</button>
+                </div>
                 <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
                     <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="date" class="input" id="emp-rpt-from" value="${defaultFrom}" onchange="generateEmpReport()" style="width:155px;padding:8px 10px;font-size:.82rem"></div>
                     <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="emp-rpt-to" value="${today}" onchange="generateEmpReport()" style="width:155px;padding:8px 10px;font-size:.82rem"></div>
@@ -3009,7 +3161,7 @@ const renderEmpReport = () => {
             <div id="emp-rpt-tables"></div>
         </div>`;
 
-        setTimeout(() => {
+    setTimeout(() => {
         ssmCreate('ssm-emp-rpt-dept', deptOpts, 'All Departments');
         ssmCreate('ssm-emp-rpt-scope', scopeOpts, 'All Categories');
         ssmCreate('ssm-emp-rpt-item', itemOpts, 'All ID/Names');
@@ -3062,7 +3214,6 @@ const renderEmpReport = () => {
         generateEmpReport();
         _empRptInitialLoad = false;
 
-        // 等所有动画结束后再移除 class
         setTimeout(() => {
             const view = document.getElementById('emp-report');
             const animatedEls = view.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table');
@@ -3099,12 +3250,10 @@ const generateEmpReport = () => {
     const picMemberIds = getPICMemberIds();
     if (!picMemberIds.length) return;
 
-    // Base filter: employees in PIC scope, date range
     let filtered = DB.attendance.filter(a =>
         a.date >= fromDate && a.date <= toDate && picMemberIds.includes(a.memberId)
     );
 
-    // Apply scope/item/dept/emp filters
     if (scopeIds.length) {
         const sids = DB.projects.filter(p => scopeIds.includes(p.categoryId)).map(p => p.id);
         filtered = filtered.filter(a => sids.includes(a.projectId));
@@ -3121,68 +3270,150 @@ const generateEmpReport = () => {
         filtered = filtered.filter(a => empIds.includes(a.memberId));
     }
 
-    // Aggregate stats
-    let totalMs = 0, totalCost = 0;
-    const itemMap = new Map();  // projectId -> { cost, ms, entries, members }
+    // Aggregate with OT (daily-based)
+    let totalMs = 0, totalCost = 0, totalOtMs = 0, totalStandardMs = 0;
+    const itemMap = new Map();
     const scopeMap = new Map();
-    const empMap = new Map();   // memberId -> { cost, ms, entries, days }
+    const empMap = new Map();
     const monthlyMap = new Map();
+    const timeDetails = [];
+    const entryByDay = new Map();
+    const countedDays = new Set();
+    const empCountedDays = new Set();
 
     filtered.forEach(r => {
-        if (!r.clockIn || !r.clockOut) return;
-        const ms = new Date(r.clockOut) - new Date(r.clockIn);
+        const result = calcOT(r.clockIn, r.clockOut, r.memberId, r.date);
+        if (!result.ms) return;
+        const { hours, standardHours: stdHrs, ms } = result;
         const cost = getEntryCost(r.memberId, ms) || 0;
+        const standardMs = stdHrs * 3600000;
+        const dayKey = r.memberId + '_' + r.date;
+
         totalMs += ms;
         totalCost += cost;
 
-        const pid = r.projectId || 0;
-        if (!itemMap.has(pid)) itemMap.set(pid, { cost: 0, ms: 0, entries: 0, members: new Set() });
-        const itemStats = itemMap.get(pid);
-        itemStats.cost += cost;
-        itemStats.ms += ms;
-        itemStats.entries++;
-        itemStats.members.add(r.memberId);
+        // Overall standard: once per member+day
+        if (!countedDays.has(dayKey)) {
+            countedDays.add(dayKey);
+            totalStandardMs += standardMs;
+        }
 
+        // Item map
+        const pid = r.projectId || 0;
+        if (!itemMap.has(pid)) itemMap.set(pid, { cost: 0, ms: 0, otMs: 0, standardMs: 0, entries: 0, members: new Set(), days: new Set(), _countedDays: new Set() });
+        const is = itemMap.get(pid);
+        is.cost += cost; is.ms += ms; is.entries++; is.members.add(r.memberId); is.days.add(r.date);
+        // Item standard: once per member+day per item
+        if (!is._countedDays.has(dayKey)) {
+            is._countedDays.add(dayKey);
+            is.standardMs += standardMs;
+        }
+
+        // Scope map
         const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
         const sid = proj?.categoryId || 0;
-        if (!scopeMap.has(sid)) scopeMap.set(sid, { cost: 0, ms: 0 });
-        const scopeStats = scopeMap.get(sid);
-        scopeStats.cost += cost;
-        scopeStats.ms += ms;
+        if (!scopeMap.has(sid)) scopeMap.set(sid, { cost: 0 });
+        scopeMap.get(sid).cost += cost;
 
-        if (!empMap.has(r.memberId)) empMap.set(r.memberId, { cost: 0, ms: 0, entries: 0, days: new Set() });
-        const empStats = empMap.get(r.memberId);
-        empStats.cost += cost;
-        empStats.ms += ms;
-        empStats.entries++;
-        empStats.days.add(r.date);
+        // Emp map
+        if (!empMap.has(r.memberId)) empMap.set(r.memberId, { cost: 0, ms: 0, otMs: 0, standardMs: 0, entries: 0, days: new Set() });
+        const es = empMap.get(r.memberId);
+        es.cost += cost; es.ms += ms; es.entries++; es.days.add(r.date);
+        // Emp standard: once per day per employee
+        if (!empCountedDays.has(dayKey)) {
+            empCountedDays.add(dayKey);
+            es.standardMs += standardMs;
+        }
 
+        // Monthly map
         const month = r.date.substring(0, 7);
-        if (!monthlyMap.has(month)) monthlyMap.set(month, { ms: 0, cost: 0 });
+        if (!monthlyMap.has(month)) monthlyMap.set(month, { ms: 0, otMs: 0, cost: 0 });
         const mStats = monthlyMap.get(month);
-        mStats.ms += ms;
-        mStats.cost += cost;
+        mStats.ms += ms; mStats.cost += cost;
+
+        // Group for daily OT
+        if (!entryByDay.has(dayKey)) entryByDay.set(dayKey, { entries: [], standardMs });
+        entryByDay.get(dayKey).entries.push(r);
+
+        // Time detail
+        const member = DB.members.find(m => m.id === r.memberId);
+        const dayNum = new Date(r.date).getDay();
+        const scope = proj?.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
+        const projectLabel = proj ? (scope ? `${scope.name} → ${proj.name}` : proj.name) : '\u2014';
+        timeDetails.push({
+            date: r.date,
+            dayOfWeek: DAY_NAMES[dayNum],
+            memberId: r.memberId,
+            name: member ? member.name : 'Unknown',
+            dept: member ? getDeptName(member.departmentId) : '\u2014',
+            clockIn: r.clockIn,
+            clockOut: r.clockOut,
+            hours,
+            standardHours: stdHrs,
+            ot: 0,
+            entryId: r.id,
+            project: projectLabel
+        });
     });
 
-    const uniqueEmployees = empMap.size;
-    const uniqueItems = itemMap.size;
-    const uniqueScopes = scopeMap.size;
+    // Step 2: Calculate daily OT and assign per-entry
+    const rptOtPerEntry = new Map();
+    entryByDay.forEach(({ entries, standardMs }) => {
+        entries.sort((a, b) => (a.clockIn || '').localeCompare(b.clockIn || ''));
+        let cumulativeMs = 0;
+        entries.forEach(r => {
+            const result = calcOT(r.clockIn, r.clockOut, r.memberId, r.date);
+            const entryMs = result.ms || 0;
+            const prevCumulative = cumulativeMs;
+            cumulativeMs += entryMs;
+
+            let entryOtMs = 0;
+            if (prevCumulative < standardMs && cumulativeMs > standardMs) {
+                entryOtMs = cumulativeMs - standardMs;
+            } else if (prevCumulative >= standardMs) {
+                entryOtMs = entryMs;
+            }
+
+            rptOtPerEntry.set(r.id, entryOtMs);
+            totalOtMs += entryOtMs;
+
+            const pid = r.projectId || 0;
+            if (itemMap.has(pid)) itemMap.get(pid).otMs += entryOtMs;
+            if (empMap.has(r.memberId)) empMap.get(r.memberId).otMs += entryOtMs;
+            const month = r.date.substring(0, 7);
+            if (monthlyMap.has(month)) monthlyMap.get(month).otMs += entryOtMs;
+        });
+    });
+
+    // Step 3: Fill OT in time details
+    timeDetails.forEach(t => {
+        const otMs = rptOtPerEntry.get(t.entryId) || 0;
+        t.ot = otMs / 3600000;
+    });
+
+    timeDetails.sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
+    empRptTimeData_cache = timeDetails;
+
+    const totalHours = totalMs / 3600000;
+    const totalOtHours = totalOtMs / 3600000;
+    const avgUtil = totalStandardMs > 0 ? (totalMs / totalStandardMs * 100) : 0;
 
     const ac = _empRptInitialLoad ? ' stat-anim' : '';
     document.getElementById('emp-rpt-stats').innerHTML = `
         <div class="stats-grid" style="margin-bottom:24px">
             <div class="stat-card${ac}"><div class="stat-label">Total Records</div><div class="stat-value">${filtered.length}</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Total Hours</div><div class="stat-value">${formatDuration(totalMs)}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Total OT</div><div class="stat-value" style="color:var(--warning)">${formatDuration(totalOtMs)}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Utilization</div><div class="stat-value" style="color:${avgUtil >= 100 ? 'var(--green)' : avgUtil >= 80 ? 'var(--warning)' : 'var(--danger)'}">${avgUtil.toFixed(1)}%</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Total Cost</div><div class="stat-value">${fmtCost(totalCost)}</div></div>
-            <div class="stat-card${ac}"><div class="stat-label">Active Employees</div><div class="stat-value">${uniqueEmployees}</div></div>
-            <div class="stat-card${ac}"><div class="stat-label">Active Categories</div><div class="stat-value">${uniqueScopes}</div></div>
-            <div class="stat-card${ac}"><div class="stat-label">Active ID/Name</div><div class="stat-value">${uniqueItems}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Active Employees</div><div class="stat-value">${empMap.size}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Active Categories</div><div class="stat-value">${scopeMap.size}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Active ID/Name</div><div class="stat-value">${itemMap.size}</div></div>
         </div>`;
 
     // Chart data
     const palette = ['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
 
-    // Item cost chart
     const itemLabels = [], itemData = [], itemColors = [];
     const sortedItems = [...itemMap.entries()].sort((a, b) => b[1].cost - a[1].cost);
     sortedItems.forEach(([pid, stats], i) => {
@@ -3193,7 +3424,6 @@ const generateEmpReport = () => {
         itemColors.push(palette[i % palette.length]);
     });
 
-    // Scope cost chart
     const scopeLabels = [], scopeData = [], scopeColors = [];
     const sortedScopes = [...scopeMap.entries()].sort((a, b) => b[1].cost - a[1].cost);
     sortedScopes.forEach(([sid, stats], i) => {
@@ -3213,9 +3443,9 @@ const generateEmpReport = () => {
             <div style="min-width:600px;height:280px"><canvas id="emp-chart-scope-cost"></canvas></div>
         </div>`;
 
-    // Monthly trend and Top employees
     const monthLabels = [...monthlyMap.keys()].sort();
     const monthHoursData = monthLabels.map(m => Math.round(monthlyMap.get(m).ms / 3600000 * 10) / 10);
+    const monthOtData = monthLabels.map(m => Math.round(monthlyMap.get(m).otMs / 3600000 * 10) / 10);
     const monthCostData = monthLabels.map(m => Math.round(monthlyMap.get(m).cost * 100) / 100);
     const prettyMonths = monthLabels.map(m => {
         const [y, mo] = m.split('-');
@@ -3245,7 +3475,7 @@ const generateEmpReport = () => {
         const scope = proj?.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
         const label = proj ? (scope ? `${esc(scope.name)} → ${esc(proj.name)}` : esc(proj.name)) : '<span style="color:var(--main-text3)">Unassigned</span>';
         const cd = proj ? getProjectCountdown(proj) : null;
-        let cdHtml = '—';
+        let cdHtml = '\u2014';
         if (cd !== null) {
             if (cd > 30) cdHtml = `<span style="color:var(--ok);font-weight:600">${cd}d left</span>`;
             else if (cd > 7) cdHtml = `<span style="color:var(--warning);font-weight:600">${cd}d left</span>`;
@@ -3253,32 +3483,38 @@ const generateEmpReport = () => {
             else if (cd === 0) cdHtml = `<span style="color:var(--warning);font-weight:600">Today!</span>`;
             else cdHtml = `<span style="color:var(--danger);font-weight:600">${Math.abs(cd)}d overdue</span>`;
         }
-        return { label, cdHtml, members: stats.members.size, entries: stats.entries, hours: stats.ms, cost: stats.cost };
+        return { label, cdHtml, days: stats.days.size, members: stats.members.size, entries: stats.entries, hours: stats.ms, otMs: stats.otMs, cost: stats.cost };
     });
 
     empRptEmpData_cache = empSorted.map(([mid, stats]) => {
         const member = DB.members.find(m => m.id === mid);
+        const util = stats.standardMs > 0 ? (stats.ms / stats.standardMs * 100) : 0;
         return {
             name: member ? esc(member.name) : 'Unknown',
-            pos: member ? esc(getPositionName(member.positionId)) : '—',
-            dept: member ? esc(getDeptName(member.departmentId)) : '—',
+            pos: member ? esc(getPositionName(member.positionId)) : '\u2014',
+            dept: member ? esc(getDeptName(member.departmentId)) : '\u2014',
             entries: stats.entries,
             days: stats.days.size,
             ms: stats.ms,
+            otMs: stats.otMs,
+            util,
             cost: stats.cost,
             rate: fmtHourlyRate(member)
         };
     });
 
     document.getElementById('emp-rpt-tables').innerHTML = `
-        <div class="section-head" style="margin-top:8px"><h2>Item Summary</h2></div>
+        <div class="section-head" style="margin-top:8px"><h2>Category Summary</h2></div>
         <div id="emp-rpt-item-table-area"></div>
         <div class="section-head" style="margin-top:24px"><h2>Employee Summary</h2></div>
-        <div id="emp-rpt-emp-table-area"></div>`;
+        <div id="emp-rpt-emp-table-area"></div>
+        <div class="section-head" style="margin-top:24px"><h2>Time Detail</h2></div>
+        <div id="emp-rpt-time-table-area"></div>`;
 
-    empRptItemPage = 1; empRptEmpPage = 1;
+    empRptItemPage = 1; empRptEmpPage = 1; empRptTimePage = 1;
     renderEmpRptItemTable(empRptItemData_cache);
     renderEmpRptEmpTable(empRptEmpData_cache);
+    renderEmpRptTimeTable(empRptTimeData_cache);
 
     // Render charts
     const chartTextColor = '#7a7570', chartGridColor = 'rgba(122,117,112,0.15)';
@@ -3300,6 +3536,7 @@ const generateEmpReport = () => {
         type: 'bar',
         data: { labels: prettyMonths, datasets: [
             { label: 'Hours', data: monthHoursData, backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 6, yAxisID: 'y', maxBarThickness: 40 },
+            { label: 'OT', data: monthOtData, backgroundColor: 'rgba(245,158,11,0.7)', borderRadius: 6, yAxisID: 'y', maxBarThickness: 40 },
             { label: 'Cost (RM)', data: monthCostData, type: 'line', borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', pointRadius: 4, pointBackgroundColor: '#ef4444', tension: 0.3, yAxisID: 'y1', fill: true }
         ] },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: chartTextColor, usePointStyle: true, padding: 16 } } },
@@ -3316,7 +3553,7 @@ const generateEmpReport = () => {
     });
 };
 
-// ---------- Table Rendering ----------
+// ---------- Category Summary Table ----------
 const renderEmpRptItemTable = (data) => {
     const totalPages = Math.ceil(data.length / empRptItemPageSize) || 1;
     if (empRptItemPage > totalPages) empRptItemPage = totalPages;
@@ -3324,23 +3561,26 @@ const renderEmpRptItemTable = (data) => {
     const start = (empRptItemPage - 1) * empRptItemPageSize;
     const page = data.slice(start, start + empRptItemPageSize);
     const rows = data.length === 0
-        ? '<tr><td colspan="6" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>'
+        ? '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>'
         : page.map(r => `<tr>
             <td>${r.label}</td>
             <td>${r.cdHtml}</td>
+            <td style="text-align:right;font-family:var(--font-m)">${r.days}</td>
             <td style="text-align:right;font-family:var(--font-m)">${r.members}</td>
             <td style="text-align:right;font-family:var(--font-m)">${r.entries}</td>
             <td style="text-align:right;font-family:var(--font-m)">${formatDuration(r.hours)}</td>
+            <td style="text-align:right;font-family:var(--font-m);color:var(--warning)">${formatDuration(r.otMs)}</td>
             <td style="text-align:right;font-family:var(--font-m)">${fmtCost(r.cost)}</td>
         </tr>`).join('');
     document.getElementById('emp-rpt-item-table-area').innerHTML = `
         <div class="table-wrap"><table>
-            <thead><tr><th>Category → ID/Name</th><th>Countdown</th><th style="text-align:right">Members</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>
+            <thead><tr><th>Category → ID/Name</th><th>Countdown</th><th style="text-align:right">Days</th><th style="text-align:right">Members</th><th style="text-align:right">Entries</th><th style="text-align:right">Duration</th><th style="text-align:right">OT</th><th style="text-align:right">Cost</th></tr></thead>
             <tbody>${rows}</tbody>
         </table></div>
         ${buildRptPagination(data.length, empRptItemPage, empRptItemPageSize, 'goEmpRptItemPage', 'changeEmpRptItemPageSize')}`;
 };
 
+// ---------- Employee Summary Table ----------
 const renderEmpRptEmpTable = (data) => {
     const totalPages = Math.ceil(data.length / empRptEmpPageSize) || 1;
     if (empRptEmpPage > totalPages) empRptEmpPage = totalPages;
@@ -3348,7 +3588,7 @@ const renderEmpRptEmpTable = (data) => {
     const start = (empRptEmpPage - 1) * empRptEmpPageSize;
     const page = data.slice(start, start + empRptEmpPageSize);
     const rows = data.length === 0
-        ? '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>'
+        ? '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>'
         : page.map(r => `<tr>
             <td>${r.name}</td>
             <td>${r.pos}</td>
@@ -3356,18 +3596,125 @@ const renderEmpRptEmpTable = (data) => {
             <td style="text-align:right;font-family:var(--font-m)">${r.entries}</td>
             <td style="text-align:right;font-family:var(--font-m)">${r.days}</td>
             <td style="text-align:right;font-family:var(--font-m)">${formatDuration(r.ms)}</td>
+            <td style="text-align:right;font-family:var(--font-m);color:var(--warning)">${formatDuration(r.otMs)}</td>
+            <td style="text-align:right;font-family:var(--font-m);color:${r.util >= 100 ? 'var(--green)' : r.util >= 80 ? 'var(--warning)' : 'var(--danger)'}">${r.util.toFixed(1)}%</td>
             <td style="text-align:right;font-family:var(--font-m)">${fmtCost(r.cost)}</td>
             <td style="text-align:right;font-family:var(--font-m)">${r.rate}</td>
         </tr>`).join('');
     document.getElementById('emp-rpt-emp-table-area').innerHTML = `
         <div class="table-wrap"><table>
-            <thead><tr><th>Employee</th><th>Position</th><th>Department</th><th style="text-align:right">Entries</th><th style="text-align:right">Days</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th><th style="text-align:right">Rate</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Position</th><th>Department</th><th style="text-align:right">Entries</th><th style="text-align:right">Days</th><th style="text-align:right">Duration</th><th style="text-align:right">OT</th><th style="text-align:right">Util%</th><th style="text-align:right">Cost</th><th style="text-align:right">Rate</th></tr></thead>
             <tbody>${rows}</tbody>
         </table></div>
         ${buildRptPagination(data.length, empRptEmpPage, empRptEmpPageSize, 'goEmpRptEmpPage', 'changeEmpRptEmpPageSize')}`;
 };
 
-// Pagination
+// ---------- Time Detail Table ----------
+const renderEmpRptTimeTable = data => {
+    const totalPages = Math.ceil(data.length / empRptTimePageSize) || 1;
+    if (empRptTimePage > totalPages) empRptTimePage = totalPages;
+    if (empRptTimePage < 1) empRptTimePage = 1;
+    const start = (empRptTimePage - 1) * empRptTimePageSize;
+    const page = data.slice(start, start + empRptTimePageSize);
+    const rows = data.length === 0
+        ? '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>'
+        : page.map(r => {
+            const clockInStr = r.clockIn ? formatTime(r.clockIn) : '\u2014';
+            const clockOutStr = r.clockOut ? formatTime(r.clockOut) : '\u2014';
+            const dayColor = r.dayOfWeek === 'Sun' ? 'var(--danger)' : r.dayOfWeek === 'Sat' ? 'var(--warning)' : 'var(--main-text)';
+            return `<tr>
+                <td style="font-family:var(--font-m)">${formatDateDMY(r.date)}</td>
+                <td style="color:${dayColor};font-weight:600">${r.dayOfWeek}</td>
+                <td>${esc(r.name)}</td>
+                <td>${esc(r.dept)}</td>
+                <td>${r.project}</td>
+                <td style="font-family:var(--font-m)">${clockInStr}</td>
+                <td style="font-family:var(--font-m)">${clockOutStr}</td>
+                <td style="text-align:right;font-family:var(--font-m)">${formatDuration(r.hours * 3600000)}</td>
+                <td style="text-align:right;font-family:var(--font-m)">${fmtStdHours(r.standardHours)}</td>
+                <td style="text-align:right;font-family:var(--font-m);color:${r.ot > 0 ? 'var(--warning)' : 'var(--main-text3)'}">${r.ot > 0 ? formatDuration(r.ot * 3600000) : '\u2014'}</td>
+            </tr>`;
+        }).join('');
+    document.getElementById('emp-rpt-time-table-area').innerHTML = `
+        <div class="table-wrap"><table>
+            <thead><tr><th>Date</th><th>Day</th><th>Employee</th><th>Department</th><th>Category → ID/Name</th><th>Clock In</th><th>Clock Out</th><th style="text-align:right">Duration</th><th style="text-align:right">Standard</th><th style="text-align:right">OT</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table></div>
+        ${buildRptPagination(data.length, empRptTimePage, empRptTimePageSize, 'goEmpRptTimePage', 'changeEmpRptTimePageSize')}`;
+};
+
+// ---------- Export Excel ----------
+const exportEmpReportExcel = () => {
+    if (!empRptItemData_cache.length && !empRptEmpData_cache.length && !empRptTimeData_cache.length) {
+        alert('No data to export');
+        return;
+    }
+
+    const strip = s => {
+        if (!s) return '';
+        return String(s).replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&mdash;/g, '\u2014').trim();
+    };
+
+    const fromDate = document.getElementById('emp-rpt-from')?.value || '';
+    const toDate = document.getElementById('emp-rpt-to')?.value || '';
+    const rows = [];
+
+    rows.push(['Report: ' + fromDate + ' to ' + toDate]);
+    rows.push([]);
+
+    // Section 1: Category Summary (no Util%)
+    rows.push(['CATEGORY SUMMARY']);
+    rows.push(['Category \u2192 ID/Name', 'Countdown', 'Days', 'Members', 'Entries', 'Duration', 'OT', 'Cost']);
+    if (empRptItemData_cache.length) {
+        empRptItemData_cache.forEach(r => {
+            rows.push([strip(r.label), strip(r.cdHtml), r.days, r.members, r.entries, formatDuration(r.hours), formatDuration(r.otMs), r.cost.toFixed(2)]);
+        });
+    } else { rows.push(['No data']); }
+
+    rows.push([]);
+    rows.push([]);
+
+    // Section 2: Employee Summary (Util% stays — it's accurate per-employee)
+    rows.push(['EMPLOYEE SUMMARY']);
+    rows.push(['Employee', 'Position', 'Department', 'Entries', 'Days', 'Duration', 'OT', 'Util%', 'Cost', 'Rate']);
+    if (empRptEmpData_cache.length) {
+        empRptEmpData_cache.forEach(r => {
+            rows.push([strip(r.name), strip(r.pos), strip(r.dept), r.entries, r.days, formatDuration(r.ms), formatDuration(r.otMs), r.util.toFixed(1) + '%', r.cost.toFixed(2), r.rate]);
+        });
+    } else { rows.push(['No data']); }
+
+    rows.push([]);
+    rows.push([]);
+
+    // Section 3: Time Detail
+    rows.push(['TIME DETAIL']);
+    rows.push(['Date', 'Day', 'Employee', 'Department', 'Category \u2192 ID/Name', 'Clock In', 'Clock Out', 'Duration', 'Standard', 'OT']);
+    if (empRptTimeData_cache.length) {
+        empRptTimeData_cache.forEach(r => {
+            rows.push([
+                r.date,
+                r.dayOfWeek,
+                r.name,
+                r.dept,
+                r.project,
+                r.clockIn ? formatTime(r.clockIn) : '\u2014',
+                r.clockOut ? formatTime(r.clockOut) : '\u2014',
+                formatDuration(r.hours * 3600000),
+                r.standardHours > 0 ? r.standardHours.toFixed(1) + 'h' : '\u2014',
+                r.ot > 0 ? formatDuration(r.ot * 3600000) : '\u2014'
+            ]);
+        });
+    } else { rows.push(['No data']); }
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:35},{wch:18},{wch:18},{wch:10},{wch:10},{wch:30},{wch:10},{wch:10},{wch:12},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Report');
+
+    XLSX.writeFile(wb, 'emp_report_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+};
+
+// ---------- Pagination ----------
 const goEmpRptItemPage = page => {
     const totalPages = Math.ceil(empRptItemData_cache.length / empRptItemPageSize) || 1;
     empRptItemPage = Math.max(1, Math.min(page, totalPages));
@@ -3387,6 +3734,16 @@ const changeEmpRptEmpPageSize = size => {
     empRptEmpPageSize = parseInt(size);
     empRptEmpPage = 1;
     renderEmpRptEmpTable(empRptEmpData_cache);
+};
+const goEmpRptTimePage = page => {
+    const totalPages = Math.ceil(empRptTimeData_cache.length / empRptTimePageSize) || 1;
+    empRptTimePage = Math.max(1, Math.min(page, totalPages));
+    renderEmpRptTimeTable(empRptTimeData_cache);
+};
+const changeEmpRptTimePageSize = size => {
+    empRptTimePageSize = parseInt(size);
+    empRptTimePage = 1;
+    renderEmpRptTimeTable(empRptTimeData_cache);
 };
 
 
@@ -3534,6 +3891,309 @@ const doChangePassword = async () => {
     } catch (e) {
         errEl.textContent = 'Failed: ' + e.message;
     }
+};
+
+
+/* ==========================================================
+   EMPLOYEE — FILES
+   ========================================================== */
+let empFileCurrentPage = 1, empFilePageSize = 10, empFileFilteredData = [];
+let empSelectedFile = null;
+
+const renderEmployeeFiles = () => {
+    empFileCurrentPage = 1; empFilePageSize = 10;
+
+    const driveOpts = (DB.driveSettings||[]).map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+
+    document.getElementById('emp-files').innerHTML = `
+    <div class="app-header"><h2>Files</h2><div class="header-sub">View and download files from Google Drive</div></div>
+    <div class="app-body">
+      <div class="filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <input class="input" type="text" placeholder="Search files..." id="emp-file-search" oninput="applyEmpFileFilter()" style="max-width:250px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Drive Folder</label>
+            <select class="input" id="emp-file-drive-filter" onchange="applyEmpFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
+              <option value="">All Folders</option>
+              ${driveOpts}
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;margin-left:auto">
+            <button class="btn btn-ghost btn-sm" onclick="resetEmpFileFilter()">Reset</button>
+            <button class="btn btn-green" onclick="showEmpUploadFile()">+ Upload File</button>
+          </div>
+        </div>
+      </div>
+      <div id="emp-file-table-area"></div>
+    </div>`;
+
+    setTimeout(() => applyEmpFileFilter(), 100);
+};
+
+const resetEmpFileFilter = () => {
+    document.getElementById('emp-file-search').value = '';
+    document.getElementById('emp-file-drive-filter').value = '';
+    empFileCurrentPage = 1;
+    applyEmpFileFilter();
+};
+
+const applyEmpFileFilter = () => {
+    const search = (document.getElementById('emp-file-search')?.value || '').toLowerCase();
+    const driveFilter = document.getElementById('emp-file-drive-filter')?.value || '';
+    const driveNameMap = {};
+    (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name.toLowerCase(); });
+
+    let filtered = (DB.files || []).filter(f => {
+        if (driveFilter && String(f.driveSettingId) !== driveFilter) return false;
+        if (search) {
+            const driveName = f.driveSettingId ? (driveNameMap[f.driveSettingId] || '') : '';
+            const dateFormatted = f.createdAt ? formatDateDMY(f.createdAt.slice(0,10)).toLowerCase() : '';
+            const dateISO = f.createdAt ? f.createdAt.slice(0,10) : '';
+            const haystack = [f.name, f.uploaderName, f.type, f.remark, driveName, dateFormatted, dateISO].map(v => (v||'').toLowerCase()).join(' ');
+            if (haystack.indexOf(search) === -1) return false;
+        }
+        return true;
+    });
+
+    empFileFilteredData = filtered;
+    empFileCurrentPage = 1;
+    renderEmpFileTable();
+};
+
+const renderEmpFileTable = () => {
+    const filtered = empFileFilteredData;
+    const totalPages = Math.ceil(filtered.length / empFilePageSize) || 1;
+    if (empFileCurrentPage > totalPages) empFileCurrentPage = totalPages;
+    if (empFileCurrentPage < 1) empFileCurrentPage = 1;
+    const start = (empFileCurrentPage - 1) * empFilePageSize;
+    const page = filtered.slice(start, start + empFilePageSize);
+    const driveNameMap = {};
+    (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name; });
+
+    // 找当前用户关联的 memberId
+    const myMemberId = currentUser.memberId || null;
+
+    const rows = filtered.length === 0
+        ? '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No files found</td></tr>'
+        : page.map((f, idx) => {
+            const driveName = f.driveSettingId ? (driveNameMap[f.driveSettingId] || '—') : '—';
+            // 只能删自己上传的
+            const canDelete = myMemberId && f.uploadedBy === myMemberId;
+            const actions = `<div class="actions-cell">
+                <button class="btn-icon" title="Preview" onclick="empPreviewFile(${f.id})">&#128065;</button>
+                <button class="btn-icon" title="Open in Drive" onclick="window.open('${esc(f.url)}','_blank')">&#8599;</button>
+                ${canDelete ? `<button class="btn-icon danger" title="Delete" onclick="empConfirmDeleteFile(${f.id})">&#10005;</button>` : ''}
+            </div>`;
+            return `<tr>
+                <td style="font-family:var(--font-m);color:var(--main-text3)">${start+idx+1}</td>
+                <td>${getFileTypeIcon(f.name)} <strong>${esc(f.name)}</strong></td>
+                <td>${getFileTypeBadge(f.type)}</td>
+                <td style="text-align:right;font-family:var(--font-m)">${formatFileSize(f.size)}</td>
+                <td><span style="font-size:.82rem">${esc(driveName)}</span></td>
+                <td>${esc(f.remark||'—')}</td>
+                <td>${esc(f.uploaderName||'—')}</td>
+                <td style="font-family:var(--font-m)">${formatDateDMY(f.createdAt?f.createdAt.slice(0,10):null)}</td>
+                <td>${actions}</td>
+            </tr>`;
+        }).join('');
+
+    let pagHtml = '';
+    if (filtered.length > 0) {
+        const showTo = Math.min(start + empFilePageSize, filtered.length);
+        const maxV=5, stP=Math.max(1,empFileCurrentPage-Math.floor(maxV/2)), enP=Math.min(totalPages,stP+maxV-1);
+        const adjSt = enP-stP<maxV-1?Math.max(1,enP-maxV+1):stP;
+        let btns = `<button onclick="goEmpFilePage(1)" ${empFileCurrentPage===1?'disabled':''}>&laquo;</button>
+                    <button onclick="goEmpFilePage(${empFileCurrentPage-1})" ${empFileCurrentPage===1?'disabled':''}>&lsaquo;</button>`;
+        for(let p=adjSt;p<=enP;p++) btns += `<button onclick="goEmpFilePage(${p})" class="${p===empFileCurrentPage?'active':''}">${p}</button>`;
+        btns += `<button onclick="goEmpFilePage(${empFileCurrentPage+1})" ${empFileCurrentPage===totalPages?'disabled':''}>&rsaquo;</button>
+                 <button onclick="goEmpFilePage(${totalPages})" ${empFileCurrentPage===totalPages?'disabled':''}>&raquo;</button>`;
+        pagHtml = `<div class="pagination">
+            <div class="pagination-info">Showing ${start+1} to ${showTo} of ${filtered.length} files</div>
+            <div style="display:flex;align-items:center;gap:20px">
+                <div class="pagination-size"><label>Show</label>
+                    <select onchange="changeEmpFilePageSize(this.value)">
+                        <option value="10"${empFilePageSize===10?' selected':''}>10</option>
+                        <option value="25"${empFilePageSize===25?' selected':''}>25</option>
+                        <option value="50"${empFilePageSize===50?' selected':''}>50</option>
+                    </select></div>
+                <div class="pagination-controls">${btns}</div>
+            </div></div>`;
+    }
+    document.getElementById('emp-file-table-area').innerHTML = `
+        <div class="table-wrap"><table>
+            <thead><tr><th style="width:50px">No</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:120px">Actions</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table></div>${pagHtml}`;
+};
+
+const goEmpFilePage = p => { const tp=Math.ceil(empFileFilteredData.length/empFilePageSize)||1; empFileCurrentPage=Math.max(1,Math.min(p,tp)); renderEmpFileTable(); };
+const changeEmpFilePageSize = s => { empFilePageSize=parseInt(s); empFileCurrentPage=1; renderEmpFileTable(); };
+
+// ---------- Employee Upload ----------
+const showEmpUploadFile = () => {
+    const drives = DB.driveSettings || [];
+    const config = DB.appConfig || {};
+    if (!drives.length) {
+        showModal(`<h3>No Drive Configured</h3>
+            <p style="color:var(--main-text2)">No drive folders available.</p>
+            <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>`);
+        return;
+    }
+    if (!config.drive_script_url) {
+        showModal(`<h3>Drive Not Configured</h3>
+            <p style="color:var(--main-text2)">Upload not available.</p>
+            <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>`);
+        return;
+    }
+    const defaultDrive = drives.find(d => d.isDefault) || drives[0];
+    const driveOpts = drives.map(d => `<option value="${d.id}" ${d.id===defaultDrive.id?'selected':''}>${esc(d.name)}</option>`).join('');
+
+    showModal(`
+    <h3>Upload File</h3>
+    <div class="field">
+        <label>Select File <span style="font-size:.72rem;color:var(--main-text3)">(Max 20MB)</span></label>
+        <div id="upload-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:30px;text-align:center;cursor:pointer;transition:border-color .2s">
+            <div id="upload-file-info" style="color:var(--main-text3)">Click or drag file here (Max 20MB)</div>
+            <input type="file" id="upload-file-input" style="display:none" onchange="handleEmpFileSelect(this)">
+        </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+        <div class="field"><label>Drive Folder</label><select class="input" id="upload-drive">${driveOpts}</select></div>
+        <div class="field"><label>Remark</label><input class="input" id="upload-remark" placeholder="Optional remark"></div>
+    </div>
+    <div id="upload-progress" style="display:none;margin-top:12px">
+        <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
+            <div id="upload-progress-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s ease;border-radius:4px"></div>
+        </div>
+        <div id="upload-progress-text" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Uploading...</div>
+    </div>
+    <p class="auth-error" id="upload-error"></p>
+    <div class="btns"><button class="btn btn-ghost" onclick="empSelectedFile=null;hideModal()">Cancel</button><button class="btn btn-accent" id="upload-btn" onclick="doEmpUploadFile()">Upload</button></div>`);
+
+    setTimeout(() => {
+        const dz = document.getElementById('upload-drop-zone');
+        const fi = document.getElementById('upload-file-input');
+        dz.onclick = () => fi.click();
+        dz.ondragover = e => { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; };
+        dz.ondragleave = () => { dz.style.borderColor = 'var(--main-border)'; };
+        dz.ondrop = e => { e.preventDefault(); dz.style.borderColor = 'var(--main-border)'; if(e.dataTransfer.files.length){fi.files=e.dataTransfer.files;handleEmpFileSelect(fi);} };
+    }, 100);
+};
+
+const handleEmpFileSelect = input => {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+        document.getElementById('upload-error').textContent = 'File too large. Max 20MB.';
+        input.value = '';
+        empSelectedFile = null;
+        document.getElementById('upload-file-info').innerHTML = '<div style="color:var(--main-text3)">Click or drag file here (Max 20MB)</div>';
+        return;
+    }
+    document.getElementById('upload-error').textContent = '';
+    empSelectedFile = file;
+    document.getElementById('upload-file-info').innerHTML =
+        `<div style="font-size:1.1rem;font-weight:600;color:var(--main-text)">${getFileTypeIcon(file.name)} ${esc(file.name)}</div>
+         <div style="font-size:.82rem;color:var(--main-text3);margin-top:4px">${formatFileSize(file.size)} · ${file.type||'Unknown'}</div>`;
+};
+
+const doEmpUploadFile = async () => {
+    const errEl = document.getElementById('upload-error');
+    if (!empSelectedFile) { errEl.textContent = 'Select a file first'; return; }
+
+    const driveId = parseInt(document.getElementById('upload-drive').value);
+    const drive = (DB.driveSettings||[]).find(d => d.id === driveId);
+    if (!drive) { errEl.textContent = 'Select a drive folder'; return; }
+
+    const remark = document.getElementById('upload-remark').value.trim();
+    const btn = document.getElementById('upload-btn');
+    const progress = document.getElementById('upload-progress');
+    const bar = document.getElementById('upload-progress-bar');
+    const txt = document.getElementById('upload-progress-text');
+
+    btn.disabled = true; btn.textContent = 'Uploading...';
+    progress.style.display = 'block'; bar.style.width = '30%';
+    txt.textContent = 'Reading file...'; errEl.textContent = '';
+
+    try {
+        const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(empSelectedFile);
+        });
+
+        bar.style.width = '50%'; txt.textContent = 'Uploading to Drive...';
+
+        const result = await api('/upload-to-drive', {
+            method: 'POST',
+            body: {
+                fileBase64: base64,
+                fileName: empSelectedFile.name,
+                mimeType: empSelectedFile.type || 'application/octet-stream',
+                folderId: drive.folderId
+            }
+        });
+
+        if (result.error) throw new Error(result.error);
+
+        bar.style.width = '80%'; txt.textContent = 'Saving record...';
+
+        await api('/files', {
+            method: 'POST',
+            body: {
+                name: empSelectedFile.name,
+                type: empSelectedFile.type || 'application/octet-stream',
+                size: empSelectedFile.size,
+                url: result.fileUrl,
+                driveFileId: result.fileId,
+                driveSettingId: driveId,
+                remark: remark
+            }
+        });
+
+        bar.style.width = '100%'; txt.textContent = 'Upload complete!';
+        empSelectedFile = null;
+        await loadDB();
+        setTimeout(() => { hideModal(); applyEmpFileFilter(); }, 800);
+    } catch (e) {
+        errEl.textContent = 'Upload failed: ' + e.message;
+        btn.disabled = false; btn.textContent = 'Upload';
+        progress.style.display = 'none';
+    }
+};
+
+// ---------- Employee Preview ----------
+const empPreviewFile = id => {
+    const file = (DB.files||[]).find(f => f.id === id);
+    if (!file || !file.driveFileId) return;
+    const driveNameMap = {};
+    (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name; });
+    const previewUrl = `https://drive.google.com/file/d/${file.driveFileId}/preview`;
+    showModal(`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 style="margin:0">${getFileTypeIcon(file.name)} ${esc(file.name)}</h3>
+        <button class="btn btn-ghost btn-sm" onclick="window.open('${esc(file.url)}','_blank')">&#8599; Open in Drive</button>
+    </div>
+    <iframe src="${previewUrl}" style="width:100%;height:65vh;border:none;border-radius:var(--radius)"></iframe>
+    <div style="margin-top:8px;display:flex;gap:16px;font-size:.78rem;color:var(--main-text3)">
+        <span>Size: ${formatFileSize(file.size)}</span>
+        <span>Drive Folder: ${esc(driveNameMap[file.driveSettingId] || '—')}</span>
+        <span>Remark: ${esc(file.remark || '—')}</span>
+        <span>By: ${esc(file.uploaderName||'—')}</span>
+        <span>Date: ${formatDateDMY(file.createdAt?file.createdAt.slice(0,10):null)}</span>
+    </div>`);
+};
+
+// ---------- Employee Delete (only own files) ----------
+const empConfirmDeleteFile = id => {
+    const file = (DB.files||[]).find(f => f.id === id);
+    if (!file) return;
+    showModal(`<h3>Delete File</h3>
+        <p style="color:var(--main-text2);line-height:1.6">Delete <strong>${esc(file.name)}</strong>?<br>
+        <span style="font-size:.82rem;color:var(--main-text3)">File will also be deleted from Google Drive.</span></p>
+        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteFile(${id})">Delete</button></div>`);
 };
 
 
@@ -4179,6 +4839,7 @@ function ssmSelectAll(containerId) {
    ========================================================== */
 let adminAttCurrentPage = 1, adminAttPageSize = 10, adminAttFilteredData = [];
 var _adminAttInitialLoad = false;
+let _adminOtPerEntry = new Map();
 
 // ---------- reusable helpers ----------
 const expandOtherItemIds = itemIds => {
@@ -4284,18 +4945,20 @@ const renderAdminAttendance = () => {
     <div class="app-header"><h2>Attendance</h2><div class="header-sub">Track all employee attendance</div></div>
     <div class="app-body">
       <div class="pt-anim-filter filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-          <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="date" class="input" id="att-from" value="${defaultFrom}" onchange="applyAdminAttendanceFilter()" style="width:145px;padding:8px 10px;font-size:.82rem"></div>
-          <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="att-to" value="${today}" onchange="applyAdminAttendanceFilter()" style="width:145px;padding:8px 10px;font-size:.82rem"></div>
-          <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Department</label><div style="min-width:140px" id="ssm-att-dept"></div></div>
-          <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Category</label><div style="min-width:140px" id="ssm-att-scope"></div></div>
-          <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">ID/Name</label><div style="min-width:160px" id="ssm-att-item"></div></div>
-          <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label><div style="min-width:150px" id="ssm-att-emp"></div></div>
-          <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="resetAdminAttendanceFilter()">Reset</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span>
             <button class="btn btn-blue btn-sm" onclick="exportAttendanceCSV()">&#128196; Export CSV</button>
-          </div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="date" class="input" id="att-from" value="${defaultFrom}" onchange="applyAdminAttendanceFilter()" style="width:145px;padding:8px 10px;font-size:.82rem"></div>
+            <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="att-to" value="${today}" onchange="applyAdminAttendanceFilter()" style="width:145px;padding:8px 10px;font-size:.82rem"></div>
+            <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Department</label><div style="min-width:140px" id="ssm-att-dept"></div></div>
+            <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Category</label><div style="min-width:140px" id="ssm-att-scope"></div></div>
+            <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">ID/Name</label><div style="min-width:160px" id="ssm-att-item"></div></div>
+            <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Employee</label><div style="min-width:150px" id="ssm-att-emp"></div></div>
+            <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
+                <button class="btn btn-ghost btn-sm" onclick="resetAdminAttendanceFilter()">Reset</button>
+            </div>
         </div>
       </div>
         <div class="pt-anim-head"><div class="stats-grid" id="att-stats" style="margin:0"></div></div>
@@ -4438,15 +5101,52 @@ const applyAdminAttendanceFilter = () => {
     filtered.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
     adminAttFilteredData = filtered;
 
-    let totalMs = 0, totalCost = 0;
+    // Group by member+date for daily OT
+    const dayMap = new Map();
+    filtered.forEach(r => {
+        const key = r.memberId + '_' + r.date;
+        if (!dayMap.has(key)) dayMap.set(key, []);
+        dayMap.get(key).push(r);
+    });
+
+    _adminOtPerEntry = new Map();
+    let totalMs = 0, totalCost = 0, totalOtMs = 0;
+
+    dayMap.forEach((dayEntries) => {
+        const memberId = dayEntries[0].memberId;
+        const date = dayEntries[0].date;
+
+        dayEntries.sort((a, b) => (a.clockIn || '').localeCompare(b.clockIn || ''));
+
+        const anyWithClock = dayEntries.find(r => r.clockIn && r.clockOut);
+        if (!anyWithClock) return;
+        const stdResult = calcOT(anyWithClock.clockIn, anyWithClock.clockOut, memberId, date);
+        const standardMs = stdResult.standardHours * 3600000;
+
+        let cumulativeMs = 0;
+        dayEntries.forEach(r => {
+            const result = calcOT(r.clockIn, r.clockOut, r.memberId, r.date);
+            const entryMs = result.ms || 0;
+            const prevCumulative = cumulativeMs;
+            cumulativeMs += entryMs;
+            totalMs += entryMs;
+            totalCost += getEntryCost(r.memberId, entryMs) || 0;
+
+            let entryOtMs = 0;
+            if (prevCumulative < standardMs && cumulativeMs > standardMs) {
+                entryOtMs = cumulativeMs - standardMs;
+            } else if (prevCumulative >= standardMs) {
+                entryOtMs = entryMs;
+            }
+
+            _adminOtPerEntry.set(r.id, entryOtMs);
+            totalOtMs += entryOtMs;
+        });
+    });
+
     const empSet = new Set();
     const projSet = new Set();
     filtered.forEach(r => {
-        if (r.clockIn && r.clockOut) {
-            const ms = new Date(r.clockOut) - new Date(r.clockIn);
-            totalMs += ms;
-            totalCost += (getEntryCost(r.memberId, ms) || 0);
-        }
         empSet.add(r.memberId);
         if (r.projectId) projSet.add(r.projectId);
     });
@@ -4458,9 +5158,9 @@ const applyAdminAttendanceFilter = () => {
             <div class="stat-card${ac}"><div class="stat-label">Employees</div><div class="stat-value">${empSet.size}</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Items</div><div class="stat-value">${projSet.size}</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Hours</div><div class="stat-value">${formatDuration(totalMs)}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">OT</div><div class="stat-value" style="color:var(--warning)">${formatDuration(totalOtMs)}</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Cost</div><div class="stat-value">${fmtCost(totalCost)}</div></div>
         </div>`;
-
 
     const totalPages = Math.ceil(filtered.length / adminAttPageSize) || 1;
     if (adminAttCurrentPage > totalPages) adminAttCurrentPage = totalPages;
@@ -4476,27 +5176,36 @@ const renderAdminAttPage = () => {
     const page = filtered.slice(start, start + adminAttPageSize);
 
     const rows = filtered.length === 0
-        ? `<tr><td colspan="12" style="text-align:center;color:var(--main-text3);padding:30px">No attendance records found</td></tr>`
+        ? `<tr><td colspan="14" style="text-align:center;color:var(--main-text3);padding:30px">No attendance records found</td></tr>`
         : page.map((r, idx) => {
+            const result = calcOT(r.clockIn, r.clockOut, r.memberId, r.date);
+            const dur = result.ms ? formatDuration(result.ms) : '—';
+            const entryOtMs = _adminOtPerEntry.get(r.id) || 0;
+            const otDisp = entryOtMs > 0 ? formatDuration(entryOtMs) : '—';
+            const otColor = entryOtMs > 0 ? 'color:var(--warning)' : 'color:var(--main-text3)';
+            const sTime = r.clockIn ? formatTime(r.clockIn) : '\u2014';
+            const eTime = r.clockOut ? formatTime(r.clockOut) : '\u2014';
             const emp = DB.members.find(m => m.id === r.memberId);
             const dept = emp?.departmentId ? getDeptName(emp.departmentId) : '';
             const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
             const scope = proj?.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
-            const dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '—';
-            const sTime = r.clockIn ? r.clockIn.split('T')[1].substring(0,5) : '—';
-            const eTime = r.clockOut ? r.clockOut.split('T')[1].substring(0,5) : '—';
             const itemDisp = proj ? (scope ? `${esc(scope.name)} → ${esc(proj.name)}` : esc(proj.name)) : '—';
             const wp = r.work_plan_id ? DB.worklist.find(w => w.id === r.work_plan_id) : null;
             const wd = r.work_done_id ? DB.worklist.find(w => w.id === r.work_done_id) : null;
+            const dayNum = new Date(r.date).getDay();
+            const dayName = DAY_NAMES[dayNum];
+            const dayColor = dayName === 'Sun' ? 'var(--danger)' : dayName === 'Sat' ? 'var(--warning)' : 'var(--main-text)';
             const actions = currentUser.role !== 'viewer'
                 ? `<div class="actions-cell"><button class="btn-icon" onclick="showAdminEditAttendance(${r.id})">&#9998;</button><button class="btn-icon danger" onclick="confirmDeleteAttendance(${r.id})">&#10005;</button></div>`
                 : '';
             return `<tr>
                 <td style="font-family:var(--font-m);color:var(--main-text3)">${start + idx + 1}</td>
                 <td style="font-family:var(--font-m)">${formatDateDMY(r.date)}</td>
+                <td style="color:${dayColor};font-weight:600">${dayName}</td>
                 <td style="font-family:var(--font-m)">${sTime}</td>
                 <td style="font-family:var(--font-m)">${eTime}</td>
                 <td style="text-align:right;font-family:var(--font-m)">${dur}</td>
+                <td style="text-align:right;font-family:var(--font-m);${otColor}">${otDisp}</td>
                 <td>${dept ? esc(dept) : '<span style="color:var(--main-text3)">—</span>'}</td>
                 <td>${emp ? esc(emp.name) : '?'}</td>
                 <td>${itemDisp}</td>
@@ -4533,11 +5242,11 @@ const renderAdminAttPage = () => {
 
     document.getElementById('admin-att-table-area').innerHTML = `
         <div class="table-wrap"><table>
-            <thead><tr><th style="width:50px">No</th><th>Date</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th>Department</th><th>Employee</th><th>Category → ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th style="width:90px">Actions</th></tr></thead>
+            <thead><tr><th style="width:50px">No</th><th>Date</th><th>Day</th><th>Start</th><th>End</th><th style="text-align:right">Duration</th><th style="text-align:right">OT</th><th>Department</th><th>Employee</th><th>Category → ID/Name</th><th>Work Plan</th><th>Work Done</th><th>Remark</th><th style="width:90px">Actions</th></tr></thead>
             <tbody>${rows}</tbody>
         </table></div>${pagHtml}`;
-
 };
+
 
 const goAdminAttPage = page => {
     const totalPages = Math.ceil(adminAttFilteredData.length / adminAttPageSize) || 1;
@@ -4727,18 +5436,23 @@ const doDeleteAttendance = (id) => {
 const exportAttendanceCSV = () => {
     const data = adminAttFilteredData;
     if (!data.length) { alert('No data to export'); return; }
-    const headers = ['Date','Department','Employee','Category','ID/Name','Work Plan','Work Done','Start','End','Duration','Remark'];
-    const rows = data.map(r => {
+    const headers = ['No','Date','Day','Department','Employee','Category','ID/Name','Work Plan','Work Done','Start','End','Duration','OT','Remark'];
+    const rows = data.map((r, idx) => {
         const emp = DB.members.find(m => m.id === r.memberId);
         const dept = emp?.departmentId ? getDeptName(emp.departmentId) : '';
         const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
         const scope = proj?.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
-        const dur = r.clockIn && r.clockOut ? formatDuration(new Date(r.clockOut) - new Date(r.clockIn)) : '';
+        const result = calcOT(r.clockIn, r.clockOut, r.memberId, r.date);
+        const dur = result.ms ? formatDuration(result.ms) : '';
+        const entryOtMs = _adminOtPerEntry.get(r.id) || 0;
+        const ot = entryOtMs > 0 ? formatDuration(entryOtMs) : '';
         const sT = r.clockIn ? r.clockIn.split('T')[1].substring(0,5) : '';
         const eT = r.clockOut ? r.clockOut.split('T')[1].substring(0,5) : '';
         const wp = r.work_plan_id ? DB.worklist.find(w => w.id === r.work_plan_id) : null;
         const wd = r.work_done_id ? DB.worklist.find(w => w.id === r.work_done_id) : null;
-        return [formatDateDMY(r.date), dept, emp ? emp.name : '', scope ? scope.name : '', proj ? proj.name : '', wp ? wp.title : '', wd ? wd.title : '', sT, eT, dur, r.description||''];
+        const dayNum = new Date(r.date).getDay();
+        const dayName = DAY_NAMES[dayNum];
+        return [idx + 1, formatDateDMY(r.date), dayName, dept, emp ? emp.name : '', scope ? scope.name : '', proj ? proj.name : '', wp ? wp.title : '', wd ? wd.title : '', sT, eT, dur, ot, r.description||''];
     });
     const csv = [headers.join(',')].concat(rows.map(row => row.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','))).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -4981,10 +5695,11 @@ async function doDeleteSubScope(id) {
 
 
 /* ==========================================================
-   SECTION 18: ADMIN — Report (optimized & fixed)
+   SECTION 18: ADMIN — Report (using calcOT from Utilities)
    ========================================================== */
 let rptItemPage = 1, rptItemPageSize = 10, rptItemData_cache = [];
 let rptEmpPage = 1, rptEmpPageSize = 10, rptEmpData_cache = [];
+let rptTimePage = 1, rptTimePageSize = 10, rptTimeData_cache = [];
 var _adminRptInitialLoad = false;
 
 // ---------- helpers (same as before) ----------
@@ -4994,7 +5709,6 @@ const buildAdminRptEmpOpts = (scopeIds, itemIds) => {
             .sort((a, b) => a.name.localeCompare(b.name))
             .map(m => ({ value: m.id, label: m.name }));
     }
-
     let projectIds = DB.projects.map(p => p.id);
     if (scopeIds && scopeIds.length) {
         projectIds = DB.projects.filter(p => p.categoryId && scopeIds.includes(p.categoryId)).map(p => p.id);
@@ -5003,12 +5717,10 @@ const buildAdminRptEmpOpts = (scopeIds, itemIds) => {
         const expanded = expandOtherItemIds(itemIds);
         projectIds = projectIds.filter(id => expanded.includes(id));
     }
-
     const memberIds = new Set();
     DB.attendance.forEach(a => {
         if (a.projectId && projectIds.includes(a.projectId)) memberIds.add(a.memberId);
     });
-
     const viewerIds = getViewerMemberIds();
     return [...memberIds]
         .filter(mid => !viewerIds.includes(mid))
@@ -5022,7 +5734,6 @@ const rptUpdateItemsAndEmployees = (scopeIds, itemIds, deptIds) => {
     const filteredProjects = (scopeIds && scopeIds.length)
         ? sortedProjects().filter(p => scopeIds.includes(p.categoryId))
         : sortedProjects();
-
     const itemOpts = [];
     let seenOther = false;
     filteredProjects.forEach(p => {
@@ -5033,7 +5744,6 @@ const rptUpdateItemsAndEmployees = (scopeIds, itemIds, deptIds) => {
         }
     });
     ssmUpdate('ssm-rpt-item', itemOpts, true);
-
     let empOpts = buildAdminRptEmpOpts(scopeIds, itemIds);
     if (deptIds && deptIds.length) {
         const deptMemberIds = new Set(DB.members.filter(m => deptIds.includes(m.departmentId)).map(m => m.id));
@@ -5057,7 +5767,6 @@ const renderAdminReport = () => {
     const scopeList = (viewerScopeIds !== null
         ? DB.scopes.filter(s => viewerScopeIds.includes(s.id))
         : [...DB.scopes]).sort((a, b) => a.name.localeCompare(b.name));
-
     const deptList = [...DB.departments].sort((a, b) => a.name.localeCompare(b.name));
     const scopeOpts = scopeList.map(s => ({ value: s.id, label: s.name }));
     const deptOpts = deptList.map(d => ({ value: d.id, label: d.name }));
@@ -5066,8 +5775,11 @@ const renderAdminReport = () => {
     document.getElementById('admin-report').innerHTML = `
     <div class="app-header"><h2>Report</h2><div class="header-sub">Summary and analytics</div></div>
     <div class="app-body">
-      <div class="pt-anim-filter filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>
+        <div class="pt-anim-filter filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span>
+            <button class="btn btn-blue btn-sm" onclick="exportReportExcel()">&#128196; Export CSV</button>
+        </div>
         <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
           <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label><input type="date" class="input" id="rpt-from" value="${defaultFrom}" onchange="generateReport()" style="width:155px;padding:8px 10px;font-size:.82rem"></div>
           <div style="display:flex;align-items:center;gap:6px"><label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label><input type="date" class="input" id="rpt-to" value="${today}" onchange="generateReport()" style="width:155px;padding:8px 10px;font-size:.82rem"></div>
@@ -5154,7 +5866,6 @@ const generateReport = () => {
         const vpIds = new Set(DB.projects.filter(p => p.categoryId && viewerScopeIds.includes(p.categoryId)).map(p => p.id));
         filtered = filtered.filter(a => vpIds.has(a.projectId));
     }
-
     if (scopeIds.length) {
         const sids = new Set(DB.projects.filter(p => scopeIds.includes(p.categoryId)).map(p => p.id));
         filtered = filtered.filter(a => sids.has(a.projectId));
@@ -5172,51 +5883,146 @@ const generateReport = () => {
         filtered = filtered.filter(a => empSet.has(a.memberId));
     }
 
-    // Aggregate
-    let totalMs = 0, totalCost = 0;
+    // Aggregate with OT (daily-based)
+    let totalMs = 0, totalCost = 0, totalOtMs = 0, totalStandardMs = 0;
     const itemMap = new Map();
     const scopeMap = new Map();
     const empMap = new Map();
     const monthlyMap = new Map();
+    const timeDetails = [];
+    const entryByDay = new Map();
+    const countedDays = new Set();
+    const empCountedDays = new Set();
 
     filtered.forEach(r => {
-        if (!r.clockIn || !r.clockOut) return;
-        const ms = new Date(r.clockOut) - new Date(r.clockIn);
+        const result = calcOT(r.clockIn, r.clockOut, r.memberId, r.date);
+        if (!result.ms) return;
+        const { hours, standardHours: stdHrs, ms } = result;
         const cost = getEntryCost(r.memberId, ms) || 0;
+        const standardMs = stdHrs * 3600000;
+        const dayKey = r.memberId + '_' + r.date;
+
         totalMs += ms;
         totalCost += cost;
 
-        const pid = r.projectId || 0;
-        if (!itemMap.has(pid)) itemMap.set(pid, { cost: 0, ms: 0, entries: 0, members: new Set() });
-        const is = itemMap.get(pid);
-        is.cost += cost; is.ms += ms; is.entries++; is.members.add(r.memberId);
+        // Overall standard: once per member+day
+        if (!countedDays.has(dayKey)) {
+            countedDays.add(dayKey);
+            totalStandardMs += standardMs;
+        }
 
+        // Item map
+        const pid = r.projectId || 0;
+        if (!itemMap.has(pid)) itemMap.set(pid, { cost: 0, ms: 0, otMs: 0, standardMs: 0, entries: 0, members: new Set(), days: new Set(), _countedDays: new Set() });
+        const is = itemMap.get(pid);
+        is.cost += cost; is.ms += ms; is.entries++; is.members.add(r.memberId); is.days.add(r.date);
+        if (!is._countedDays.has(dayKey)) {
+            is._countedDays.add(dayKey);
+            is.standardMs += standardMs;
+        }
+
+        // Scope map
         const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
         const sid = proj?.categoryId || 0;
         if (!scopeMap.has(sid)) scopeMap.set(sid, { cost: 0 });
         scopeMap.get(sid).cost += cost;
 
-        if (!empMap.has(r.memberId)) empMap.set(r.memberId, { cost: 0, ms: 0, entries: 0, days: new Set() });
+        // Emp map
+        if (!empMap.has(r.memberId)) empMap.set(r.memberId, { cost: 0, ms: 0, otMs: 0, standardMs: 0, entries: 0, days: new Set() });
         const es = empMap.get(r.memberId);
         es.cost += cost; es.ms += ms; es.entries++; es.days.add(r.date);
+        if (!empCountedDays.has(dayKey)) {
+            empCountedDays.add(dayKey);
+            es.standardMs += standardMs;
+        }
 
+        // Monthly map
         const month = r.date.substring(0, 7);
-        if (!monthlyMap.has(month)) monthlyMap.set(month, { ms: 0, cost: 0 });
+        if (!monthlyMap.has(month)) monthlyMap.set(month, { ms: 0, otMs: 0, cost: 0 });
         const mStats = monthlyMap.get(month);
         mStats.ms += ms; mStats.cost += cost;
+
+        // Group for daily OT
+        if (!entryByDay.has(dayKey)) entryByDay.set(dayKey, { entries: [], standardMs });
+        entryByDay.get(dayKey).entries.push(r);
+
+        // Time detail (OT placeholder)
+        const member = DB.members.find(m => m.id === r.memberId);
+        const dayNum = new Date(r.date).getDay();
+        const scope = proj?.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
+        const projectLabel = proj ? (scope ? `${scope.name} → ${proj.name}` : proj.name) : '\u2014';
+        timeDetails.push({
+            date: r.date,
+            dayOfWeek: DAY_NAMES[dayNum],
+            memberId: r.memberId,
+            name: member ? member.name : 'Unknown',
+            dept: member ? getDeptName(member.departmentId) : '\u2014',
+            clockIn: r.clockIn,
+            clockOut: r.clockOut,
+            hours,
+            standardHours: stdHrs,
+            ot: 0,
+            entryId: r.id,
+            project: projectLabel
+        });
     });
+
+    // Step 2: Calculate daily OT and assign per-entry
+    const rptOtPerEntry = new Map();
+    entryByDay.forEach(({ entries, standardMs }) => {
+        entries.sort((a, b) => (a.clockIn || '').localeCompare(b.clockIn || ''));
+        let cumulativeMs = 0;
+        entries.forEach(r => {
+            const result = calcOT(r.clockIn, r.clockOut, r.memberId, r.date);
+            const entryMs = result.ms || 0;
+            const prevCumulative = cumulativeMs;
+            cumulativeMs += entryMs;
+
+            let entryOtMs = 0;
+            if (prevCumulative < standardMs && cumulativeMs > standardMs) {
+                entryOtMs = cumulativeMs - standardMs;
+            } else if (prevCumulative >= standardMs) {
+                entryOtMs = entryMs;
+            }
+
+            rptOtPerEntry.set(r.id, entryOtMs);
+            totalOtMs += entryOtMs;
+
+            const pid = r.projectId || 0;
+            if (itemMap.has(pid)) itemMap.get(pid).otMs += entryOtMs;
+            if (empMap.has(r.memberId)) empMap.get(r.memberId).otMs += entryOtMs;
+            const month = r.date.substring(0, 7);
+            if (monthlyMap.has(month)) monthlyMap.get(month).otMs += entryOtMs;
+        });
+    });
+
+    // Step 3: Fill OT in time details
+    timeDetails.forEach(t => {
+        const otMs = rptOtPerEntry.get(t.entryId) || 0;
+        t.ot = otMs / 3600000;
+    });
+
+    timeDetails.sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
+    rptTimeData_cache = timeDetails;
+
+    const totalHours = totalMs / 3600000;
+    const totalOtHours = totalOtMs / 3600000;
+    const avgUtil = totalStandardMs > 0 ? (totalMs / totalStandardMs * 100) : 0;
 
     const ac = _adminRptInitialLoad ? ' stat-anim' : '';
     document.getElementById('rpt-stats').innerHTML = `
         <div class="stats-grid" style="margin-bottom:24px">
             <div class="stat-card${ac}"><div class="stat-label">Total Records</div><div class="stat-value">${filtered.length}</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Total Hours</div><div class="stat-value">${formatDuration(totalMs)}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Total OT</div><div class="stat-value" style="color:var(--warning)">${formatDuration(totalOtMs)}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Utilization</div><div class="stat-value" style="color:${avgUtil >= 100 ? 'var(--green)' : avgUtil >= 80 ? 'var(--warning)' : 'var(--danger)'}">${avgUtil.toFixed(1)}%</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Total Cost</div><div class="stat-value">${fmtCost(totalCost)}</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Active Employees</div><div class="stat-value">${empMap.size}</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Active Categories</div><div class="stat-value">${scopeMap.size}</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Active ID/Name</div><div class="stat-value">${itemMap.size}</div></div>
         </div>`;
 
+    // Charts
     const palette = ['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
 
     const sortedItems = [...itemMap.entries()].sort((a, b) => b[1].cost - a[1].cost);
@@ -5250,6 +6056,7 @@ const generateReport = () => {
 
     const monthLabels = [...monthlyMap.keys()].sort();
     const monthHoursData = monthLabels.map(m => Math.round(monthlyMap.get(m).ms / 3600000 * 10) / 10);
+    const monthOtData = monthLabels.map(m => Math.round(monthlyMap.get(m).otMs / 3600000 * 10) / 10);
     const monthCostData = monthLabels.map(m => Math.round(monthlyMap.get(m).cost * 100) / 100);
     const prettyMonths = monthLabels.map(m => {
         const [y, mo] = m.split('-');
@@ -5273,6 +6080,7 @@ const generateReport = () => {
             <div style="min-width:600px;height:280px"><canvas id="chart-emp-hours"></canvas></div>
         </div>`;
 
+    // Item Summary cache (no Util)
     rptItemData_cache = sortedItems.map(([pid, stats]) => {
         const proj = pid ? DB.projects.find(p => p.id === pid) : null;
         const scope = proj?.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
@@ -5286,11 +6094,13 @@ const generateReport = () => {
             else if (cd === 0) cdHtml = `<span style="color:var(--warning);font-weight:600">Today!</span>`;
             else cdHtml = `<span style="color:var(--danger);font-weight:600">${Math.abs(cd)}d overdue</span>`;
         }
-        return { label, cdHtml, members: stats.members.size, entries: stats.entries, hours: stats.ms, cost: stats.cost };
+        return { label, cdHtml, days: stats.days.size, members: stats.members.size, entries: stats.entries, hours: stats.ms, otMs: stats.otMs, cost: stats.cost };
     });
 
+    // Employee Summary cache (with Util — accurate per employee)
     rptEmpData_cache = empSorted.map(([mid, stats]) => {
         const member = DB.members.find(m => m.id === mid);
+        const util = stats.standardMs > 0 ? (stats.ms / stats.standardMs * 100) : 0;
         return {
             name: member ? esc(member.name) : 'Unknown',
             pos: member ? esc(getPositionName(member.positionId)) : '\u2014',
@@ -5298,21 +6108,27 @@ const generateReport = () => {
             entries: stats.entries,
             days: stats.days.size,
             ms: stats.ms,
+            otMs: stats.otMs,
+            util,
             cost: stats.cost,
             rate: fmtHourlyRate(member)
         };
     });
 
     document.getElementById('rpt-tables').innerHTML = `
-        <div class="section-head" style="margin-top:8px"><h2>Item Summary</h2></div>
+        <div class="section-head" style="margin-top:8px"><h2>Category Summary</h2></div>
         <div id="rpt-item-table-area"></div>
         <div class="section-head" style="margin-top:24px"><h2>Employee Summary</h2></div>
-        <div id="rpt-emp-table-area"></div>`;
+        <div id="rpt-emp-table-area"></div>
+        <div class="section-head" style="margin-top:24px"><h2>Time Detail</h2></div>
+        <div id="rpt-time-table-area"></div>`;
 
-    rptItemPage = 1; rptEmpPage = 1;
+    rptItemPage = 1; rptEmpPage = 1; rptTimePage = 1;
     renderRptItemTable(rptItemData_cache);
     renderRptEmpTable(rptEmpData_cache);
+    renderRptTimeTable(rptTimeData_cache);
 
+    // Chart.js
     const chartTextColor = '#7a7570', chartGridColor = 'rgba(122,117,112,0.15)';
     new Chart(document.getElementById('chart-item-cost'), {
         type: 'bar',
@@ -5329,6 +6145,7 @@ const generateReport = () => {
         type: 'bar',
         data: { labels: prettyMonths, datasets: [
             { label: 'Hours', data: monthHoursData, backgroundColor: 'rgba(59,130,246,0.7)', borderRadius: 6, yAxisID: 'y', maxBarThickness: 40 },
+            { label: 'OT', data: monthOtData, backgroundColor: 'rgba(245,158,11,0.7)', borderRadius: 6, yAxisID: 'y', maxBarThickness: 40 },
             { label: 'Cost (RM)', data: monthCostData, type: 'line', borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', pointRadius: 4, pointBackgroundColor: '#ef4444', tension: 0.3, yAxisID: 'y1', fill: true }
         ] },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: chartTextColor, usePointStyle: true, padding: 16 } } },
@@ -5342,7 +6159,7 @@ const generateReport = () => {
     });
 };
 
-// ---------- Tables & Pagination ----------
+// ---------- Item Summary Table ----------
 const renderRptItemTable = data => {
     const totalPages = Math.ceil(data.length / rptItemPageSize) || 1;
     if (rptItemPage > totalPages) rptItemPage = totalPages;
@@ -5350,23 +6167,26 @@ const renderRptItemTable = data => {
     const start = (rptItemPage - 1) * rptItemPageSize;
     const page = data.slice(start, start + rptItemPageSize);
     const rows = data.length === 0
-        ? '<tr><td colspan="6" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>'
+        ? '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>'
         : page.map(r => `<tr>
             <td>${r.label}</td>
             <td>${r.cdHtml}</td>
+            <td style="text-align:right;font-family:var(--font-m)">${r.days}</td>
             <td style="text-align:right;font-family:var(--font-m)">${r.members}</td>
             <td style="text-align:right;font-family:var(--font-m)">${r.entries}</td>
             <td style="text-align:right;font-family:var(--font-m)">${formatDuration(r.hours)}</td>
+            <td style="text-align:right;font-family:var(--font-m);color:var(--warning)">${formatDuration(r.otMs)}</td>
             <td style="text-align:right;font-family:var(--font-m)">${fmtCost(r.cost)}</td>
         </tr>`).join('');
     document.getElementById('rpt-item-table-area').innerHTML = `
         <div class="table-wrap"><table>
-            <thead><tr><th>Category → ID/Name</th><th>Countdown</th><th style="text-align:right">Members</th><th style="text-align:right">Entries</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th></tr></thead>
+            <thead><tr><th>Category → ID/Name</th><th>Countdown</th><th style="text-align:right">Days</th><th style="text-align:right">Members</th><th style="text-align:right">Entries</th><th style="text-align:right">Duration</th><th style="text-align:right">OT</th><th style="text-align:right">Cost</th></tr></thead>
             <tbody>${rows}</tbody>
         </table></div>
         ${buildRptPagination(data.length, rptItemPage, rptItemPageSize, 'goRptItemPage', 'changeRptItemPageSize')}`;
 };
 
+// ---------- Employee Summary Table ----------
 const renderRptEmpTable = data => {
     const totalPages = Math.ceil(data.length / rptEmpPageSize) || 1;
     if (rptEmpPage > totalPages) rptEmpPage = totalPages;
@@ -5374,7 +6194,7 @@ const renderRptEmpTable = data => {
     const start = (rptEmpPage - 1) * rptEmpPageSize;
     const page = data.slice(start, start + rptEmpPageSize);
     const rows = data.length === 0
-        ? '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>'
+        ? '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>'
         : page.map(r => `<tr>
             <td>${r.name}</td>
             <td>${r.pos}</td>
@@ -5382,17 +6202,54 @@ const renderRptEmpTable = data => {
             <td style="text-align:right;font-family:var(--font-m)">${r.entries}</td>
             <td style="text-align:right;font-family:var(--font-m)">${r.days}</td>
             <td style="text-align:right;font-family:var(--font-m)">${formatDuration(r.ms)}</td>
+            <td style="text-align:right;font-family:var(--font-m);color:var(--warning)">${formatDuration(r.otMs)}</td>
+            <td style="text-align:right;font-family:var(--font-m);color:${r.util >= 100 ? 'var(--green)' : r.util >= 80 ? 'var(--warning)' : 'var(--danger)'}">${r.util.toFixed(1)}%</td>
             <td style="text-align:right;font-family:var(--font-m)">${fmtCost(r.cost)}</td>
             <td style="text-align:right;font-family:var(--font-m)">${r.rate}</td>
         </tr>`).join('');
     document.getElementById('rpt-emp-table-area').innerHTML = `
         <div class="table-wrap"><table>
-            <thead><tr><th>Employee</th><th>Position</th><th>Department</th><th style="text-align:right">Entries</th><th style="text-align:right">Days</th><th style="text-align:right">Hours</th><th style="text-align:right">Cost</th><th style="text-align:right">Rate</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Position</th><th>Department</th><th style="text-align:right">Entries</th><th style="text-align:right">Days</th><th style="text-align:right">Duration</th><th style="text-align:right">OT</th><th style="text-align:right">Util%</th><th style="text-align:right">Cost</th><th style="text-align:right">Rate</th></tr></thead>
             <tbody>${rows}</tbody>
         </table></div>
         ${buildRptPagination(data.length, rptEmpPage, rptEmpPageSize, 'goRptEmpPage', 'changeRptEmpPageSize')}`;
 };
 
+// ---------- Time Detail Table ----------
+const renderRptTimeTable = data => {
+    const totalPages = Math.ceil(data.length / rptTimePageSize) || 1;
+    if (rptTimePage > totalPages) rptTimePage = totalPages;
+    if (rptTimePage < 1) rptTimePage = 1;
+    const start = (rptTimePage - 1) * rptTimePageSize;
+    const page = data.slice(start, start + rptTimePageSize);
+    const rows = data.length === 0
+        ? '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>'
+        : page.map(r => {
+            const clockInStr = r.clockIn ? formatTime(r.clockIn) : '\u2014';
+            const clockOutStr = r.clockOut ? formatTime(r.clockOut) : '\u2014';
+            const dayColor = r.dayOfWeek === 'Sun' ? 'var(--danger)' : r.dayOfWeek === 'Sat' ? 'var(--warning)' : 'var(--main-text)';
+            return `<tr>
+                <td style="font-family:var(--font-m)">${formatDateDMY(r.date)}</td>
+                <td style="color:${dayColor};font-weight:600">${r.dayOfWeek}</td>
+                <td>${esc(r.name)}</td>
+                <td>${esc(r.dept)}</td>
+                <td>${r.project}</td>
+                <td style="font-family:var(--font-m)">${clockInStr}</td>
+                <td style="font-family:var(--font-m)">${clockOutStr}</td>
+                <td style="text-align:right;font-family:var(--font-m)">${formatDuration(r.hours * 3600000)}</td>
+                <td style="text-align:right;font-family:var(--font-m)">${fmtStdHours(r.standardHours)}</td>
+                <td style="text-align:right;font-family:var(--font-m);color:${r.ot > 0 ? 'var(--warning)' : 'var(--main-text3)'}">${r.ot > 0 ? formatDuration(r.ot * 3600000) : '\u2014'}</td>
+            </tr>`;
+        }).join('');
+    document.getElementById('rpt-time-table-area').innerHTML = `
+        <div class="table-wrap"><table>
+            <thead><tr><th>Date</th><th>Day</th><th>Employee</th><th>Department</th><th>Category → ID/Name</th><th>Clock In</th><th>Clock Out</th><th style="text-align:right">Duration</th><th style="text-align:right">Standard</th><th style="text-align:right">OT</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table></div>
+        ${buildRptPagination(data.length, rptTimePage, rptTimePageSize, 'goRptTimePage', 'changeRptTimePageSize')}`;
+};
+
+// ---------- Pagination ----------
 function buildRptPagination(totalItems, currentPage, pageSize, goFunc, changeFunc) {
     if (totalItems <= 0) return '';
     const totalPages = Math.ceil(totalItems / pageSize) || 1;
@@ -5437,6 +6294,641 @@ const goRptEmpPage = page => {
     renderRptEmpTable(rptEmpData_cache);
 };
 const changeRptEmpPageSize = size => { rptEmpPageSize = parseInt(size); rptEmpPage = 1; renderRptEmpTable(rptEmpData_cache); };
+const goRptTimePage = page => {
+    const totalPages = Math.ceil(rptTimeData_cache.length / rptTimePageSize) || 1;
+    rptTimePage = Math.max(1, Math.min(page, totalPages));
+    renderRptTimeTable(rptTimeData_cache);
+};
+const changeRptTimePageSize = size => { rptTimePageSize = parseInt(size); rptTimePage = 1; renderRptTimeTable(rptTimeData_cache); };
+
+const exportReportExcel = () => {
+    if (!rptItemData_cache.length && !rptEmpData_cache.length && !rptTimeData_cache.length) {
+        alert('No data to export');
+        return;
+    }
+
+    const strip = s => {
+        if (!s) return '';
+        return String(s).replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&mdash;/g, '\u2014').replace(/&laquo;/g, '\u00ab').replace(/&raquo;/g, '\u00bb').trim();
+    };
+
+    const rows = [];
+    const fromDate = document.getElementById('rpt-from')?.value || '';
+    const toDate = document.getElementById('rpt-to')?.value || '';
+    rows.push(['Report: ' + fromDate + ' to ' + toDate]);
+    rows.push([]);
+
+    // Section 1: Category Summary (no Util%)
+    rows.push(['CATEGORY SUMMARY']);
+    rows.push(['Category \u2192 ID/Name', 'Countdown', 'Days', 'Members', 'Entries', 'Duration', 'OT', 'Cost']);
+    if (rptItemData_cache.length) {
+        rptItemData_cache.forEach(r => {
+            rows.push([strip(r.label), strip(r.cdHtml), r.days, r.members, r.entries, formatDuration(r.hours), formatDuration(r.otMs), r.cost.toFixed(2)]);
+        });
+    } else { rows.push(['No data']); }
+
+    rows.push([]);
+    rows.push([]);
+
+    // Section 2: Employee Summary (with Util%)
+    rows.push(['EMPLOYEE SUMMARY']);
+    rows.push(['Employee', 'Position', 'Department', 'Entries', 'Days', 'Duration', 'OT', 'Util%', 'Cost', 'Rate']);
+    if (rptEmpData_cache.length) {
+        rptEmpData_cache.forEach(r => {
+            rows.push([strip(r.name), strip(r.pos), strip(r.dept), r.entries, r.days, formatDuration(r.ms), formatDuration(r.otMs), r.util.toFixed(1) + '%', r.cost.toFixed(2), r.rate]);
+        });
+    } else { rows.push(['No data']); }
+
+    rows.push([]);
+    rows.push([]);
+
+    // Section 3: Time Detail
+    rows.push(['TIME DETAIL']);
+    rows.push(['Date', 'Day', 'Employee', 'Department', 'Category \u2192 ID/Name', 'Clock In', 'Clock Out', 'Duration', 'Standard', 'OT']);
+    if (rptTimeData_cache.length) {
+        rptTimeData_cache.forEach(r => {
+            rows.push([
+                r.date,
+                r.dayOfWeek,
+                r.name,
+                r.dept,
+                r.project,
+                r.clockIn ? formatTime(r.clockIn) : '\u2014',
+                r.clockOut ? formatTime(r.clockOut) : '\u2014',
+                formatDuration(r.hours * 3600000),
+                r.standardHours > 0 ? r.standardHours.toFixed(1) + 'h' : '\u2014',
+                r.ot > 0 ? formatDuration(r.ot * 3600000) : '\u2014'
+            ]);
+        });
+    } else { rows.push(['No data']); }
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch:35},{wch:18},{wch:18},{wch:10},{wch:10},{wch:30},{wch:10},{wch:10},{wch:12},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Report');
+    XLSX.writeFile(wb, 'report_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+};
+
+
+/* ==========================================================
+   SECTION: ADMIN — FILES (Google Drive Upload)
+   ========================================================== */
+let fileCurrentPage = 1, filePageSize = 10, fileFilteredData = [];
+var _adminFileInitialLoad = false;
+let _selectedFile = null;
+
+const FILE_CATEGORIES = ['General', 'Report', 'Invoice', 'Drawing', 'Photo', 'Document'];
+
+const getFileTypeIcon = (filename) => {
+    if (!filename) return '📄';
+    const ext = filename.split('.').pop().toLowerCase();
+    if (['pdf'].includes(ext)) return '📕';
+    if (['jpg','jpeg','png','gif','webp','bmp','svg'].includes(ext)) return '🖼️';
+    if (['doc','docx'].includes(ext)) return '📘';
+    if (['xls','xlsx','csv'].includes(ext)) return '📗';
+    if (['ppt','pptx'].includes(ext)) return '📙';
+    if (['mp4','avi','mov','wmv'].includes(ext)) return '🎬';
+    if (['zip','rar','7z'].includes(ext)) return '📦';
+    return '📄';
+};
+
+const getFileTypeBadge = (type) => {
+    if (!type) return '';
+    const t = type.toLowerCase();
+    let color = 'var(--main-text3)', bg = 'var(--main-border)', label = 'FILE';
+    if (t.includes('pdf')) { color = '#dc2626'; bg = 'rgba(220,38,38,.1)'; label = 'PDF'; }
+    else if (t.includes('image')) { color = '#2563eb'; bg = 'rgba(37,99,235,.1)'; label = 'IMG'; }
+    else if (t.includes('sheet') || t.includes('excel') || t.includes('csv')) { color = '#16a34a'; bg = 'rgba(22,163,74,.1)'; label = 'XLS'; }
+    else if (t.includes('word') || t.includes('document')) { color = '#2563eb'; bg = 'rgba(37,99,235,.1)'; label = 'DOC'; }
+    else if (t.includes('presentation') || t.includes('powerpoint')) { color = '#ea580c'; bg = 'rgba(234,88,12,.1)'; label = 'PPT'; }
+    else if (t.includes('zip') || t.includes('rar') || t.includes('7z')) { color = '#8b5cf6'; bg = 'rgba(139,92,246,.1)'; label = 'ZIP'; }
+    else if (t.includes('text') || t.includes('plain')) { color = 'var(--main-text3)'; bg = 'var(--main-border)'; label = 'TXT'; }
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:600;color:${color};background:${bg}">${label}</span>`;
+};
+
+// ---------- main render ----------
+let adminFileRenderLock = false;
+const renderAdminFiles = () => {
+    if (adminFileRenderLock) return;
+    adminFileRenderLock = true;
+    fileCurrentPage = 1; filePageSize = 10;
+
+    const driveOpts = (DB.driveSettings||[]).map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+
+    document.getElementById('admin-files').innerHTML = `
+    <div class="app-header"><h2>Files</h2><div class="header-sub">Upload and manage files on Google Drive</div></div>
+    <div class="app-body">
+      <div class="pt-anim-filter filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <input class="input" type="text" placeholder="Search files..." id="file-search" oninput="applyFileFilter()" style="max-width:250px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Drive Folder</label>
+            <select class="input" id="file-drive-filter" onchange="applyFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
+              <option value="">All Folders</option>
+              ${driveOpts}
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="resetFileFilter()">Reset</button>
+            ${currentUser.role !== 'viewer' ? '<button class="btn btn-green" onclick="showUploadFile()">+ Upload File</button>' : ''}
+            ${currentUser.role === 'admin' ? '<button class="btn btn-ghost btn-sm" onclick="showDriveSettings()">⚙ Drive Settings</button>' : ''}
+          </div>
+        </div>
+      </div>
+      <div class="pt-anim-head"><div class="stats-grid" id="file-stats" style="margin:0"></div></div>
+      <div class="pt-anim-table">
+        <div class="section-head"><h2>All Files</h2></div>
+        <div id="files-table-area"></div>
+      </div>
+    </div>`;
+
+    setTimeout(() => { _adminFileInitialLoad = true; applyFileFilter(); _adminFileInitialLoad = false; }, 250);
+    setTimeout(() => {
+        const view = document.getElementById('admin-files');
+        view.querySelectorAll('.pt-anim-filter,.pt-anim-head,.pt-anim-table').forEach(el => el.classList.remove('pt-anim-filter','pt-anim-head','pt-anim-table'));
+    }, 650);
+    setTimeout(() => { adminFileRenderLock = false; }, 850);
+};
+
+const resetFileFilter = () => {
+    document.getElementById('file-search').value = '';
+    document.getElementById('file-drive-filter').value = '';
+    fileCurrentPage = 1;
+    applyFileFilter();
+};
+
+const applyFileFilter = () => {
+    const search = (document.getElementById('file-search')?.value || '').toLowerCase();
+    const driveFilter = document.getElementById('file-drive-filter')?.value || '';
+    const driveNameMap = {};
+    (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name.toLowerCase(); });
+
+    let filtered = (DB.files || []).filter(f => {
+        if (driveFilter && String(f.driveSettingId) !== driveFilter) return false;
+        if (search) {
+            const driveName = f.driveSettingId ? (driveNameMap[f.driveSettingId] || '') : '';
+            const dateFormatted = f.createdAt ? formatDateDMY(f.createdAt.slice(0,10)).toLowerCase() : '';
+            const dateISO = f.createdAt ? f.createdAt.slice(0,10) : '';
+            const haystack = [f.name, f.uploaderName, f.type, f.remark, driveName, dateFormatted, dateISO].map(v => (v||'').toLowerCase()).join(' ');
+            if (haystack.indexOf(search) === -1) return false;
+        }
+        return true;
+    });
+    fileFilteredData = filtered;
+
+    const totalSize = filtered.reduce((s, f) => s + (f.size || 0), 0);
+    const ac = _adminFileInitialLoad ? ' stat-anim' : '';
+    document.getElementById('file-stats').innerHTML = `
+        <div class="stats-grid">
+            <div class="stat-card${ac}"><div class="stat-label">Total Files</div><div class="stat-value">${filtered.length}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Total Size</div><div class="stat-value">${formatFileSize(totalSize)}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Uploaders</div><div class="stat-value">${new Set(filtered.map(f=>f.uploadedBy).filter(Boolean)).size}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Drive Folders</div><div class="stat-value">${new Set(filtered.map(f=>f.driveSettingId).filter(Boolean)).size}</div></div>
+        </div>`;
+    fileCurrentPage = 1;
+    renderFileTable();
+};
+
+const renderFileTable = () => {
+    const filtered = fileFilteredData;
+    const totalPages = Math.ceil(filtered.length / filePageSize) || 1;
+    if (fileCurrentPage > totalPages) fileCurrentPage = totalPages;
+    if (fileCurrentPage < 1) fileCurrentPage = 1;
+    const start = (fileCurrentPage - 1) * filePageSize;
+    const page = filtered.slice(start, start + filePageSize);
+    const driveNameMap = {};
+    (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name; });
+
+    const rows = filtered.length === 0
+        ? '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No files found</td></tr>'
+        : page.map((f, idx) => {
+            const canDelete = currentUser.role !== 'viewer';
+            const driveName = f.driveSettingId ? (driveNameMap[f.driveSettingId] || '—') : '—';
+            const actions = `<div class="actions-cell">
+                <button class="btn-icon" title="Preview" onclick="previewFile(${f.id})">&#128065;</button>
+                <button class="btn-icon" title="Open in Drive" onclick="window.open('${esc(f.url)}','_blank')">&#8599;</button>
+                ${canDelete ? `<button class="btn-icon danger" title="Delete" onclick="confirmDeleteFile(${f.id})">&#10005;</button>` : ''}
+            </div>`;
+            return `<tr>
+                <td style="font-family:var(--font-m);color:var(--main-text3)">${start+idx+1}</td>
+                <td>${getFileTypeIcon(f.name)} <strong>${esc(f.name)}</strong></td>
+                <td>${getFileTypeBadge(f.type)}</td>
+                <td style="text-align:right;font-family:var(--font-m)">${formatFileSize(f.size)}</td>
+                <td><span style="font-size:.82rem">${esc(driveName)}</span></td>
+                <td>${esc(f.remark||'—')}</td>
+                <td>${esc(f.uploaderName||'—')}</td>
+                <td style="font-family:var(--font-m)">${formatDateDMY(f.createdAt?f.createdAt.slice(0,10):null)}</td>
+                <td>${actions}</td>
+            </tr>`;
+        }).join('');
+
+    let pagHtml = '';
+    if (filtered.length > 0) {
+        const showTo = Math.min(start + filePageSize, filtered.length);
+        const maxV=5, stP=Math.max(1,fileCurrentPage-Math.floor(maxV/2)), enP=Math.min(totalPages,stP+maxV-1);
+        const adjSt = enP-stP<maxV-1?Math.max(1,enP-maxV+1):stP;
+        let btns = `<button onclick="goFilePage(1)" ${fileCurrentPage===1?'disabled':''}>&laquo;</button>
+                    <button onclick="goFilePage(${fileCurrentPage-1})" ${fileCurrentPage===1?'disabled':''}>&lsaquo;</button>`;
+        for(let p=adjSt;p<=enP;p++) btns += `<button onclick="goFilePage(${p})" class="${p===fileCurrentPage?'active':''}">${p}</button>`;
+        btns += `<button onclick="goFilePage(${fileCurrentPage+1})" ${fileCurrentPage===totalPages?'disabled':''}>&rsaquo;</button>
+                 <button onclick="goFilePage(${totalPages})" ${fileCurrentPage===totalPages?'disabled':''}>&raquo;</button>`;
+        pagHtml = `<div class="pagination">
+            <div class="pagination-info">Showing ${start+1} to ${showTo} of ${filtered.length} files</div>
+            <div style="display:flex;align-items:center;gap:20px">
+                <div class="pagination-size"><label>Show</label>
+                    <select onchange="changeFilePageSize(this.value)">
+                        <option value="10"${filePageSize===10?' selected':''}>10</option>
+                        <option value="25"${filePageSize===25?' selected':''}>25</option>
+                        <option value="50"${filePageSize===50?' selected':''}>50</option>
+                    </select></div>
+                <div class="pagination-controls">${btns}</div>
+            </div></div>`;
+    }
+    document.getElementById('files-table-area').innerHTML = `
+        <div class="table-wrap"><table>
+            <thead><tr><th style="width:50px">No</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:120px">Actions</th></tr></thead>            <tbody>${rows}</tbody>
+        </table></div>${pagHtml}`;
+};
+
+const goFilePage = p => { const tp=Math.ceil(fileFilteredData.length/filePageSize)||1; fileCurrentPage=Math.max(1,Math.min(p,tp)); renderFileTable(); };
+const changeFilePageSize = s => { filePageSize=parseInt(s); fileCurrentPage=1; renderFileTable(); };
+
+// ---------- Upload ----------
+const showUploadFile = () => {
+    const drives = DB.driveSettings || [];
+    const config = DB.appConfig || {};
+    if (!drives.length) {
+        showModal(`<h3>No Drive Configured</h3>
+            <p style="color:var(--main-text2);line-height:1.6">Please set up a Google Drive folder first.</p>
+            <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button>
+            ${currentUser.role==='admin'?'<button class="btn btn-accent" onclick="hideModal();showDriveSettings()">Go to Settings</button>':''}</div>`);
+        return;
+    }
+    if (!config.drive_script_url) {
+        showModal(`<h3>Drive Not Configured</h3>
+            <p style="color:var(--main-text2)">Google Drive script URL not set. Configure in Drive Settings.</p>
+            <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button>
+            ${currentUser.role==='admin'?'<button class="btn btn-accent" onclick="hideModal();showDriveSettings()">Go to Settings</button>':''}</div>`);
+        return;
+    }
+    const defaultDrive = drives.find(d => d.isDefault) || drives[0];
+    const driveOpts = drives.map(d => `<option value="${d.id}" ${d.id===defaultDrive.id?'selected':''}>${esc(d.name)}</option>`).join('');
+
+    showModal(`
+    <h3>Upload File</h3>
+    <div class="field">
+        <label>Select File</label>
+        <div id="upload-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:30px;text-align:center;cursor:pointer;transition:border-color .2s">
+            <div id="upload-file-info" style="color:var(--main-text3)">Click or drag file here</div>
+            <input type="file" id="upload-file-input" style="display:none" onchange="handleFileSelect(this)">
+        </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+        <div class="field"><label>Save to Drive Folder</label><select class="input" id="upload-drive">${driveOpts}</select></div>
+        <div class="field"><label>Remark</label><input class="input" id="upload-remark" placeholder="Optional remark"></div>
+    </div>
+    <div id="upload-progress" style="display:none;margin-top:12px">
+        <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
+            <div id="upload-progress-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s ease;border-radius:4px"></div>
+        </div>
+        <div id="upload-progress-text" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Uploading...</div>
+    </div>
+    <p class="auth-error" id="upload-error"></p>
+    <div class="btns"><button class="btn btn-ghost" onclick="_selectedFile=null;hideModal()">Cancel</button><button class="btn btn-accent" id="upload-btn" onclick="doUploadFile()">Upload</button></div>`);
+
+    setTimeout(() => {
+        const dz = document.getElementById('upload-drop-zone');
+        const fi = document.getElementById('upload-file-input');
+        dz.onclick = () => fi.click();
+        dz.ondragover = e => { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; };
+        dz.ondragleave = () => { dz.style.borderColor = 'var(--main-border)'; };
+        dz.ondrop = e => { e.preventDefault(); dz.style.borderColor = 'var(--main-border)'; if(e.dataTransfer.files.length){fi.files=e.dataTransfer.files;handleFileSelect(fi);} };
+    }, 100);
+};
+
+const handleFileSelect = input => {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+        document.getElementById('upload-error').textContent = 'File too large. Max 20MB.';
+        input.value = '';
+        _selectedFile = null;
+        document.getElementById('upload-file-info').innerHTML = '<div style="color:var(--main-text3)">Click or drag file here (Max 20MB)</div>';
+        return;
+    }
+    document.getElementById('upload-error').textContent = '';
+    _selectedFile = file;
+    document.getElementById('upload-file-info').innerHTML =
+        `<div style="font-size:1.1rem;font-weight:600;color:var(--main-text)">${getFileTypeIcon(file.name)} ${esc(file.name)}</div>
+         <div style="font-size:.82rem;color:var(--main-text3);margin-top:4px">${formatFileSize(file.size)} · ${file.type||'Unknown'}</div>`;
+};
+
+const doUploadFile = async () => {
+    const errEl = document.getElementById('upload-error');
+    if (!_selectedFile) { errEl.textContent = 'Select a file first'; return; }
+
+    const driveId = parseInt(document.getElementById('upload-drive').value);
+    const drive = (DB.driveSettings||[]).find(d => d.id === driveId);
+    if (!drive) { errEl.textContent = 'Select a drive folder'; return; }
+
+    const btn = document.getElementById('upload-btn');
+    const progress = document.getElementById('upload-progress');
+    const bar = document.getElementById('upload-progress-bar');
+    const txt = document.getElementById('upload-progress-text');
+
+    btn.disabled = true; btn.textContent = 'Uploading...';
+    progress.style.display = 'block'; bar.style.width = '30%';
+    txt.textContent = 'Reading file...'; errEl.textContent = '';
+
+    try {
+        const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(_selectedFile);
+        });
+
+        bar.style.width = '50%'; txt.textContent = 'Uploading to Drive...';
+
+        const result = await api('/upload-to-drive', {
+            method: 'POST',
+            body: {
+                fileBase64: base64,
+                fileName: _selectedFile.name,
+                mimeType: _selectedFile.type || 'application/octet-stream',
+                folderId: drive.folderId
+            }
+        });
+
+        if (result.error) throw new Error(result.error);
+
+        bar.style.width = '80%'; txt.textContent = 'Saving record...';
+
+        await api('/files', {
+            method: 'POST',
+            body: {
+                name: _selectedFile.name,
+                type: _selectedFile.type || 'application/octet-stream',
+                size: _selectedFile.size,
+                url: result.fileUrl,
+                driveFileId: result.fileId,
+                driveSettingId: driveId,
+                remark: document.getElementById('upload-remark').value.trim()
+            }
+        });
+
+        bar.style.width = '100%'; txt.textContent = 'Upload complete!';
+        _selectedFile = null;
+        await loadDB();
+        setTimeout(() => { hideModal(); applyFileFilter(); }, 800);
+    } catch (e) {
+        errEl.textContent = 'Upload failed: ' + e.message;
+        btn.disabled = false; btn.textContent = 'Upload';
+        progress.style.display = 'none';
+    }
+};
+
+// ---------- Preview ----------
+const previewFile = id => {
+    const file = (DB.files||[]).find(f => f.id === id);
+    if (!file || !file.driveFileId) return;
+    const driveNameMap = {};
+    (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name; });
+    const previewUrl = `https://drive.google.com/file/d/${file.driveFileId}/preview`;
+    showModal(`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 style="margin:0">${getFileTypeIcon(file.name)} ${esc(file.name)}</h3>
+        <button class="btn btn-ghost btn-sm" onclick="window.open('${esc(file.url)}','_blank')">&#8599; Open in Drive</button>
+    </div>
+    <iframe src="${previewUrl}" style="width:100%;height:65vh;border:none;border-radius:var(--radius)"></iframe>
+    <div style="margin-top:8px;display:flex;gap:16px;font-size:.78rem;color:var(--main-text3)">
+        <span>Size: ${formatFileSize(file.size)}</span>
+        <span>Drive Folder: ${esc(driveNameMap[file.driveSettingId] || '—')}</span>
+        <span>Remark: ${esc(file.remark || '—')}</span>
+        <span>By: ${esc(file.uploaderName||'—')}</span>
+        <span>Date: ${formatDateDMY(file.createdAt?file.createdAt.slice(0,10):null)}</span>
+    </div>`);
+};
+
+// ---------- Delete ----------
+const confirmDeleteFile = id => {
+    const file = (DB.files||[]).find(f => f.id === id);
+    if (!file) return;
+    showModal(`<h3>Delete File</h3>
+        <p style="color:var(--main-text2);line-height:1.6">Delete <strong>${esc(file.name)}</strong>?<br>
+        <span style="font-size:.82rem;color:var(--main-text3)">File will also be deleted from Google Drive.</span></p>
+        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doDeleteFile(${id})">Delete</button></div>`);
+};
+
+const doDeleteFile = async id => {
+    await api('/files/'+id, {method:'DELETE'});
+    hideModal(); await loadDB(); applyFileFilter();
+};
+
+// ---------- Drive Settings ----------
+let _drivePage = 1, _drivePageSize = 5;
+let _pendingDriveConfig = null;
+
+const capturePendingDriveConfig = () => {
+    const urlEl = document.getElementById('cfg-script-url');
+    const tokenEl = document.getElementById('cfg-token');
+    if (urlEl || tokenEl) {
+        _pendingDriveConfig = {
+            scriptUrl: urlEl?.value || '',
+            token: tokenEl?.value || ''
+        };
+    }
+};
+
+const showDriveSettings = () => {
+    const drives = DB.driveSettings || [];
+    const config = DB.appConfig || {};
+
+    // 优先用临时值，否则用 DB 值
+    const scriptUrl = _pendingDriveConfig ? _pendingDriveConfig.scriptUrl : (config.drive_script_url || '');
+    const token = _pendingDriveConfig ? _pendingDriveConfig.token : (config.drive_token || '');
+    _pendingDriveConfig = null;
+
+    // 不重置 _drivePage，让子页面返回时保留分页位置
+
+    const driveOpts = (DB.driveSettings||[]).map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+
+    showModal(`
+    <h3>Drive Settings</h3>
+    <div class="field" style="margin-bottom:12px">
+        <label>Apps Script URL</label>
+        <input class="input" id="cfg-script-url" value="${esc(scriptUrl)}" placeholder="https://script.google.com/macros/s/.../exec">
+    </div>
+    <div class="field" style="margin-bottom:8px">
+        <label>Secret Token</label>
+        <input class="input" id="cfg-token" value="${esc(token)}" placeholder="Your secret token">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
+        <button class="btn btn-accent btn-sm" onclick="saveDriveConfig()">Save Config</button>
+        <span id="cfg-save-status" style="font-size:.8rem;color:var(--main-text3)"></span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h4 style="margin:0">Drive Folders</h4>
+        <button class="btn btn-green btn-sm" onclick="showAddDriveSetting()">+ Add Folder</button>
+    </div>
+    <div id="drive-table-area"></div>
+    <div class="btns" style="margin-top:16px"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>`);
+
+    renderDriveTable();
+};
+
+const renderDriveTable = () => {
+    const drives = DB.driveSettings || [];
+    const totalPages = Math.ceil(drives.length / _drivePageSize) || 1;
+    if (_drivePage > totalPages) _drivePage = totalPages;
+    if (_drivePage < 1) _drivePage = 1;
+    const start = (_drivePage - 1) * _drivePageSize;
+    const page = drives.slice(start, start + _drivePageSize);
+
+    let rows = '';
+    if (drives.length === 0) {
+        rows = '<tr><td colspan="4" style="text-align:center;color:var(--main-text3);padding:20px">No drives configured</td></tr>';
+    } else {
+        rows = page.map(d => `<tr>
+            <td style="font-weight:500">${esc(d.name)}</td>
+            <td style="font-family:var(--font-m);font-size:.78rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(d.folderId)}">${esc(d.folderId)}</td>
+            <td>${d.isDefault ? '<span style="color:var(--green);font-weight:600">Default</span>' : ''}</td>
+            <td><div class="actions-cell">
+                <button class="btn-icon" onclick="showEditDriveSetting(${d.id})">&#9998;</button>
+                <button class="btn-icon danger" onclick="confirmDeleteDriveSetting(${d.id})">&#10005;</button>
+            </div></td>
+        </tr>`).join('');
+    }
+
+    let pagHtml = '';
+    if (drives.length > 0) {
+        const showTo = Math.min(start + _drivePageSize, drives.length);
+        const maxV = 5, stP = Math.max(1, _drivePage - Math.floor(maxV/2)), enP = Math.min(totalPages, stP + maxV - 1);
+        const adjSt = enP - stP < maxV - 1 ? Math.max(1, enP - maxV + 1) : stP;
+        let btns = `<button onclick="goDrivePage(1)" ${_drivePage===1?'disabled':''}>&laquo;</button>
+                     <button onclick="goDrivePage(${_drivePage-1})" ${_drivePage===1?'disabled':''}>&lsaquo;</button>`;
+        for (let p = adjSt; p <= enP; p++) btns += `<button onclick="goDrivePage(${p})" class="${p===_drivePage?'active':''}">${p}</button>`;
+        btns += `<button onclick="goDrivePage(${_drivePage+1})" ${_drivePage===totalPages?'disabled':''}>&rsaquo;</button>
+                  <button onclick="goDrivePage(${totalPages})" ${_drivePage===totalPages?'disabled':''}>&raquo;</button>`;
+        pagHtml = `<div class="pagination" style="margin-top:8px">
+            <div class="pagination-info">Showing ${start+1} to ${showTo} of ${drives.length}</div>
+            <div style="display:flex;align-items:center;gap:16px">
+                <div class="pagination-size"><label>Show</label>
+                    <select onchange="changeDrivePageSize(this.value)">
+                        <option value="3"${_drivePageSize===3?' selected':''}>3</option>
+                        <option value="5"${_drivePageSize===5?' selected':''}>5</option>
+                        <option value="10"${_drivePageSize===10?' selected':''}>10</option>
+                        <option value="25"${_drivePageSize===25?' selected':''}>25</option>
+                    </select></div>
+                <div class="pagination-controls">${btns}</div>
+            </div></div>`;
+    }
+
+    document.getElementById('drive-table-area').innerHTML = `
+        <div class="table-wrap"><table>
+            <thead><tr><th>Name</th><th>Folder ID</th><th style="width:80px">Default</th><th style="width:80px">Actions</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table></div>
+        ${pagHtml}`;
+};
+
+const goDrivePage = page => {
+    const totalPages = Math.ceil((DB.driveSettings||[]).length / _drivePageSize) || 1;
+    _drivePage = Math.max(1, Math.min(page, totalPages));
+    renderDriveTable();
+};
+
+const changeDrivePageSize = size => {
+    _drivePageSize = parseInt(size);
+    _drivePage = 1;
+    renderDriveTable();
+};
+
+const saveDriveConfig = async () => {
+    const statusEl = document.getElementById('cfg-save-status');
+    try {
+        await api('/app-config', { method: 'PUT', body: {
+            drive_script_url: document.getElementById('cfg-script-url').value.trim(),
+            drive_token: document.getElementById('cfg-token').value.trim()
+        }});
+        await loadDB();
+        _pendingDriveConfig = null;
+        if (statusEl) {
+            statusEl.textContent = 'Saved!';
+            statusEl.style.color = 'var(--green)';
+            setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 2500);
+        }
+    } catch (e) {
+        if (statusEl) {
+            statusEl.textContent = 'Failed: ' + e.message;
+            statusEl.style.color = 'var(--danger)';
+        }
+    }
+};
+
+const showAddDriveSetting = () => {
+    capturePendingDriveConfig();
+    hideModal();
+    setTimeout(() => showModal(`
+        <h3>Add Drive Folder</h3>
+        <div class="field"><label>Name</label><input class="input" id="drive-name" placeholder="e.g. Main Drive"></div>
+        <div class="field"><label>Google Drive Folder ID</label><input class="input" id="drive-folder-id" placeholder="Paste folder ID here"></div>
+        <div class="field"><label><input type="checkbox" id="drive-default"> Set as default</label></div>
+        <div class="btns"><button class="btn btn-ghost" onclick="hideModal();setTimeout(showDriveSettings,200)">Cancel</button><button class="btn btn-accent" onclick="doAddDriveSetting()">Add</button></div>`), 200);
+};
+
+const doAddDriveSetting = async () => {
+    const name = document.getElementById('drive-name').value.trim();
+    const folderId = document.getElementById('drive-folder-id').value.trim();
+    const isDefault = document.getElementById('drive-default').checked;
+    if (!name || !folderId) return;
+    await api('/drive-settings', { method: 'POST', body: { name, folderId, isDefault } });
+    await loadDB();
+    hideModal();
+    setTimeout(() => showDriveSettings(), 200);
+};
+
+const showEditDriveSetting = id => {
+    const d = (DB.driveSettings||[]).find(x => x.id === id);
+    if (!d) return;
+    capturePendingDriveConfig();
+    hideModal();
+    setTimeout(() => showModal(`
+        <h3>Edit Drive Folder</h3>
+        <div class="field"><label>Name</label><input class="input" id="drive-name" value="${esc(d.name)}"></div>
+        <div class="field"><label>Google Drive Folder ID</label><input class="input" id="drive-folder-id" value="${esc(d.folderId)}"></div>
+        <div class="field"><label><input type="checkbox" id="drive-default" ${d.isDefault?'checked':''}> Set as default</label></div>
+        <div class="btns"><button class="btn btn-ghost" onclick="hideModal();setTimeout(showDriveSettings,200)">Cancel</button><button class="btn btn-accent" onclick="doEditDriveSetting(${id})">Save</button></div>`), 200);
+};
+
+const doEditDriveSetting = async id => {
+    const name = document.getElementById('drive-name').value.trim();
+    const folderId = document.getElementById('drive-folder-id').value.trim();
+    const isDefault = document.getElementById('drive-default').checked;
+    if (!name || !folderId) return;
+    await api('/drive-settings/' + id, { method: 'PUT', body: { name, folderId, isDefault } });
+    await loadDB();
+    hideModal();
+    setTimeout(() => showDriveSettings(), 200);
+};
+
+const confirmDeleteDriveSetting = id => {
+    const d = (DB.driveSettings||[]).find(x => x.id === id);
+    if (!d) return;
+    capturePendingDriveConfig();
+    hideModal();
+    setTimeout(() => showModal(`<h3>Delete Drive Folder</h3>
+        <p style="color:var(--main-text2)">Delete <strong>${esc(d.name)}</strong>?</p>
+        <div class="btns"><button class="btn btn-ghost" onclick="hideModal();setTimeout(showDriveSettings,200)">Cancel</button><button class="btn btn-danger" onclick="doDeleteDriveSetting(${id})">Delete</button></div>`), 200);
+};
+
+const doDeleteDriveSetting = async id => {
+    await api('/drive-settings/' + id, { method: 'DELETE' });
+    await loadDB();
+    hideModal();
+    setTimeout(() => showDriveSettings(), 200);
+};
 
 
 /*BOM Panel Material Tracking Part */
@@ -7328,7 +8820,7 @@ const ptDoDeleteUser = (id) => {
 // ============================================================
 (function() {
     let logoutTimer;
-    const TIMEOUT = 45 * 60 * 1000; // 45 minutes
+    const TIMEOUT = 45 * 60 * 1000;
 
     function resetTimer() {
         clearTimeout(logoutTimer);
@@ -7345,30 +8837,49 @@ const ptDoDeleteUser = (id) => {
         localStorage.removeItem('multitrade_emp_page');
         localStorage.removeItem('multitrade_pt_page');
 
-        // 关闭所有 modal 和 drawer
         document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
         document.querySelectorAll('.pt-drawer').forEach(d => d.classList.remove('active'));
         document.querySelectorAll('.pt-drawer-overlay').forEach(d => d.classList.remove('active'));
         document.querySelectorAll('.sidebar').forEach(s => s.classList.remove('open'));
         document.querySelectorAll('.mobile-overlay').forEach(o => o.classList.remove('active'));
 
-        // 清除 modal 内容（避免 PT 的静态 modal 残留）
         const modalBox = document.getElementById('modal-box');
         if (modalBox) modalBox.innerHTML = '';
 
         document.getElementById('login-pass').value = '';
 
-        alert('Session expired due to 45 minutes of inactivity. Please sign in again.');
+        const goToLogin = () => {
+            hideModal();
+            document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
+            document.getElementById('login-page').classList.add('active');
+            document.getElementById('login-pass').focus();
+        };
 
-        document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
-        document.getElementById('login-page').classList.add('active');
+        showModal(`
+            <div style="text-align:center;padding:20px 0">
+                <div style="font-size:2.5rem;margin-bottom:16px">&#128274;</div>
+                <h3 style="margin-bottom:8px">Session Expired</h3>
+                <p style="color:var(--main-text2);line-height:1.6;margin-bottom:20px">You have been inactive for 45 minutes.<br>Please sign in again.</p>
+                <button class="btn btn-accent" id="session-expired-btn">Sign In</button>
+            </div>`);
+
+        // 点 Sign In 按钮
+        document.getElementById('session-expired-btn').onclick = goToLogin;
+
+        // 点 overlay 外部也跳转
+        const overlay = document.getElementById('modal-overlay');
+        if (overlay) {
+            overlay.onclick = e => {
+                if (e.target === overlay) goToLogin();
+            };
+        }
+
+        // 兜底 5 秒自动跳转
+        setTimeout(goToLogin, 5000);
     }
 
-    // 监听所有用户操作
     const events = ['mousemove', 'mousedown', 'keypress', 'scroll', 'touchstart', 'click'];
     events.forEach(e => document.addEventListener(e, resetTimer, { passive: true }));
-
-    // 初始化
     resetTimer();
 })();
 

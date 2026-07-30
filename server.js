@@ -6,7 +6,7 @@ const crypto = require('crypto');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
 app.use(express.static(path.join(__dirname)));
 
 // ========================================
@@ -496,16 +496,25 @@ app.delete('/api/positions/:id', requireEdit, async (req, res) => {
 app.get('/api/departments', requireAuth, async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM departments ORDER BY id');
-        res.json(result.rows.map(r => ({ id: r.id, name: r.name })));
+        res.json(result.rows.map(r => ({
+            id: r.id,
+            name: r.name,
+            workDaysPerWeek: r.work_days_per_week,
+            normalDayHours: parseFloat(r.normal_day_hours),
+            saturdayHours: parseFloat(r.saturday_hours)
+        })));
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
 app.post('/api/departments', requireEdit, async (req, res) => {
-    const { name } = req.body;
+    const { name, work_days_per_week, normal_day_hours, saturday_hours } = req.body;
     try {
-        const result = await pool.query('INSERT INTO departments (name) VALUES ($1) RETURNING id', [name]);
+        const result = await pool.query(
+            'INSERT INTO departments (name, work_days_per_week, normal_day_hours, saturday_hours) VALUES ($1, $2, $3, $4) RETURNING id',
+            [name, work_days_per_week ?? 6, normal_day_hours ?? 9, saturday_hours ?? 5]
+        );
         res.json({ id: result.rows[0].id, name });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -513,9 +522,12 @@ app.post('/api/departments', requireEdit, async (req, res) => {
 });
 
 app.put('/api/departments/:id', requireEdit, async (req, res) => {
-    const { name } = req.body;
+    const { name, work_days_per_week, normal_day_hours, saturday_hours } = req.body;
     try {
-        await pool.query('UPDATE departments SET name = $1 WHERE id = $2', [name, req.params.id]);
+        await pool.query(
+            'UPDATE departments SET name = $1, work_days_per_week = $2, normal_day_hours = $3, saturday_hours = $4 WHERE id = $5',
+            [name, work_days_per_week ?? 6, normal_day_hours ?? 9, saturday_hours ?? 5, req.params.id]
+        );
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -1268,6 +1280,207 @@ app.post('/api/import/projects', requireEditOrPic, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ========================================
+// APP CONFIG
+// ========================================
+app.get('/api/app-config', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM app_config');
+        const config = {};
+        result.rows.forEach(r => { config[r.key] = r.value; });
+        res.json(config);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/app-config', requireEdit, async (req, res) => {
+    const entries = Object.entries(req.body);
+    try {
+        for (const [key, value] of entries) {
+            await pool.query(
+                'INSERT INTO app_config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2',
+                [key, value]
+            );
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ========================================
+// DRIVE SETTINGS
+// ========================================
+app.get('/api/drive-settings', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM drive_settings ORDER BY is_default DESC, id');
+        res.json(result.rows.map(r => ({
+            id: r.id, name: r.name, folderId: r.folder_id, isDefault: r.is_default
+        })));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/drive-settings', requireEdit, async (req, res) => {
+    const { name, folderId, isDefault } = req.body;
+    try {
+        if (isDefault) await pool.query('UPDATE drive_settings SET is_default = false');
+        const result = await pool.query(
+            'INSERT INTO drive_settings (name, folder_id, is_default) VALUES ($1, $2, $3) RETURNING id',
+            [name, folderId, isDefault || false]
+        );
+        res.json({ id: result.rows[0].id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/drive-settings/:id', requireEdit, async (req, res) => {
+    const { name, folderId, isDefault } = req.body;
+    try {
+        if (isDefault) await pool.query('UPDATE drive_settings SET is_default = false');
+        await pool.query(
+            'UPDATE drive_settings SET name = $1, folder_id = $2, is_default = $3 WHERE id = $4',
+            [name, folderId, isDefault || false, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/drive-settings/:id', requireEdit, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM drive_settings WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ========================================
+// FILES
+// ========================================
+app.get('/api/files', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT f.*, COALESCE(m.name, u.username, 'Unknown') as uploader_name
+            FROM files f
+            LEFT JOIN members m ON f.uploaded_by = m.id
+            LEFT JOIN users u ON f.uploaded_by = u.id
+            ORDER BY f.created_at DESC
+        `);
+        res.json(result.rows.map(r => ({
+            id: r.id, name: r.name, type: r.type, size: parseInt(r.size || 0),
+            url: r.url, driveFileId: r.drive_file_id,
+            uploadedBy: r.uploaded_by, uploaderName: r.uploader_name,
+            driveSettingId: r.drive_setting_id, remark: r.remark || '',
+            createdAt: r.created_at
+        })));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/files', requireAuth, async (req, res) => {
+    const { name, type, size, url, driveFileId, driveSettingId, remark } = req.body;
+    try {
+        const result = await pool.query(
+            'INSERT INTO files (name, type, size, url, drive_file_id, uploaded_by, drive_setting_id, remark) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',
+            [name, type, size, url, driveFileId, req.user.memberId || null, driveSettingId, remark || '']
+        );
+        res.json({ id: result.rows[0].id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/files/:id', requireAuth, async (req, res) => {
+    try {
+        const file = await pool.query('SELECT * FROM files WHERE id = $1', [req.params.id]);
+        if (file.rows.length === 0) return res.status(404).json({ error: 'File not found' });
+
+        const fileData = file.rows[0];
+
+        // Employee 只能删自己上传的
+        if (req.user.role !== 'admin') {
+            if (fileData.uploaded_by !== req.user.memberId) {
+                return res.status(403).json({ error: 'You can only delete your own files' });
+            }
+        }
+
+        // Delete from Google Drive
+        if (fileData.drive_file_id) {
+            try {
+                const cfgResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_script_url'");
+                const tokenResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_token'");
+                const scriptUrl = cfgResult.rows[0]?.value;
+                const token = tokenResult.rows[0]?.value || '';
+                if (scriptUrl) {
+                    const deleteUrl = scriptUrl + '?action=delete&token=' + encodeURIComponent(token) + '&fileId=' + fileData.drive_file_id;
+                    await fetch(deleteUrl, { redirect: 'follow' });
+                }
+            } catch (e) {
+                console.log('Drive delete error:', e.message);
+            }
+        }
+
+        // Delete from database
+        await pool.query('DELETE FROM files WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ========================================
+// UPLOAD TO GOOGLE DRIVE (proxy)
+// ========================================
+app.post('/api/upload-to-drive', requireAuth, async (req, res) => {
+    try {
+        const cfgResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_script_url'");
+        const tokenResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_token'");
+        const scriptUrl = cfgResult.rows[0]?.value;
+        const token = tokenResult.rows[0]?.value || '';
+        if (!scriptUrl) return res.status(400).json({ error: 'Drive script URL not configured' });
+
+        const { fileBase64, fileName, mimeType, folderId } = req.body;
+
+        console.log('=== UPLOAD DEBUG ===');
+        console.log('URL:', scriptUrl);
+        console.log('fileName:', fileName);
+        console.log('folderId:', folderId);
+        console.log('base64 length:', fileBase64?.length);
+
+        const response = await fetch(scriptUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ token, folderId, fileName, fileBase64, mimeType }),
+            redirect: 'follow'
+        });
+
+        const text = await response.text();
+        console.log('Drive response:', text.substring(0, 500));
+
+        let result;
+        try {
+            result = JSON.parse(text);
+        } catch (e) {
+            return res.status(500).json({ error: 'Invalid response from Drive: ' + text.substring(0, 200) });
+        }
+
+        if (result.error) return res.status(500).json({ error: result.error });
+
+        res.json(result);
+    } catch (err) {
+        console.log('Upload error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
 app.get('/api/template/projects/:scopeId', async (req, res) => {
     try {
         const scope = await pool.query('SELECT name FROM scopes WHERE id = $1', [req.params.scopeId]);
@@ -1399,6 +1612,29 @@ async function initDB() {
             qty NUMERIC(12,2) DEFAULT 0,
             created_at TIMESTAMP DEFAULT NOW()
         )`,
+        `CREATE TABLE IF NOT EXISTS app_config (
+            key VARCHAR(100) PRIMARY KEY,
+            value TEXT DEFAULT ''
+        )`,
+        `CREATE TABLE IF NOT EXISTS drive_settings (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(200) DEFAULT '',
+            folder_id VARCHAR(300) DEFAULT '',
+            is_default BOOLEAN DEFAULT false,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS files (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(500) DEFAULT '',
+            type VARCHAR(200) DEFAULT '',
+            size BIGINT DEFAULT 0,
+            url TEXT DEFAULT '',
+            drive_file_id VARCHAR(200) DEFAULT '',
+            uploaded_by INT REFERENCES members(id) ON DELETE SET NULL,
+            drive_setting_id INT REFERENCES drive_settings(id) ON DELETE SET NULL,
+            category VARCHAR(100) DEFAULT '',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
     ];
 
     for (var i = 0; i < tables.length; i++) {
@@ -1428,6 +1664,10 @@ async function initDB() {
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS install_date DATE",
         "ALTER TABLE projects ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pending'",
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'projects_name_cat_unique') THEN ALTER TABLE projects ADD CONSTRAINT projects_name_cat_unique UNIQUE (name, category_id); END IF; END $$",
+        "ALTER TABLE departments ADD COLUMN IF NOT EXISTS work_days_per_week INT DEFAULT 6",
+        "ALTER TABLE departments ADD COLUMN IF NOT EXISTS normal_day_hours DECIMAL(4,2) DEFAULT 9.00",
+        "ALTER TABLE departments ADD COLUMN IF NOT EXISTS saturday_hours DECIMAL(4,2) DEFAULT 9.00",
+        "ALTER TABLE files ADD COLUMN IF NOT EXISTS remark VARCHAR(500) DEFAULT ''",
     ];
 
     for (var i = 0; i < alterStatements.length; i++) {
@@ -1474,6 +1714,29 @@ async function initDB() {
     } catch (e) {
         console.log('Admin insert skip:', e.message.substring(0, 80));
     }
+
+    // 给所有没有 member 的 admin 自动建 member 并关联
+    try {
+        const orphanAdmins = await pool.query("SELECT id, username FROM users WHERE role = 'admin' AND member_id IS NULL");
+        if (orphanAdmins.rows.length > 0) {
+            const existingAdmin = await pool.query("SELECT id FROM members WHERE name = 'Admin' LIMIT 1");
+            let memberId;
+            if (existingAdmin.rows.length) {
+                memberId = existingAdmin.rows[0].id;
+            } else {
+                const newMember = await pool.query("INSERT INTO members (name) VALUES ('Admin') RETURNING id");
+                memberId = newMember.rows[0].id;
+            }
+            for (const admin of orphanAdmins.rows) {
+                await pool.query("UPDATE users SET member_id = $1 WHERE id = $2", [memberId, admin.id]);
+                console.log(`Admin '${admin.username}' linked: member_id=${memberId}`);
+            }
+        }
+    } catch (e) {
+        console.log('Admin member link skip:', e.message.substring(0, 80));
+    }
+
+    console.log('Admin user ready');
     console.log('Admin user ready');
 
     console.log('Database fully initialized');
