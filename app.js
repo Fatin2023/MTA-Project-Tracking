@@ -2510,6 +2510,12 @@ const updateScopeAndProjectSelects = (scopeEl, itemEl, workplanEl, workdoneEl, e
     const wlOpts = wl.map(w => ({ value: w.id, label: w.title }));
     ssUpdate(workplanEl, wlOpts, false);
     ssUpdate(workdoneEl, wlOpts, false);
+
+    // Hide/show Work Plan and Work Done fields
+    const wpEl = document.getElementById(workplanEl);
+    const wdEl = document.getElementById(workdoneEl);
+    if (wpEl) wpEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
+    if (wdEl) wdEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
 };
 
 const empBuildTimeEntryModal = (title, entry, extraProjectId) => {
@@ -2550,6 +2556,13 @@ const showAddTimeEntry = () => {
             const wlOpts = DB.worklist.map(w => ({ value: w.id, label: w.title }));
             ssCreate('ss-entry-workplan', wlOpts, '-- None --');
             ssCreate('ss-entry-workdone', wlOpts, '-- None --');
+
+            // Hide if no worklist at all
+            const wpEl = document.getElementById('ss-entry-workplan');
+            const wdEl = document.getElementById('ss-entry-workdone');
+            if (wpEl) wpEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
+            if (wdEl) wdEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
+
             document.getElementById('entry-save-btn').onclick = doAddTimeEntry;
         }, 50);
     } catch (e) { alert('Error: ' + e.message); }
@@ -2574,6 +2587,13 @@ const showEditTimeEntry = entryId => {
         if (entry.work_plan_id) ssSetValue('ss-entry-workplan', entry.work_plan_id);
         ssCreate('ss-entry-workdone', wlOpts, '-- None --');
         if (entry.work_done_id) ssSetValue('ss-entry-workdone', entry.work_done_id);
+
+        // Hide if no worklist
+        const wpEl = document.getElementById('ss-entry-workplan');
+        const wdEl = document.getElementById('ss-entry-workdone');
+        if (wpEl) wpEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
+        if (wdEl) wdEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
+
         document.getElementById('entry-save-btn').onclick = () => doEditTimeEntry(entryId);
     }, 50);
 };
@@ -4921,7 +4941,6 @@ const adminAttScopeChanged = () => {
     const projects = sortedProjects(scopeId);
     ssUpdate('ss-att-item', projects.map(p => ({ value: p.id, label: p.name })), false);
 
-    // sub scope
     const subSel = document.getElementById('att-subscope');
     if (subSel) {
         const filtered = scopeId ? DB.subScopes.filter(s => s.scopeId === scopeId) : DB.subScopes;
@@ -4929,11 +4948,16 @@ const adminAttScopeChanged = () => {
             filtered.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
     }
 
-    // work plan/done
     const wl = scopeId ? DB.worklist.filter(w => w.scopeId === scopeId) : DB.worklist;
     const wlOpts = wl.map(w => ({ value: w.id, label: w.title }));
     ssUpdate('ss-att-workplan', wlOpts, false);
     ssUpdate('ss-att-workdone', wlOpts, false);
+
+    // Hide/show Work Plan and Work Done fields
+    const wpEl = document.getElementById('ss-att-workplan');
+    const wdEl = document.getElementById('ss-att-workdone');
+    if (wpEl) wpEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
+    if (wdEl) wdEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
 };
 
 // ---------- main render ----------
@@ -5384,6 +5408,12 @@ const showAdminEditAttendance = id => {
         if (entry.work_plan_id) ssSetValue('ss-att-workplan', entry.work_plan_id);
         ssCreate('ss-att-workdone', wlOpts, '-- None --');
         if (entry.work_done_id) ssSetValue('ss-att-workdone', entry.work_done_id);
+
+        // Hide if no worklist
+        const wpEl = document.getElementById('ss-att-workplan');
+        const wdEl = document.getElementById('ss-att-workdone');
+        if (wpEl) wpEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
+        if (wdEl) wdEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
 
         const subSel = document.getElementById('att-subscope');
         if (subSel) {
