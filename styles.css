@@ -494,6 +494,7 @@ tbody tr:last-child td{border-bottom:none}
 @keyframes overlayIn{from{opacity:0}to{opacity:1}}
 @keyframes modalIn{from{opacity:0;transform:translateY(20px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes modalContentIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@media (max-width: 860px) {.modal {max-width: 100%;max-height: 85vh;overflow-y: auto;overflow-x: hidden;margin: 10px;padding: 20px 16px;-webkit-overflow-scrolling: touch;}.modal-overlay.active {align-items: flex-start;padding-top: 20px;}.modal [style*="grid-template-columns"] {grid-template-columns: 1fr !important;}.modal .field {width: 100%;}.modal .field select,.modal .field input,.modal .field textarea {width: 100%;min-width: 0;}}
 
 .empty{text-align:center;padding:60px 20px;color:var(--main-text3)}
 .empty .icon{font-size:2.4rem;margin-bottom:12px;opacity:.5}
@@ -545,6 +546,7 @@ tbody tr:last-child td{border-bottom:none}
   color:var(--main-text);border-radius:var(--radius-xs);font-size:.82rem;font-family:var(--font-b);cursor:pointer;appearance:none;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%23888' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right 8px center}
+@media (max-width: 860px) {.pagination {flex-direction: column;align-items: stretch;gap: 10px;}.pagination-info {text-align: center;}.pagination-controls {justify-content: center;flex-wrap: wrap;}.pagination-size {justify-content: center;}}
 
 [data-theme="dark"] .pagination-size select{
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E")}
@@ -761,7 +763,7 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
 @media(max-width:860px){.pt-drawer{width:calc(100vw - 23px);right:calc(-100vw + 23px)}}
 
 /* ===== Desktop: make .app-main scrollable ===== */
-@media(min-width:861px){.app-layout.active{height:100vh;overflow:hidden;}.app-layout.active .app-main{overflow-y:auto; min-height:0;}.filter-sticky{position:sticky;top:0;z-index:10;background:var(--main-bg);padding-bottom:4px;}}
+@media(min-width:861px){.app-layout.active{height:100vh;overflow:hidden;}.app-layout.active .app-main{overflow-y:auto; min-height:0;}.filter-sticky{position:sticky;top:0;z-index:20;background:var(--main-bg);padding-bottom:4px;}}
 
 /* ==========================================================
    RAINBOW PAGE BACKGROUND — Full Vibrant

@@ -8841,7 +8841,67 @@ const ptDoDeleteUser = (id) => {
         .catch(e => alert(e.message));
 };
 
+/* ==========================================================
+   Mouse hover table show description
+   ========================================================== */
+// 自动给 table td 加 tooltip（桌面 hover + 手机 tap）
+document.addEventListener('mouseover', (e) => {
+    const td = e.target.closest('table tbody td');
+    if (!td || td.title) return;
+    if (td.querySelector('button, .actions-cell, .btn-icon, input, select')) return;
+    const text = td.textContent.trim();
+    if (text && text !== '—') td.title = text;
+});
 
+// 手机 tap 显示完整内容
+let _mobileTooltip = null;
+const _hideMobileTooltip = () => {
+    if (_mobileTooltip) { _mobileTooltip.remove(); _mobileTooltip = null; }
+};
+
+document.addEventListener('touchstart', (e) => {
+    const td = e.target.closest('table tbody td');
+    if (!td) { _hideMobileTooltip(); return; }
+    if (td.querySelector('button, .actions-cell, .btn-icon, input, select')) return;
+
+    const text = td.textContent.trim();
+    if (!text || text === '—') return;
+
+    // 检查是否被截断
+    if (td.scrollWidth <= td.offsetWidth + 2) return;
+
+    _hideMobileTooltip();
+
+    const tip = document.createElement('div');
+    tip.textContent = text;
+    tip.style.cssText = `
+        position: fixed;
+        bottom: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0,0,0,.85);
+        color: #fff;
+        padding: 10px 18px;
+        border-radius: 10px;
+        font-size: .82rem;
+        max-width: 85vw;
+        word-break: break-word;
+        text-align: center;
+        z-index: 10001;
+        box-shadow: 0 4px 16px rgba(0,0,0,.3);
+        animation: toastIn .2s ease;
+        pointer-events: none;
+    `;
+    document.body.appendChild(tip);
+    _mobileTooltip = tip;
+
+    setTimeout(_hideMobileTooltip, 2500);
+}, { passive: true });
+
+// 点别的地方关闭
+document.addEventListener('touchstart', (e) => {
+    if (!e.target.closest('table')) _hideMobileTooltip();
+}, { passive: true });
 /* ==========================================================
    Pre-load data on page load
    ========================================================== */
