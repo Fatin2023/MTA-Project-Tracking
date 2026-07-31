@@ -2687,7 +2687,7 @@ const doEditTimeEntry = async entryId => saveTimeEntry(entryId);
 const saveTimeEntry = (entryId) => {
     const errEl = document.getElementById('entry-error');
     const date = document.getElementById('entry-date').value;
-    const projectId = ssGetValue('ss-entry-item');
+    const projectIdRaw = ssGetValue('ss-entry-item');
     const detailId = document.getElementById('entry-detail')?.value || '';
     const wpId = ssGetValue('ss-entry-workplan');
     const wdId = ssGetValue('ss-entry-workdone');
@@ -2696,11 +2696,22 @@ const saveTimeEntry = (entryId) => {
     const desc = document.getElementById('entry-desc').value.trim();
 
     errEl.textContent = '';
-    if (!date || !projectId || !start || !end) {
-        errEl.textContent = !date ? 'Date required' : !projectId ? 'Select item' : !start ? 'Start required' : 'End required';
+    if (!date || !projectIdRaw || !start || !end) {
+        errEl.textContent = !date ? 'Date required' : !projectIdRaw ? 'Select item' : !start ? 'Start required' : 'End required';
         return;
     }
     if (start >= end) { errEl.textContent = 'End time must be after start'; return; }
+
+    // 把 "Other" (value=0) 转成真实的 project ID
+    let projectId = parseInt(projectIdRaw);
+    if (projectId === 0) {
+        const scopeVal = document.getElementById('entry-scope-filter')?.value;
+        const scopeId = scopeVal ? parseInt(scopeVal) : null;
+        const otherProj = DB.projects.find(p =>
+            p.name.toLowerCase() === 'other' && (!scopeId || p.categoryId === scopeId)
+        );
+        if (otherProj) projectId = otherProj.id;
+    }
 
     const newStart = `${date}T${start}:00`;
     const newEnd = `${date}T${end}:00`;
@@ -2713,7 +2724,7 @@ const saveTimeEntry = (entryId) => {
         date,
         clockIn: newStart,
         clockOut: newEnd,
-        projectId: parseInt(projectId),
+        projectId: projectId,
         detailId: detailId ? parseInt(detailId) : null,
         work_plan_id: wpId ? parseInt(wpId) : null,
         work_done_id: wdId ? parseInt(wdId) : null,
