@@ -9036,10 +9036,9 @@ const _ptrRefreshData = async () => {
 };
 
 const initPullToRefresh = () => {
-    const main = document.querySelector('.app-main');
+    const main = document.querySelector('.app-layout.active .app-main');
     if (!main) return;
 
-    // 加 indicator
     if (!main.querySelector('.ptr-indicator')) {
         const div = document.createElement('div');
         div.className = 'ptr-indicator';
@@ -9047,40 +9046,62 @@ const initPullToRefresh = () => {
         main.insertBefore(div, main.firstChild);
     }
 
-    main.addEventListener('touchstart', (e) => {
-        if (_ptrRefreshing) return;
-        if (main.scrollTop > 5) return;
-        _ptrStartY = e.touches[0].clientY;
-        _ptrPulling = true;
-    }, { passive: true });
+    // 先移除旧监听，防止重复绑定
+    main.removeEventListener('touchstart', _ptrTouchStart);
+    main.removeEventListener('touchmove', _ptrTouchMove);
+    main.removeEventListener('touchend', _ptrTouchEnd);
 
-    main.addEventListener('touchmove', (e) => {
-        if (!_ptrPulling || _ptrRefreshing) return;
-        const diff = e.touches[0].clientY - _ptrStartY;
-        const indicator = main.querySelector('.ptr-indicator');
-        if (diff > 60 && main.scrollTop <= 0) {
-            indicator.classList.add('pulling');
-            indicator.querySelector('.ptr-text').textContent = 'Release to refresh';
-        } else if (diff > 20 && main.scrollTop <= 0) {
-            indicator.classList.add('pulling');
-            indicator.querySelector('.ptr-text').textContent = 'Pull down to refresh';
-        }
-    }, { passive: true });
-
-    main.addEventListener('touchend', (e) => {
-        if (!_ptrPulling) return;
-        _ptrPulling = false;
-        const indicator = main.querySelector('.ptr-indicator');
-        if (indicator && indicator.classList.contains('pulling') && indicator.querySelector('.ptr-text').textContent.includes('Release')) {
-            _ptrRefreshData();
-        } else {
-            if (indicator) {
-                indicator.classList.remove('pulling');
-                indicator.querySelector('.ptr-text').textContent = '';
-            }
-        }
-    }, { passive: true });
+    main.addEventListener('touchstart', _ptrTouchStart, { passive: true });
+    main.addEventListener('touchmove', _ptrTouchMove, { passive: false });
+    main.addEventListener('touchend', _ptrTouchEnd, { passive: true });
 };
+
+function _ptrTouchStart(e) {
+    if (_ptrRefreshing) return;
+    const main = e.currentTarget;
+    if (main.scrollTop > 0) return;
+    _ptrStartY = e.touches[0].clientY;
+    _ptrPulling = true;
+}
+
+function _ptrTouchMove(e) {
+    if (!_ptrPulling || _ptrRefreshing) return;
+    const main = e.currentTarget;
+    if (main.scrollTop > 0) { _ptrPulling = false; return; }
+
+    const diff = e.touches[0].clientY - _ptrStartY;
+    const indicator = main.querySelector('.ptr-indicator');
+    if (!indicator) return;
+
+    if (diff > 0 && main.scrollTop <= 0) {
+        // 阻止页面本身的弹性滚动
+        e.preventDefault();
+
+        if (diff > 80) {
+            indicator.classList.add('pulling');
+            indicator.querySelector('.ptr-text').textContent = '松开刷新';
+        } else if (diff > 30) {
+            indicator.classList.add('pulling');
+            indicator.querySelector('.ptr-text').textContent = '下拉刷新';
+        }
+    }
+}
+
+function _ptrTouchEnd(e) {
+    if (!_ptrPulling) return;
+    _ptrPulling = false;
+    const main = document.querySelector('.app-layout.active .app-main');
+    if (!main) return;
+    const indicator = main.querySelector('.ptr-indicator');
+    if (!indicator) return;
+
+    if (indicator.classList.contains('pulling') && indicator.querySelector('.ptr-text').textContent.includes('松开')) {
+        _ptrRefreshData();
+    } else {
+        indicator.classList.remove('pulling');
+        indicator.querySelector('.ptr-text').textContent = '';
+    }
+}
 
 // 在 sidebar 开关和页面切换时重新初始化
 const _originalShowPage = typeof showPage === 'function' ? showPage : null;
