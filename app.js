@@ -226,6 +226,47 @@ const formatFileSize = (bytes) => {
     return (bytes / 1048576).toFixed(1) + ' MB';
 };
 
+// side bar nav collapse
+const toggleNavGroup = (sectionEl) => {
+    // sidebar collapsed 时不响应
+    const sidebar = sectionEl.closest('.sidebar');
+    if (sidebar && sidebar.classList.contains('collapsed')) return;
+
+    const group = sectionEl.nextElementSibling;
+    if (!group || !group.classList.contains('nav-group')) return;
+
+    const isCollapsed = group.classList.contains('collapsed');
+
+    // toggle
+    group.classList.toggle('collapsed');
+    sectionEl.classList.toggle('collapsed');
+
+    // 保存状态
+    const groupId = group.dataset.group;
+    if (groupId) {
+        const state = JSON.parse(localStorage.getItem('nav_collapsed') || '{}');
+        state[groupId] = !isCollapsed;
+        localStorage.setItem('nav_collapsed', JSON.stringify(state));
+    }
+};
+
+// 页面加载时恢复状态
+const restoreNavState = () => {
+    const state = JSON.parse(localStorage.getItem('nav_collapsed') || '{}');
+    document.querySelectorAll('.nav-group[data-group]').forEach(group => {
+        if (state[group.dataset.group]) {
+            group.classList.add('collapsed');
+            const section = group.previousElementSibling;
+            if (section && section.classList.contains('nav-section')) {
+                section.classList.add('collapsed');
+            }
+        }
+    });
+};
+
+// 登录成功后调用一次
+restoreNavState();
+
 
 /* ==========================================================
    SECTION 3: MODAL
@@ -259,13 +300,63 @@ document.getElementById('modal-overlay').addEventListener('click', e => {
 let currentUser = null;
 let clockInterval = null;
 
-const _applyViewerRestrictions = (navId, hiddenPages, hiddenSections) => {
-    document.querySelectorAll(`#${navId} .nav-item`).forEach(item => {
-        if (hiddenPages.includes(item.getAttribute('data-page'))) item.style.display = 'none';
+/* ===== 权限表 ===== */
+const ROLE_PERMISSIONS = {
+    admin:    ['admin', 'manager', 'all'],
+    manager:  ['manager', 'all'],
+    employee: ['all'],
+    viewer:   ['all']
+};
+
+const getCurrentRole = () => currentUser ? currentUser.role : 'viewer';
+
+/* ===== 应用权限到 nav ===== */
+const applyNavPermissions = () => {
+    const role = getCurrentRole();
+    const allowed = ROLE_PERMISSIONS[role] || ['all'];
+
+    document.querySelectorAll('.sidebar-nav').forEach(nav => {
+        nav.querySelectorAll('.nav-group').forEach(group => {
+            let hasVisible = false;
+
+            group.querySelectorAll('.nav-item').forEach(item => {
+                const permAttr = item.dataset.permission;
+
+                if (!permAttr) {
+                    item.style.display = '';
+                    hasVisible = true;
+                    return;
+                }
+
+                const perms = permAttr.split(',').map(p => p.trim());
+                const canSee = perms.some(p => allowed.includes(p));
+
+                if (canSee) {
+                    item.style.display = '';
+                    hasVisible = true;
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+
+            const section = group.previousElementSibling;
+            if (section && section.classList.contains('nav-section')) {
+                if (hasVisible) {
+                    section.style.display = '';
+                    group.style.display = '';
+                } else {
+                    section.style.display = 'none';
+                    group.style.display = 'none';
+                }
+            }
+        });
     });
-    document.querySelectorAll(`#${navId} .nav-section`).forEach(s => {
-        if (hiddenSections.includes(s.textContent.trim())) s.style.display = 'none';
-    });
+
+    // employee: Report 只有 PIC 能看
+    var reportNav = document.getElementById('emp-nav-report');
+    if (reportNav) {
+        reportNav.style.display = empIsPIC() ? '' : 'none';
+    }
 };
 
 const _setRoleLabel = (layoutId, label) => {
@@ -301,15 +392,11 @@ function handleLogin(e) {
                 document.getElementById('pt-avatar').textContent = currentUser.username.charAt(0).toUpperCase();
                 document.getElementById('pt-user-name').textContent = currentUser.username;
 
-                if (isViewer) {
-                    _applyViewerRestrictions('pt-nav', ['pt-import', 'pt-users'], ['Tools', 'Settings']);
-                    _setRoleLabel('panel-layout', 'Viewer');
-                } else {
-                    _setRoleLabel('panel-layout', 'Admin');
-                }
+                _setRoleLabel('panel-layout', isViewer ? 'Viewer' : 'Admin');
 
                 await ptLoadDB();
                 ptNav('pt-dashboard');
+                applyNavPermissions();
             } else {
                 localStorage.setItem('multitrade_module', 'attendance');
                 await loadDB();
@@ -317,17 +404,13 @@ function handleLogin(e) {
 
                 if (currentUser.role === 'admin' || isViewer) {
                     document.getElementById('admin-layout').classList.add('active');
-                    if (isViewer) {
-                        _applyViewerRestrictions('admin-nav', ['users', 'departments', 'positions'], ['HR']);
-                        _setRoleLabel('admin-layout', 'Viewer');
-                    } else {
-                        _setRoleLabel('admin-layout', 'Administrator');
-                    }
+                    _setRoleLabel('admin-layout', isViewer ? 'Viewer' : 'Administrator');
                     adminNav('projects');
                 } else {
                     document.getElementById('employee-layout').classList.add('active');
                     empNav('attendance');
                 }
+                applyNavPermissions();
                 updateAvatars();
             }
         } catch (ex) { err.textContent = ex.message; }
@@ -2910,10 +2993,10 @@ const applyEmpAttendanceFilter = () => {
     const ac = _empAttInitialLoad ? ' stat-anim' : '';
     document.getElementById('emp-att-stats-area').innerHTML = `
         <div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:16px">
-            <div class="stat-card${ac}"><div class="stat-label">Filtered Entries</div><div class="stat-value" style="font-size:1.2rem">${filtered.length}</div></div>
-            <div class="stat-card${ac}"><div class="stat-label">Filtered Hours</div><div class="stat-value" style="font-size:1.2rem">${formatDuration(totalMs)}</div></div>
-            <div class="stat-card${ac}"><div class="stat-label">Filtered OT</div><div class="stat-value" style="font-size:1.2rem;color:var(--warning)">${formatDuration(totalOtMs)}</div></div>
-            <div class="stat-card${ac}"><div class="stat-label">Filtered Cost</div><div class="stat-value" style="font-size:1.2rem">${fmtCost(totalCost)}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Entries</div><div class="stat-value" style="font-size:1.2rem">${filtered.length}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Hours</div><div class="stat-value" style="font-size:1.2rem">${formatDuration(totalMs)}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">OT</div><div class="stat-value" style="font-size:1.2rem;color:var(--warning)">${formatDuration(totalOtMs)}</div></div>
+            <div class="stat-card${ac}"><div class="stat-label">Cost</div><div class="stat-value" style="font-size:1.2rem">${fmtCost(totalCost)}</div></div>
         </div>`;
 
     const totalPages = Math.ceil(filtered.length / empAttPageSize) || 1;
@@ -3768,153 +3851,6 @@ const changeEmpRptTimePageSize = size => {
 
 
 /* ==========================================================
-   SECTION: EMPLOYEE — SETTINGS (optimized)
-   ========================================================== */
-
-let empSettingsRenderLock = false;
-const renderEmpSettings = () => {
-    if (empSettingsRenderLock) return;
-    if (!currentUser?.memberId) return;
-    const member = DB.members.find(m => m.id === currentUser.memberId);
-    if (!member) return;
-    empSettingsRenderLock = true;
-
-    const posName = getPositionName(member.positionId);
-    const deptName = getDeptName(member.departmentId);
-
-    document.getElementById('emp-settings').innerHTML = `
-    <div class="app-header"><h2>Settings</h2><div class="header-sub">Your profile and preferences</div></div>
-    <div class="app-body" style="max-width:640px">
-        <div class="pt-anim-filter" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px">
-            <div style="padding:12px 20px;border-bottom:1px solid var(--main-border)">
-                <h2 style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text);margin:0">Profile Information</h2>
-            </div>
-            <div style="padding:20px">
-                <div style="display:grid;grid-template-columns:140px 1fr;gap:12px 16px;align-items:center">
-                    <span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Username</span>
-                    <span style="font-weight:500;color:var(--main-text)">${esc(currentUser.username || '—')}</span>
-                    <span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Name</span>
-                    <span style="font-weight:500;color:var(--main-text)">${esc(member.name)}</span>
-                    <span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Position</span>
-                    <span style="font-weight:500;color:var(--main-text)">${esc(posName)}</span>
-                    <span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Department</span>
-                    <span style="font-weight:500;color:var(--main-text)">${esc(deptName)}</span>
-                </div>
-                <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--main-border)">
-                    <button class="btn btn-accent" id="pw-toggle-btn" onclick="togglePasswordSection()">Change Password</button>
-                </div>
-            </div>
-        </div>
-
-        <div id="password-section" style="display:none;opacity:0;transform:translateY(12px);transition:opacity 0.3s ease,transform 0.3s ease;background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px">
-            <div style="padding:12px 20px;border-bottom:1px solid var(--main-border)">
-                <h2 style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text);margin:0">Change Password</h2>
-            </div>
-            <div style="padding:20px">
-                <div style="display:flex;flex-direction:column;gap:14px;max-width:380px">
-                    <div class="field">
-                        <label>New Password</label>
-                        <input class="input" id="settings-new-pw" type="password" placeholder="Enter new password">
-                    </div>
-                    <div class="field">
-                        <label>Confirm New Password</label>
-                        <input class="input" id="settings-confirm-pw" type="password" placeholder="Re-enter new password">
-                    </div>
-                    <div style="display:flex;gap:8px">
-                        <button class="btn btn-accent" onclick="doChangePassword()" style="min-width:140px">Update Password</button>
-                        <button class="btn btn-ghost" onclick="cancelChangePassword()">Cancel</button>
-                    </div>
-                    <p class="auth-error" id="settings-error" style="margin:0"></p>
-                    <p id="settings-success" style="margin:0;font-size:.85rem;color:var(--ok);display:none"></p>
-                </div>
-            </div>
-        </div>
-    </div>`;
-
-    setTimeout(() => {
-        const view = document.getElementById('emp-settings');
-        const animatedEls = view.querySelectorAll('.pt-anim-filter');
-        animatedEls.forEach(el => el.classList.remove('pt-anim-filter'));
-        empSettingsRenderLock = false;
-    }, 400);
-
-    setTimeout(() => { empSettingsRenderLock = false; }, 500);
-};
-
-// Helper to reset password form state
-const resetPasswordForm = () => {
-    document.getElementById('settings-new-pw').value = '';
-    document.getElementById('settings-confirm-pw').value = '';
-    document.getElementById('settings-error').textContent = '';
-    const success = document.getElementById('settings-success');
-    success.textContent = '';
-    success.style.display = 'none';
-};
-
-const togglePasswordSection = () => {
-    const section = document.getElementById('password-section');
-    const btn = document.getElementById('pw-toggle-btn');
-    if (section.style.display === 'none' || !section.style.display) {
-        section.style.display = 'block';
-        btn.textContent = 'Change Password ▲';
-        // 触发 transition：先 display:block，下一帧设 opacity/transform
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                section.style.opacity = '1';
-                section.style.transform = 'translateY(0)';
-            });
-        });
-    } else {
-        section.style.opacity = '0';
-        section.style.transform = 'translateY(12px)';
-        setTimeout(() => {
-            section.style.display = 'none';
-            btn.textContent = 'Change Password';
-            resetPasswordForm();
-        }, 300);
-    }
-};
-
-const cancelChangePassword = () => {
-    const section = document.getElementById('password-section');
-    section.style.opacity = '0';
-    section.style.transform = 'translateY(12px)';
-    setTimeout(() => {
-        section.style.display = 'none';
-        document.getElementById('pw-toggle-btn').textContent = 'Change Password';
-        resetPasswordForm();
-    }, 300);
-};
-
-const doChangePassword = async () => {
-    const errEl = document.getElementById('settings-error');
-    const sucEl = document.getElementById('settings-success');
-    const newPw = document.getElementById('settings-new-pw').value;
-    const confirmPw = document.getElementById('settings-confirm-pw').value;
-
-    errEl.textContent = '';
-    sucEl.style.display = 'none';
-
-    if (!newPw) { errEl.textContent = 'New password is required'; return; }
-    if (newPw.length < 4) { errEl.textContent = 'Minimum 4 characters'; return; }
-    if (newPw !== confirmPw) { errEl.textContent = 'Passwords do not match'; return; }
-
-    try {
-        await api('/users/' + currentUser.id + '/password', {
-            method: 'PUT',
-            body: { newPassword: newPw }
-        });
-        document.getElementById('settings-new-pw').value = '';
-        document.getElementById('settings-confirm-pw').value = '';
-        sucEl.textContent = 'Password updated successfully';
-        sucEl.style.display = 'block';
-    } catch (e) {
-        errEl.textContent = 'Failed: ' + e.message;
-    }
-};
-
-
-/* ==========================================================
    EMPLOYEE — FILES
    ========================================================== */
 let empFileCurrentPage = 1, empFilePageSize = 10, empFileFilteredData = [];
@@ -3928,7 +3864,7 @@ const renderEmployeeFiles = () => {
     document.getElementById('emp-files').innerHTML = `
     <div class="app-header"><h2>Files</h2><div class="header-sub">View and download files from Google Drive</div></div>
     <div class="app-body">
-      <div class="filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
+      <div class="pt-anim-filter filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
           <input class="input" type="text" placeholder="Search files..." id="emp-file-search" oninput="applyEmpFileFilter()" style="max-width:250px">
@@ -3945,7 +3881,7 @@ const renderEmployeeFiles = () => {
           </div>
         </div>
       </div>
-      <div id="emp-file-table-area"></div>
+      <div id="emp-file-table-area" class="pt-anim-table"></div>
     </div>`;
 
     setTimeout(() => applyEmpFileFilter(), 100);
@@ -4231,6 +4167,152 @@ const doDeleteEmpFile = id => {
         .then(() => { hideModal(); return loadDB(); })
         .then(() => { applyEmpFileFilter(); showToast('File deleted successfully'); })
         .catch(e => { alert('Delete failed: ' + e.message); });
+};
+
+/* ==========================================================
+   SECTION: EMPLOYEE — SETTINGS (optimized)
+   ========================================================== */
+
+let empSettingsRenderLock = false;
+const renderEmpSettings = () => {
+    if (empSettingsRenderLock) return;
+    if (!currentUser?.memberId) return;
+    const member = DB.members.find(m => m.id === currentUser.memberId);
+    if (!member) return;
+    empSettingsRenderLock = true;
+
+    const posName = getPositionName(member.positionId);
+    const deptName = getDeptName(member.departmentId);
+
+    document.getElementById('emp-settings').innerHTML = `
+    <div class="app-header"><h2>Settings</h2><div class="header-sub">Your profile and preferences</div></div>
+    <div class="app-body" style="max-width:640px">
+        <div class="pt-anim-filter" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px">
+            <div style="padding:12px 20px;border-bottom:1px solid var(--main-border)">
+                <h2 style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text);margin:0">Profile Information</h2>
+            </div>
+            <div style="padding:20px">
+                <div style="display:grid;grid-template-columns:140px 1fr;gap:12px 16px;align-items:center">
+                    <span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Username</span>
+                    <span style="font-weight:500;color:var(--main-text)">${esc(currentUser.username || '—')}</span>
+                    <span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Name</span>
+                    <span style="font-weight:500;color:var(--main-text)">${esc(member.name)}</span>
+                    <span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Position</span>
+                    <span style="font-weight:500;color:var(--main-text)">${esc(posName)}</span>
+                    <span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Department</span>
+                    <span style="font-weight:500;color:var(--main-text)">${esc(deptName)}</span>
+                </div>
+                <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--main-border)">
+                    <button class="btn btn-accent" id="pw-toggle-btn" onclick="togglePasswordSection()">Change Password</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="password-section" style="display:none;opacity:0;transform:translateY(12px);transition:opacity 0.3s ease,transform 0.3s ease;background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);overflow:hidden;margin-bottom:24px">
+            <div style="padding:12px 20px;border-bottom:1px solid var(--main-border)">
+                <h2 style="font-size:1.05rem;font-family:var(--font-d);font-weight:700;color:var(--main-text);margin:0">Change Password</h2>
+            </div>
+            <div style="padding:20px">
+                <div style="display:flex;flex-direction:column;gap:14px;max-width:380px">
+                    <div class="field">
+                        <label>New Password</label>
+                        <input class="input" id="settings-new-pw" type="password" placeholder="Enter new password">
+                    </div>
+                    <div class="field">
+                        <label>Confirm New Password</label>
+                        <input class="input" id="settings-confirm-pw" type="password" placeholder="Re-enter new password">
+                    </div>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-accent" onclick="doChangePassword()" style="min-width:140px">Update Password</button>
+                        <button class="btn btn-ghost" onclick="cancelChangePassword()">Cancel</button>
+                    </div>
+                    <p class="auth-error" id="settings-error" style="margin:0"></p>
+                    <p id="settings-success" style="margin:0;font-size:.85rem;color:var(--ok);display:none"></p>
+                </div>
+            </div>
+        </div>
+    </div>`;
+
+    setTimeout(() => {
+        const view = document.getElementById('emp-settings');
+        const animatedEls = view.querySelectorAll('.pt-anim-filter');
+        animatedEls.forEach(el => el.classList.remove('pt-anim-filter'));
+        empSettingsRenderLock = false;
+    }, 400);
+
+    setTimeout(() => { empSettingsRenderLock = false; }, 500);
+};
+
+// Helper to reset password form state
+const resetPasswordForm = () => {
+    document.getElementById('settings-new-pw').value = '';
+    document.getElementById('settings-confirm-pw').value = '';
+    document.getElementById('settings-error').textContent = '';
+    const success = document.getElementById('settings-success');
+    success.textContent = '';
+    success.style.display = 'none';
+};
+
+const togglePasswordSection = () => {
+    const section = document.getElementById('password-section');
+    const btn = document.getElementById('pw-toggle-btn');
+    if (section.style.display === 'none' || !section.style.display) {
+        section.style.display = 'block';
+        btn.textContent = 'Change Password ▲';
+        // 触发 transition：先 display:block，下一帧设 opacity/transform
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                section.style.opacity = '1';
+                section.style.transform = 'translateY(0)';
+            });
+        });
+    } else {
+        section.style.opacity = '0';
+        section.style.transform = 'translateY(12px)';
+        setTimeout(() => {
+            section.style.display = 'none';
+            btn.textContent = 'Change Password';
+            resetPasswordForm();
+        }, 300);
+    }
+};
+
+const cancelChangePassword = () => {
+    const section = document.getElementById('password-section');
+    section.style.opacity = '0';
+    section.style.transform = 'translateY(12px)';
+    setTimeout(() => {
+        section.style.display = 'none';
+        document.getElementById('pw-toggle-btn').textContent = 'Change Password';
+        resetPasswordForm();
+    }, 300);
+};
+
+const doChangePassword = async () => {
+    const errEl = document.getElementById('settings-error');
+    const sucEl = document.getElementById('settings-success');
+    const newPw = document.getElementById('settings-new-pw').value;
+    const confirmPw = document.getElementById('settings-confirm-pw').value;
+
+    errEl.textContent = '';
+    sucEl.style.display = 'none';
+
+    if (!newPw) { errEl.textContent = 'New password is required'; return; }
+    if (newPw.length < 4) { errEl.textContent = 'Minimum 4 characters'; return; }
+    if (newPw !== confirmPw) { errEl.textContent = 'Passwords do not match'; return; }
+
+    try {
+        await api('/users/' + currentUser.id + '/password', {
+            method: 'PUT',
+            body: { newPassword: newPw }
+        });
+        document.getElementById('settings-new-pw').value = '';
+        document.getElementById('settings-confirm-pw').value = '';
+        sucEl.textContent = 'Password updated successfully';
+        sucEl.style.display = 'block';
+    } catch (e) {
+        errEl.textContent = 'Failed: ' + e.message;
+    }
 };
 
 
@@ -8785,24 +8867,6 @@ const ptDoDeleteUser = (id) => {
 
     document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
 
-    const applyViewerNavRestrictions = (navId, hiddenPages, hiddenSections) => {
-        document.querySelectorAll(`#${navId} .nav-item`).forEach(item => {
-            const page = item.getAttribute('data-page');
-            if (hiddenPages.includes(page)) item.style.display = 'none';
-        });
-        document.querySelectorAll(`#${navId} .nav-section`).forEach(s => {
-            if (hiddenSections.includes(s.textContent.trim())) s.style.display = 'none';
-        });
-    };
-
-    const setRoleLabel = (layoutId, label) => {
-        const el = document.querySelector(`#${layoutId} .sidebar-user .user-role`);
-        if (el) el.textContent = label;
-    };
-
-    const guardViewerPage = (page, hiddenPages) =>
-        hiddenPages.includes(page) ? hiddenPages[0].replace(/^(pt-)?/, () => page.startsWith('pt-') ? 'pt-dashboard' : 'projects') : page;
-
     if (savedModule === 'panel') {
         try {
             await ptLoadDB();
@@ -8811,23 +8875,20 @@ const ptDoDeleteUser = (id) => {
             document.getElementById('pt-user-name').textContent = currentUser.username;
 
             const isViewer = currentUser.role === 'viewer';
-            if (isViewer) {
-                applyViewerNavRestrictions('pt-nav', ['pt-import', 'pt-users'], ['Tools', 'Settings']);
-                setRoleLabel('panel-layout', 'Viewer');
-            } else {
-                setRoleLabel('panel-layout', 'Admin');
-            }
+            _setRoleLabel('panel-layout', isViewer ? 'Viewer' : 'Admin');
 
             let page = localStorage.getItem('multitrade_pt_page') || 'pt-dashboard';
             if (isViewer && (page === 'pt-import' || page === 'pt-users')) page = 'pt-dashboard';
             activateNav('pt-nav', page);
             ptNav(page);
+            applyNavPermissions();
         } catch (e) {
             console.error('Panel load error:', e);
             document.getElementById('panel-layout').classList.add('active');
             document.getElementById('pt-avatar').textContent = currentUser.username.charAt(0).toUpperCase();
             document.getElementById('pt-user-name').textContent = currentUser.username;
             ptNav('pt-dashboard');
+            applyNavPermissions();
         }
     } else {
         try {
@@ -8836,12 +8897,7 @@ const ptDoDeleteUser = (id) => {
                 document.getElementById('admin-layout').classList.add('active');
 
                 const isViewer = currentUser.role === 'viewer';
-                if (isViewer) {
-                    applyViewerNavRestrictions('admin-nav', ['users', 'departments', 'positions'], ['HR']);
-                    setRoleLabel('admin-layout', 'Viewer');
-                } else {
-                    setRoleLabel('admin-layout', 'Administrator');
-                }
+                _setRoleLabel('admin-layout', isViewer ? 'Viewer' : 'Administrator');
 
                 let page = localStorage.getItem('multitrade_admin_page') || 'projects';
                 if (isViewer && ['users', 'departments', 'positions'].includes(page)) page = 'projects';
@@ -8853,6 +8909,7 @@ const ptDoDeleteUser = (id) => {
                 activateNav('emp-nav', page);
                 await empNav(page);
             }
+            applyNavPermissions();
             updateAvatars();
         } catch (e) {
             console.error('Attendance load error:', e);
@@ -8863,7 +8920,7 @@ const ptDoDeleteUser = (id) => {
 
 
 // ============================================================
-// AUTO LOGOUT — 30 min inactivity
+// AUTO LOGOUT 
 // ============================================================
 (function() {
     let logoutTimer;

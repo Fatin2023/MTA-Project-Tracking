@@ -66,21 +66,65 @@
       <h1>Multi<span>trade</span></h1>
       <div class="brand-sub">Management</div>
     </div>
-    <div class="sidebar-nav" id="admin-nav">
-      <div class="nav-section">Overview</div>
-      <div class="nav-item active" data-page="projects" data-tooltip="Work Category" onclick="adminNav('projects',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Work Category</span></div>
-      <div class="nav-item" data-page="worklist" data-tooltip="Work List" onclick="adminNav('worklist',this)"><span class="nav-icon">&#9745;</span><span class="nav-label">Work List</span></div>
-      <div class="nav-section">HR</div>
-      <div class="nav-item" data-page="users" data-tooltip="Users" onclick="adminNav('users',this)"><span class="nav-icon">&#128100;</span><span class="nav-label">Users</span></div>
-      <div class="nav-item" data-page="departments" data-tooltip="Departments" onclick="adminNav('departments',this)"><span class="nav-icon">&#9635;</span><span class="nav-label">Departments</span></div>
-      <div class="nav-item" data-page="positions" data-tooltip="Positions" onclick="adminNav('positions',this)"><span class="nav-icon">&#9733;</span><span class="nav-label">Positions</span></div>
-      <div class="nav-section">Time</div>
-      <div class="nav-item" data-page="attendance" data-tooltip="Attendance" onclick="adminNav('attendance',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span></div>
-      <div class="nav-section">Summary</div>
-      <div class="nav-item" data-page="report" data-tooltip="Report" onclick="adminNav('report',this)"><span class="nav-icon">&#128202;</span><span class="nav-label">Report</span></div>
-      <div class="nav-section">Google Drive</div>
-      <div class="nav-item" data-page="files" data-tooltip="Files" onclick="adminNav('files',this)"><span class="nav-icon">&#128194;</span><span class="nav-label">Files</span></div>
+    <!-- Admin nav 示例 -->
+<div class="sidebar-nav" id="admin-nav">
+  <div class="nav-section" onclick="toggleNavGroup(this)">
+    Overview <span class="nav-arrow">▾</span>
+  </div>
+  <div class="nav-group" data-group="admin-overview">
+    <!-- 不加 data-permission = 所有人可见 -->
+    <div class="nav-item active" data-page="projects" data-tooltip="Work Category" onclick="adminNav('projects',this)">
+      <span class="nav-icon">&#9638;</span><span class="nav-label">Work Category</span>
     </div>
+    <div class="nav-item" data-page="worklist" data-tooltip="Work List" onclick="adminNav('worklist',this)">
+      <span class="nav-icon">&#9745;</span><span class="nav-label">Work List</span>
+    </div>
+  </div>
+
+  <div class="nav-section" onclick="toggleNavGroup(this)">
+    HR <span class="nav-arrow">▾</span>
+  </div>
+  <div class="nav-group" data-group="admin-hr">
+    <!-- 只有 admin 能看 -->
+    <div class="nav-item" data-page="users" data-permission="admin" data-tooltip="Users" onclick="adminNav('users',this)">
+      <span class="nav-icon">&#128100;</span><span class="nav-label">Users</span>
+    </div>
+    <div class="nav-item" data-page="departments" data-permission="admin" data-tooltip="Departments" onclick="adminNav('departments',this)">
+      <span class="nav-icon">&#9635;</span><span class="nav-label">Departments</span>
+    </div>
+    <div class="nav-item" data-page="positions" data-permission="admin" data-tooltip="Positions" onclick="adminNav('positions',this)">
+      <span class="nav-icon">&#9733;</span><span class="nav-label">Positions</span>
+    </div>
+  </div>
+
+  <div class="nav-section" onclick="toggleNavGroup(this)">
+    Time <span class="nav-arrow">▾</span>
+  </div>
+  <div class="nav-group" data-group="admin-time">
+    <!-- 不加 = 所有人可见 -->
+    <div class="nav-item" data-page="attendance" data-tooltip="Attendance" onclick="adminNav('attendance',this)">
+      <span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span>
+    </div>
+  </div>
+
+  <div class="nav-section" onclick="toggleNavGroup(this)">
+    Summary <span class="nav-arrow">▾</span>
+  </div>
+  <div class="nav-group" data-group="admin-summary">
+    <div class="nav-item" data-page="report" data-tooltip="Report" onclick="adminNav('report',this)">
+      <span class="nav-icon">&#128202;</span><span class="nav-label">Report</span>
+    </div>
+  </div>
+
+  <div class="nav-section" onclick="toggleNavGroup(this)">
+    Google Drive <span class="nav-arrow">▾</span>
+  </div>
+  <div class="nav-group" data-group="admin-drive">
+    <div class="nav-item" data-page="files" data-tooltip="Files" onclick="adminNav('files',this)">
+      <span class="nav-icon">&#128194;</span><span class="nav-label">Files</span>
+    </div>
+  </div>
+</div>
     <div class="sidebar-footer">
       <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
         <span class="theme-icon">&#9790;</span>
@@ -130,8 +174,12 @@
       <div class="brand-sub">Management</div>
     </div>
     <div class="sidebar-nav">
-      <div class="nav-section">Navigation</div>
-      <div class="nav-item" data-tooltip="Back" onclick="showPage('admin-layout');renderMainScope()"><span class="nav-icon">&#8592;</span><span class="nav-label">Back to Work Category</span></div>
+      <div class="nav-section" onclick="toggleNavGroup(this)">
+        Navigation <span class="nav-arrow">▾</span>
+      </div>
+      <div class="nav-group" data-group="detail-nav">
+        <div class="nav-item" data-tooltip="Back" onclick="showPage('admin-layout');renderMainScope()"><span class="nav-icon">&#8592;</span><span class="nav-label">Back to Work Category</span></div>
+      </div>
     </div>
     <div class="sidebar-footer">
       <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
@@ -172,15 +220,39 @@
       <div class="brand-sub">Employee Portal</div>
     </div>
     <div class="sidebar-nav" id="emp-nav">
-      <div class="nav-section">Main</div>
-      <div class="nav-item" data-tooltip="Attendance" onclick="empNav('attendance',this)"><span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span></div>
-      <div class="nav-item active" data-tooltip="Work Category" onclick="empNav('myprojects',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Work Category</span></div>
-      <div class="nav-item" id="emp-nav-report" data-tooltip="Report" style="display:none" onclick="empNav('report',this)"><span class="nav-icon">&#128200;</span><span class="nav-label">Report</span></div>
-      <div class="nav-section">Google Drive</div>
-      <div class="nav-item" data-tooltip="Files" onclick="empNav('files',this)"><span class="nav-icon">&#128194;</span><span class="nav-label">Files</span></div>
-      <div class="nav-section">Setting</div>
-      <div class="nav-item" data-tooltip="Settings" onclick="empNav('settings',this)"><span class="nav-icon">&#9881;</span><span class="nav-label">Settings</span></div>
+  <div class="nav-section" onclick="toggleNavGroup(this)">
+    Main <span class="nav-arrow">▾</span>
+  </div>
+  <div class="nav-group" data-group="emp-main">
+    <div class="nav-item" data-tooltip="Attendance" onclick="empNav('attendance',this)">
+      <span class="nav-icon">&#9201;</span><span class="nav-label">Attendance</span>
     </div>
+    <div class="nav-item active" data-tooltip="Work Category" onclick="empNav('myprojects',this)">
+      <span class="nav-icon">&#9638;</span><span class="nav-label">Work Category</span>
+    </div>
+    <div class="nav-item" id="emp-nav-report" data-tooltip="Report" style="display:none" onclick="empNav('report',this)">
+      <span class="nav-icon">&#128200;</span><span class="nav-label">Report</span>
+    </div>
+  </div>
+
+  <div class="nav-section" onclick="toggleNavGroup(this)">
+    Google Drive <span class="nav-arrow">▾</span>
+  </div>
+  <div class="nav-group" data-group="emp-drive">
+    <div class="nav-item" data-tooltip="Files" onclick="empNav('files',this)">
+      <span class="nav-icon">&#128194;</span><span class="nav-label">Files</span>
+    </div>
+  </div>
+
+  <div class="nav-section" onclick="toggleNavGroup(this)">
+    Setting <span class="nav-arrow">▾</span>
+  </div>
+  <div class="nav-group" data-group="emp-setting">
+    <div class="nav-item" data-tooltip="Settings" onclick="empNav('settings',this)">
+      <span class="nav-icon">&#9881;</span><span class="nav-label">Settings</span>
+    </div>
+  </div>
+</div>
     <div class="sidebar-footer">
       <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
         <span class="theme-icon">&#9790;</span>
@@ -224,15 +296,41 @@
       <div class="brand-sub">Panel Tracking</div>
     </div>
     <div class="sidebar-nav" id="pt-nav">
-      <div class="nav-section">Main</div>
-      <div class="nav-item active" data-page="pt-dashboard" data-tooltip="Dashboard" onclick="ptNav('pt-dashboard',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Dashboard</span></div>
-      <div class="nav-item" data-page="pt-panel" data-tooltip="Panel" onclick="ptNav('pt-panel',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Panel</span></div>
-      <div class="nav-item" data-page="pt-material" data-tooltip="Material" onclick="ptNav('pt-material',this)"><span class="nav-icon">&#9638;</span><span class="nav-label">Material</span></div>
-      <div class="nav-section">Tools</div>
-      <div class="nav-item" data-page="pt-import" data-tooltip="Import" onclick="ptNav('pt-import',this)"><span class="nav-icon">&#9660;</span><span class="nav-label">Import Excel</span></div>
-      <div class="nav-section">Settings</div>
-      <div class="nav-item" data-page="pt-users" data-tooltip="Users" onclick="ptNav('pt-users',this)"><span class="nav-icon">&#128100;</span><span class="nav-label">Users</span></div>
+  <div class="nav-section" onclick="toggleNavGroup(this)">
+    Main <span class="nav-arrow">▾</span>
+  </div>
+  <div class="nav-group" data-group="pt-main">
+    <div class="nav-item active" data-page="pt-dashboard" data-tooltip="Dashboard" onclick="ptNav('pt-dashboard',this)">
+      <span class="nav-icon">&#9638;</span><span class="nav-label">Dashboard</span>
     </div>
+    <div class="nav-item" data-page="pt-panel" data-tooltip="Panel" onclick="ptNav('pt-panel',this)">
+      <span class="nav-icon">&#9638;</span><span class="nav-label">Panel</span>
+    </div>
+    <div class="nav-item" data-page="pt-material" data-tooltip="Material" onclick="ptNav('pt-material',this)">
+      <span class="nav-icon">&#9638;</span><span class="nav-label">Material</span>
+    </div>
+  </div>
+
+  <div class="nav-section" onclick="toggleNavGroup(this)">
+    Tools <span class="nav-arrow">▾</span>
+  </div>
+  <div class="nav-group" data-group="pt-tools">
+    <!-- 只有 admin 能看 -->
+    <div class="nav-item" data-page="pt-import" data-permission="admin" data-tooltip="Import" onclick="ptNav('pt-import',this)">
+      <span class="nav-icon">&#9660;</span><span class="nav-label">Import Excel</span>
+    </div>
+  </div>
+
+  <div class="nav-section" onclick="toggleNavGroup(this)">
+    Settings <span class="nav-arrow">▾</span>
+  </div>
+  <div class="nav-group" data-group="pt-settings">
+    <!-- 只有 admin 能看 -->
+    <div class="nav-item" data-page="pt-users" data-permission="admin" data-tooltip="Users" onclick="ptNav('pt-users',this)">
+      <span class="nav-icon">&#128100;</span><span class="nav-label">Users</span>
+    </div>
+  </div>
+</div>
     <div class="sidebar-footer">
       <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
         <span class="theme-icon">&#9790;</span>
