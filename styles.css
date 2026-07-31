@@ -261,9 +261,9 @@ h1,h2,h3{font-family:var(--font-d);font-weight:600;letter-spacing:-.01em}
 /* ==========================================================
    NAV GROUP TOGGLE — 干净版，不影响滚动
    ========================================================== */
-.nav-section {cursor: pointer;display: flex;align-items: center;gap: 8px;user-select: none;-webkit-tap-highlight-color: transparent;font-size: .55rem;text-transform: uppercase;letter-spacing: .14em;padding: 8px 12px 6px 12px;font-weight: 700;color: rgba(255,255,255,.70);background: rgba(255,255,255,.04);border-radius: 6px;margin: 6px 4px 2px 4px;border-left: none;transition: all .2s ease;}
-.nav-section:hover {color: rgba(255,255,255,.9);background: rgba(255,255,255,.06);}
-.nav-section.collapsed {color: rgba(255,255,255,.4);background: rgba(255,255,255,.02);}
+.nav-section {cursor: pointer;display: flex;align-items: center;gap: 8px;user-select: none;-webkit-tap-highlight-color: transparent;font-size: .55rem;text-transform: uppercase;letter-spacing: .14em;padding: 8px 12px 6px 12px;font-weight: 700;color: #dbb95d;background: rgba(201,168,76,.22);border-radius: 6px;margin: 6px 4px 2px 4px;border-left: none;transition: all .2s ease;}
+.nav-section:hover {color: #f0d070;background: rgba(201,168,76,.30);}
+.nav-section.collapsed {color: #dbb95d;background: rgba(201,168,76,.06);}
 .nav-arrow {font-size: 1.6rem;font-weight: 900;opacity: .5;margin-left: auto;line-height: 1;display: inline-flex;align-items: center;justify-content: center;width: 28px;height: 28px;border-radius: 8px;background: rgba(255,255,255,.06);letter-spacing: -2px;pointer-events: none;flex-shrink: 0;transition: transform 0.35s cubic-bezier(.34,1.56,.64,1),opacity 0.25s,background 0.25s;}
 .nav-section:hover .nav-arrow {opacity: 1;background: rgba(255,255,255,.12);}
 .nav-section.collapsed .nav-arrow {transform: rotate(-90deg);opacity: .7;background: rgba(201,168,76,.12);}
