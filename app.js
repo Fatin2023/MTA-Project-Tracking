@@ -8867,6 +8867,7 @@ const ptDoDeleteUser = (id) => {
 // ============================================================
 (function() {
     let logoutTimer;
+    let autoRedirectTimer;
     const TIMEOUT = 45 * 60 * 1000;
 
     function resetTimer() {
@@ -8896,6 +8897,7 @@ const ptDoDeleteUser = (id) => {
         document.getElementById('login-pass').value = '';
 
         const goToLogin = () => {
+            clearTimeout(autoRedirectTimer);
             hideModal();
             document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
             document.getElementById('login-page').classList.add('active');
@@ -8910,10 +8912,8 @@ const ptDoDeleteUser = (id) => {
                 <button class="btn btn-accent" id="session-expired-btn">Sign In</button>
             </div>`);
 
-        // 点 Sign In 按钮
         document.getElementById('session-expired-btn').onclick = goToLogin;
 
-        // 点 overlay 外部也跳转
         const overlay = document.getElementById('modal-overlay');
         if (overlay) {
             overlay.onclick = e => {
@@ -8922,7 +8922,7 @@ const ptDoDeleteUser = (id) => {
         }
 
         // 兜底 5 秒自动跳转
-        setTimeout(goToLogin, 5000);
+        autoRedirectTimer = setTimeout(goToLogin, 5000);
     }
 
     const events = ['mousemove', 'mousedown', 'keypress', 'scroll', 'touchstart', 'click'];
