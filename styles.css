@@ -847,3 +847,12 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
         right: 8px;
     }
 }
+
+/* Pull to Refresh */
+.ptr-wrapper {position: relative;min-height: 100%;}
+.ptr-indicator {position: absolute;top: -50px;left: 0;right: 0;height: 50px;display: flex;align-items: center;justify-content:center;font-size: .82rem;color: var(--main-text3);transition: transform .3s ease;pointer-events: none;}
+.ptr-indicator.pulling {transform: translateY(50px);}
+.ptr-indicator.refreshing {transform: translateY(50px);}
+.ptr-indicator .ptr-spinner {width: 20px;height: 20px;border: 2px solid var(--main-border);border-top-color: var(--accent);border-radius: 50%;display: inline-block;margin-right: 8px;}
+.ptr-indicator.refreshing .ptr-spinner {animation: ptrSpin .6s linear infinite;}
+@keyframes ptrSpin {to {transform: rotate(360deg);}}

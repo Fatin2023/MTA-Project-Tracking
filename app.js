@@ -530,6 +530,7 @@ async function adminNav(tab, el) {
         case 'worklist': renderWorkList(); break;
         case 'files': renderAdminFiles(); break;
     }
+    _initPTRDebounce();
 }
 
 // filter not to see viewer in employee dropdown
@@ -617,6 +618,7 @@ async function empNav(tab, el) {
         case 'settings': renderEmpSettings(); break;
         case 'files': renderEmployeeFiles(); break;
     }
+    _initPTRDebounce();
 }
 
 
@@ -7234,6 +7236,7 @@ function ptNav(tab, el) {
     }
     else if (tab === 'pt-import') ptRenderImport();
     window.scrollTo(0, 0);
+    _initPTRDebounce();
 }
 
 function ptStatusBadge(s) {
@@ -8989,6 +8992,106 @@ document.addEventListener('touchstart', (e) => {
     }
 })();
 
+/* ===== Pull to Refresh (Mobile) ===== */
+let _ptrStartY = 0, _ptrPulling = false, _ptrRefreshing = false;
+
+const _ptrRefreshData = async () => {
+    if (_ptrRefreshing) return;
+    _ptrRefreshing = true;
+
+    const indicator = document.querySelector('.ptr-indicator');
+    if (indicator) {
+        indicator.classList.remove('pulling');
+        indicator.classList.add('refreshing');
+        indicator.querySelector('.ptr-text').textContent = 'Refreshing...';
+    }
+
+    try {
+        // 判断当前在哪个模块
+        const savedModule = localStorage.getItem('multitrade_module') || 'attendance';
+        if (savedModule === 'panel') {
+            await ptLoadDB();
+            const activePage = localStorage.getItem('multitrade_pt_page') || 'pt-dashboard';
+            if (typeof ptNav === 'function') ptNav(activePage);
+        } else {
+            await loadDB();
+            if (currentUser.role === 'admin' || currentUser.role === 'viewer') {
+                const activePage = localStorage.getItem('multitrade_admin_page') || 'projects';
+                if (typeof adminNav === 'function') adminNav(activePage);
+            } else {
+                const activePage = localStorage.getItem('multitrade_emp_page') || 'attendance';
+                if (typeof empNav === 'function') empNav(activePage);
+            }
+        }
+        showToast('Data refreshed');
+    } catch (e) {
+        showToast('Refresh failed');
+    }
+
+    if (indicator) {
+        indicator.classList.remove('refreshing');
+        indicator.querySelector('.ptr-text').textContent = '';
+    }
+    _ptrRefreshing = false;
+};
+
+const initPullToRefresh = () => {
+    const main = document.querySelector('.app-main');
+    if (!main) return;
+
+    // 加 indicator
+    if (!main.querySelector('.ptr-indicator')) {
+        const div = document.createElement('div');
+        div.className = 'ptr-indicator';
+        div.innerHTML = '<span class="ptr-spinner"></span><span class="ptr-text"></span>';
+        main.insertBefore(div, main.firstChild);
+    }
+
+    main.addEventListener('touchstart', (e) => {
+        if (_ptrRefreshing) return;
+        if (main.scrollTop > 5) return;
+        _ptrStartY = e.touches[0].clientY;
+        _ptrPulling = true;
+    }, { passive: true });
+
+    main.addEventListener('touchmove', (e) => {
+        if (!_ptrPulling || _ptrRefreshing) return;
+        const diff = e.touches[0].clientY - _ptrStartY;
+        const indicator = main.querySelector('.ptr-indicator');
+        if (diff > 60 && main.scrollTop <= 0) {
+            indicator.classList.add('pulling');
+            indicator.querySelector('.ptr-text').textContent = 'Release to refresh';
+        } else if (diff > 20 && main.scrollTop <= 0) {
+            indicator.classList.add('pulling');
+            indicator.querySelector('.ptr-text').textContent = 'Pull down to refresh';
+        }
+    }, { passive: true });
+
+    main.addEventListener('touchend', (e) => {
+        if (!_ptrPulling) return;
+        _ptrPulling = false;
+        const indicator = main.querySelector('.ptr-indicator');
+        if (indicator && indicator.classList.contains('pulling') && indicator.querySelector('.ptr-text').textContent.includes('Release')) {
+            _ptrRefreshData();
+        } else {
+            if (indicator) {
+                indicator.classList.remove('pulling');
+                indicator.querySelector('.ptr-text').textContent = '';
+            }
+        }
+    }, { passive: true });
+};
+
+// 在 sidebar 开关和页面切换时重新初始化
+const _originalShowPage = typeof showPage === 'function' ? showPage : null;
+
+// 初始化
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(initPullToRefresh, 500);
+});
+
+// 每次切页面也重新绑定
+const _initPTRDebounce = () => setTimeout(initPullToRefresh, 300);
 
 // ============================================================
 // AUTO LOGOUT 
