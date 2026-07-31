@@ -838,13 +838,19 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
 @media (max-width: 860px) {
     .modal input[type="date"],
     .modal input[type="time"] {
-        padding-right: 32px;
+        padding-right: 36px;
         -webkit-appearance: none;
+        position: relative;
     }
     .modal input[type="date"]::-webkit-calendar-picker-indicator,
     .modal input[type="time"]::-webkit-calendar-picker-indicator {
         position: absolute;
-        right: 8px;
+        right: 10px;
+        z-index: 1;
+    }
+    .modal .field {
+        position: relative;
+        overflow: hidden;
     }
 }
 
