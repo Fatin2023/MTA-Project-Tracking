@@ -1436,7 +1436,7 @@ app.delete('/api/files/:id', requireAuth, async (req, res) => {
 });
 
 // ========================================
-// UPLOAD TO GOOGLE DRIVE (proxy)
+// UPLOAD TO GOOGLE DRIVE (proxy) — 加安全
 // ========================================
 app.post('/api/upload-to-drive', requireAuth, async (req, res) => {
     try {
@@ -1448,22 +1448,76 @@ app.post('/api/upload-to-drive', requireAuth, async (req, res) => {
 
         const { fileBase64, fileName, mimeType, folderId } = req.body;
 
-        console.log('=== UPLOAD DEBUG ===');
-        console.log('URL:', scriptUrl);
-        console.log('fileName:', fileName);
-        console.log('folderId:', folderId);
-        console.log('base64 length:', fileBase64?.length);
+        // ===== 安全检查 =====
+
+        // 1. 文件名清理
+        if (!fileName || typeof fileName !== 'string') {
+            return res.status(400).json({ error: 'Invalid file name' });
+        }
+        const safeName = fileName
+            .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+            .replace(/\.\./g, '_')
+            .substring(0, 200);
+        if (!safeName || safeName.length < 1) {
+            return res.status(400).json({ error: 'Invalid file name' });
+        }
+
+        // 2. 危险扩展名黑名单
+        const blockedExts = [
+            '.exe', '.bat', '.cmd', '.com', '.msi', '.pif',
+            '.vbs', '.vbe', '.js', '.jse', '.ws', '.wsf',
+            '.ps1', '.psm1', '.psd1', '.reg', '.dll', '.sys',
+            '.scr', '.hta', '.cpl', '.inf', '.lnk', '.sh',
+            '.php', '.asp', '.aspx', '.jsp', '.cgi', '.py',
+            '.rb', '.pl'
+        ];
+        const lowerName = safeName.toLowerCase();
+        for (const ext of blockedExts) {
+            if (lowerName.endsWith(ext)) {
+                return res.status(400).json({ error: 'File type not allowed: ' + ext });
+            }
+        }
+
+        // 3. 文件大小检查（base64 解码后）
+        if (!fileBase64 || typeof fileBase64 !== 'string') {
+            return res.status(400).json({ error: 'Invalid file data' });
+        }
+        const estimatedSize = Math.floor(fileBase64.length * 3 / 4);
+        if (estimatedSize > 20 * 1024 * 1024) {
+            return res.status(400).json({ error: 'File too large. Max 20MB.' });
+        }
+
+        // 4. MIME 类型白名单
+        const allowedMimes = [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'text/plain', 'text/csv',
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+            'application/zip', 'application/x-rar-compressed',
+            'application/x-7z-compressed',
+            'application/dwg', 'application/dxf', 'application/x-autocad',
+            'application/octet-stream',
+            ''
+        ];
+        if (mimeType && !allowedMimes.includes(mimeType)) {
+            return res.status(400).json({ error: 'File type not allowed: ' + mimeType });
+        }
+
+        // ===== 安全检查结束 =====
 
         const response = await fetch(scriptUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({ token, folderId, fileName, fileBase64, mimeType }),
+            body: JSON.stringify({ token, folderId, fileName: safeName, fileBase64, mimeType }),
             redirect: 'follow'
         });
 
         const text = await response.text();
-        console.log('Drive response:', text.substring(0, 500));
-
         let result;
         try {
             result = JSON.parse(text);

@@ -467,6 +467,27 @@ tbody tr:last-child td{border-bottom:none}
       font-size: .90rem;
     }
 }
+@media (min-width: 861px) {
+    .table-wrap table thead th:last-child,
+    .table-wrap table tbody td:last-child {
+        position: sticky;
+        right: 0;
+        z-index: 2;
+        background: var(--sticky-bg);
+        box-shadow: -4px 0 8px rgba(0,0,0,.08);
+    }
+    .table-wrap table thead th:last-child {
+        background: var(--main-surface2);
+        z-index: 3;
+    }
+    .table-wrap table tbody tr:hover td:last-child,
+    .table-wrap table tbody tr:active td:last-child {
+        background: var(--sticky-bg) !important;
+    }
+    .table-wrap table tbody tr:nth-child(even) td:last-child {
+        background: var(--sticky-bg);
+    }
+}
 
 /* Column widths */
 .table-wrap table th,.table-wrap table td{white-space:nowrap}

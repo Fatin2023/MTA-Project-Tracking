@@ -267,6 +267,27 @@ const restoreNavState = () => {
 // 登录成功后调用一次
 restoreNavState();
 
+// ===== file checking for security =====
+const BLOCKED_EXTENSIONS = [
+    '.exe', '.bat', '.cmd', '.com', '.msi', '.pif',
+    '.vbs', '.vbe', '.js', '.jse', '.ws', '.wsf',
+    '.ps1', '.psm1', '.psd1', '.reg', '.dll', '.sys',
+    '.scr', '.hta', '.cpl', '.inf', '.lnk', '.sh',
+    '.php', '.asp', '.aspx', '.jsp', '.cgi', '.py', '.rb', '.pl'
+];
+const isFileSafe = (file) => {
+    const name = file.name.toLowerCase();
+    for (const ext of BLOCKED_EXTENSIONS) {
+        if (name.endsWith(ext)) return false;
+    }
+    if (name.includes('..') || name.includes('/') || name.includes('\\')) return false;
+    if (file.size > 20 * 1024 * 1024) return false;
+    return true;
+};
+const safeFileName = (name) => {
+    return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/\.\./g, '_').substring(0, 200);
+};
+
 
 /* ==========================================================
    SECTION 3: MODAL
@@ -289,8 +310,8 @@ function hideModal() {
     document.getElementById('modal-overlay').classList.remove('active');
 }
 
-document.getElementById('modal-overlay').addEventListener('click', e => {
-    if (e.target === e.currentTarget) hideModal();
+document.addEventListener('click', function(e) {
+    if (e.target.id === 'modal-overlay') hideModal();
 });
 
 /* ==========================================================
@@ -4071,6 +4092,12 @@ const doEmpUploadFile = async () => {
     const errEl = document.getElementById('upload-error');
     if (!empSelectedFile) { errEl.textContent = 'Select a file first'; return; }
 
+    // 前端安全检查
+    if (!isFileSafe(empSelectedFile)) {
+        errEl.textContent = 'File type not allowed for security reasons.';
+        return;
+    }
+
     const driveId = parseInt(document.getElementById('upload-drive').value);
     const drive = (DB.driveSettings||[]).find(d => d.id === driveId);
     if (!drive) { errEl.textContent = 'Select a drive folder'; return; }
@@ -4095,11 +4122,13 @@ const doEmpUploadFile = async () => {
 
         bar.style.width = '50%'; txt.textContent = 'Uploading to Drive...';
 
+        const safeNameResult = safeFileName(empSelectedFile.name);
+
         const result = await api('/upload-to-drive', {
             method: 'POST',
             body: {
                 fileBase64: base64,
-                fileName: empSelectedFile.name,
+                fileName: safeNameResult,
                 mimeType: empSelectedFile.type || 'application/octet-stream',
                 folderId: drive.folderId
             }
@@ -4112,7 +4141,7 @@ const doEmpUploadFile = async () => {
         await api('/files', {
             method: 'POST',
             body: {
-                name: empSelectedFile.name,
+                name: safeNameResult,
                 type: empSelectedFile.type || 'application/octet-stream',
                 size: empSelectedFile.size,
                 url: result.fileUrl,
@@ -6770,6 +6799,12 @@ const doUploadFile = async () => {
     const errEl = document.getElementById('upload-error');
     if (!_selectedFile) { errEl.textContent = 'Select a file first'; return; }
 
+    // 前端安全检查
+    if (!isFileSafe(_selectedFile)) {
+        errEl.textContent = 'File type not allowed for security reasons.';
+        return;
+    }
+
     const driveId = parseInt(document.getElementById('upload-drive').value);
     const drive = (DB.driveSettings||[]).find(d => d.id === driveId);
     if (!drive) { errEl.textContent = 'Select a drive folder'; return; }
@@ -6793,11 +6828,13 @@ const doUploadFile = async () => {
 
         bar.style.width = '50%'; txt.textContent = 'Uploading to Drive...';
 
+        const safeNameResult = safeFileName(_selectedFile.name);
+
         const result = await api('/upload-to-drive', {
             method: 'POST',
             body: {
                 fileBase64: base64,
-                fileName: _selectedFile.name,
+                fileName: safeNameResult,
                 mimeType: _selectedFile.type || 'application/octet-stream',
                 folderId: drive.folderId
             }
@@ -6810,7 +6847,7 @@ const doUploadFile = async () => {
         await api('/files', {
             method: 'POST',
             body: {
-                name: _selectedFile.name,
+                name: safeNameResult,
                 type: _selectedFile.type || 'application/octet-stream',
                 size: _selectedFile.size,
                 url: result.fileUrl,
@@ -9007,7 +9044,6 @@ const _ptrRefreshData = async () => {
     }
 
     try {
-        // 判断当前在哪个模块
         const savedModule = localStorage.getItem('multitrade_module') || 'attendance';
         if (savedModule === 'panel') {
             await ptLoadDB();
@@ -9025,7 +9061,13 @@ const _ptrRefreshData = async () => {
         }
         showToast('Data refreshed');
     } catch (e) {
-        showToast('Refresh failed');
+        // session 过期，跳回登录
+        if (e.message && (e.message.includes('401') || e.message.includes('Unauthorized'))) {
+            showToast('Session expired, please login again');
+            setTimeout(() => doLogout(), 1000);
+        } else {
+            showToast('Refresh failed');
+        }
     }
 
     if (indicator) {
@@ -9119,7 +9161,6 @@ const _initPTRDebounce = () => setTimeout(initPullToRefresh, 300);
 // ============================================================
 (function() {
     let logoutTimer;
-    let autoRedirectTimer;
     const TIMEOUT = 45 * 60 * 1000;
 
     function resetTimer() {
@@ -9149,7 +9190,6 @@ const _initPTRDebounce = () => setTimeout(initPullToRefresh, 300);
         document.getElementById('login-pass').value = '';
 
         const goToLogin = () => {
-            clearTimeout(autoRedirectTimer);
             hideModal();
             document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
             document.getElementById('login-page').classList.add('active');
@@ -9165,16 +9205,6 @@ const _initPTRDebounce = () => setTimeout(initPullToRefresh, 300);
             </div>`);
 
         document.getElementById('session-expired-btn').onclick = goToLogin;
-
-        const overlay = document.getElementById('modal-overlay');
-        if (overlay) {
-            overlay.onclick = e => {
-                if (e.target === overlay) goToLogin();
-            };
-        }
-
-        // 兜底 5 秒自动跳转
-        autoRedirectTimer = setTimeout(goToLogin, 5000);
     }
 
     const events = ['mousemove', 'mousedown', 'keypress', 'scroll', 'touchstart', 'click'];
