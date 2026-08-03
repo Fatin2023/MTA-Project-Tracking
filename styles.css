@@ -427,11 +427,45 @@ tbody tr:last-child td{border-bottom:none}
 
 /* Sticky actions column */
 
-@media (min-width: 768px) {
-    .table-wrap table thead th:last-child, .table-wrap table tbody td:last-child{position:sticky;right:0;z-index:2;background:var(--sticky-bg);box-shadow:-4px 0 8px rgba(0,0,0,.08);-webkit-tap-highlight-color:transparent}
-    .table-wrap table thead th:last-child{background:var(--main-surface2);z-index:3}
-    .table-wrap table tbody tr:hover td:last-child, .table-wrap table tbody tr:active td:last-child{background:var(--sticky-bg)!important;-webkit-tap-highlight-color:transparent;opacity:1}
-    .table-wrap table tbody tr:nth-child(even) td:last-child{background:var(--sticky-bg)}
+@media (max-width: 860px) {
+    thead th,
+    tbody td {
+        padding: 10px 8px;
+        font-size: .78rem;
+    }
+    /* Sticky action column on mobile */
+    .table-wrap table thead th:last-child,
+    .table-wrap table tbody td:last-child {
+        position: sticky;
+        right: 0;
+        z-index: 2;
+        min-width: 44px;
+        max-width: 50px;
+        padding: 6px 4px;
+        text-align: center;
+        background: var(--main-surface);
+        box-shadow: -4px 0 8px rgba(0,0,0,.06);
+    }
+    .table-wrap table thead th:last-child {
+        background: var(--main-surface2);
+        z-index: 3;
+    }
+    .table-wrap table tbody tr:hover td:last-child,
+    .table-wrap table tbody tr:active td:last-child {
+        background: var(--main-surface) !important;
+    }
+    /* Buttons vertical */
+    .actions-cell {
+        flex-direction: column;
+        gap: 8px;
+        align-items: center;
+    padding: 4px 0;
+    }
+    .actions-cell .btn-icon {
+      width: 35px;
+      height: 35px;
+      font-size: .90rem;
+    }
 }
 
 /* Column widths */
