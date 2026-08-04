@@ -1373,7 +1373,7 @@ app.get('/api/files', requireAuth, async (req, res) => {
             ORDER BY f.created_at DESC
         `);
         res.json(result.rows.map(r => ({
-            id: r.id, name: r.name, type: r.type, size: parseInt(r.size || 0),
+            id: r.id, title: r.title || '', name: r.name, type: r.type, size: parseInt(r.size || 0),
             url: r.url, driveFileId: r.drive_file_id,
             uploadedBy: r.uploaded_by, uploaderName: r.uploader_name,
             driveSettingId: r.drive_setting_id, remark: r.remark || '',
@@ -1385,11 +1385,11 @@ app.get('/api/files', requireAuth, async (req, res) => {
 });
 
 app.post('/api/files', requireAuth, async (req, res) => {
-    const { name, type, size, url, driveFileId, driveSettingId, remark } = req.body;
+    const { title, name, type, size, url, driveFileId, driveSettingId, remark } = req.body;
     try {
         const result = await pool.query(
-            'INSERT INTO files (name, type, size, url, drive_file_id, uploaded_by, drive_setting_id, remark) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id',
-            [name, type, size, url, driveFileId, req.user.memberId || null, driveSettingId, remark || '']
+            'INSERT INTO files (title, name, type, size, url, drive_file_id, uploaded_by, drive_setting_id, remark) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
+            [title || '', name, type, size, url, driveFileId, req.user.memberId || null, driveSettingId, remark || '']
         );
         res.json({ id: result.rows[0].id });
     } catch (err) {
@@ -1530,6 +1530,103 @@ app.post('/api/upload-to-drive', requireAuth, async (req, res) => {
         res.json(result);
     } catch (err) {
         console.log('Upload error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ========================================
+// FILE NOTICES
+// ========================================
+app.get('/api/file-notices', requireAuth, async (req, res) => {
+    try {
+        let result;
+        if (req.user.role === 'admin') {
+            result = await pool.query(`
+                SELECT fn.* FROM file_notices fn ORDER BY fn.created_at DESC
+            `);
+        } else {
+            result = await pool.query(`
+                SELECT fn.* FROM file_notices fn
+                WHERE fn.is_active = true
+                ORDER BY fn.created_at DESC
+            `);
+        }
+
+        const notices = result.rows.map(r => {
+            const ids = (r.target_member_ids || '').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0);
+            let targetMemberNames = [];
+            if (r.target_type === 'multiple' && ids.length > 0) {
+                // will fill below
+            }
+            return {
+                id: r.id, title: r.title, message: r.message,
+                targetType: r.target_type,
+                targetMemberIds: ids,
+                targetMemberNames: [],
+                isActive: r.is_active, createdAt: r.created_at
+            };
+        });
+
+        // Fill member names
+        const allMemberIds = [...new Set(notices.flatMap(n => n.targetMemberIds))];
+        if (allMemberIds.length > 0) {
+            const memResult = await pool.query('SELECT id, name FROM members WHERE id = ANY($1)', [allMemberIds]);
+            const nameMap = {};
+            memResult.rows.forEach(m => { nameMap[m.id] = m.name; });
+            notices.forEach(n => {
+                n.targetMemberNames = n.targetMemberIds.map(id => nameMap[id] || 'Unknown');
+            });
+        }
+
+        // Employee filter: only show notices targeting 'all' or containing their memberId
+        if (req.user.role !== 'admin') {
+            const myId = req.user.memberId || 0;
+            const filtered = notices.filter(n => n.targetType === 'all' || n.targetMemberIds.includes(myId));
+            return res.json(filtered);
+        }
+
+        res.json(notices);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/file-notices', requireAuth, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const { title, message, targetType, targetMemberIds, isActive } = req.body;
+    const idsStr = Array.isArray(targetMemberIds) ? targetMemberIds.join(',') : (targetMemberIds || '');
+    try {
+        const result = await pool.query(
+            'INSERT INTO file_notices (title, message, target_type, target_member_ids, is_active) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+            [title, message || '', targetType || 'all', idsStr, isActive !== false]
+        );
+        res.json({ id: result.rows[0].id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/file-notices/:id', requireAuth, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const { title, message, targetType, targetMemberIds, isActive } = req.body;
+    const idsStr = Array.isArray(targetMemberIds) ? targetMemberIds.join(',') : (targetMemberIds || '');
+    try {
+        await pool.query(
+            'UPDATE file_notices SET title=$1, message=$2, target_type=$3, target_member_ids=$4, is_active=$5 WHERE id=$6',
+            [title, message || '', targetType || 'all', idsStr, isActive !== false, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/file-notices/:id', requireAuth, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+        await pool.query('DELETE FROM file_notices WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
@@ -1689,6 +1786,15 @@ async function initDB() {
             category VARCHAR(100) DEFAULT '',
             created_at TIMESTAMP DEFAULT NOW()
         )`,
+        `CREATE TABLE IF NOT EXISTS file_notices (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(300) NOT NULL,
+            message TEXT DEFAULT '',
+            target_type VARCHAR(20) DEFAULT 'all',
+            target_member_id INT REFERENCES members(id) ON DELETE CASCADE,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
     ];
 
     for (var i = 0; i < tables.length; i++) {
@@ -1722,6 +1828,8 @@ async function initDB() {
         "ALTER TABLE departments ADD COLUMN IF NOT EXISTS normal_day_hours DECIMAL(4,2) DEFAULT 9.00",
         "ALTER TABLE departments ADD COLUMN IF NOT EXISTS saturday_hours DECIMAL(4,2) DEFAULT 9.00",
         "ALTER TABLE files ADD COLUMN IF NOT EXISTS remark VARCHAR(500) DEFAULT ''",
+        "ALTER TABLE files ADD COLUMN IF NOT EXISTS title VARCHAR(300) DEFAULT ''",
+        "ALTER TABLE file_notices ADD COLUMN IF NOT EXISTS target_member_ids TEXT DEFAULT ''",
     ];
 
     for (var i = 0; i < alterStatements.length; i++) {

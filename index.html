@@ -12,6 +12,9 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
+<!-- Notice floating button (employee only) -->
+<div id="notice-float-btn" style="display:none;position:fixed;bottom:24px;right:24px;z-index:1000">
+</div>
 <body>
 
 <!-- ===== LOGIN ===== -->
@@ -241,8 +244,10 @@
     Google Drive <span class="nav-arrow">▾</span>
   </div>
   <div class="nav-group" data-group="emp-drive">
-    <div class="nav-item" data-tooltip="Files" onclick="empNav('files',this)">
-      <span class="nav-icon">&#128194;</span><span class="nav-label">Files</span>
+    <div class="nav-item" data-tooltip="Files" onclick="empNav('files',this)" style="position:relative">
+        <span class="nav-icon">&#128194;</span>
+        <span class="nav-label">Files</span>
+        <span id="emp-nav-file-badge" style="display:none;position:absolute;top:6px;left:28px;background:#ef4444;color:#fff;font-size:.6rem;font-weight:700;min-width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;padding:0 4px;border:2px solid var(--main-surface)"></span>
     </div>
   </div>
 

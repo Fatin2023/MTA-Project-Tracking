@@ -917,3 +917,9 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
 .ptr-indicator .ptr-spinner {width: 20px;height: 20px;border: 2px solid var(--main-border);border-top-color: var(--accent);border-radius: 50%;display: inline-block;margin-right: 8px;}
 .ptr-indicator.refreshing .ptr-spinner {animation: ptrSpin .6s linear infinite;}
 @keyframes ptrSpin {to {transform: rotate(360deg);}}
+
+/* File reminder */
+@keyframes slideInRight {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: translateX(0); }
+}

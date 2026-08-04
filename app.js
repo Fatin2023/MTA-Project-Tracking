@@ -81,19 +81,19 @@ let DB = {
     projects: [], members: [], users: [], positions: [],
     departments: [], scopes: [], subScopes: [], details: [],
     worklist: [], projectAssignments: [], attendance: [],
-    viewerScopes: {},
+    viewerScopes: {},fileNotices: [],
 };
 
 const loadDB = async () => {
     try {
-        const [projects, members, users, positions, departments, scopes, subScopes, details, assignments, attendance, worklist, driveSettings, appConfig, files] =
+        const [projects, members, users, positions, departments, scopes, subScopes, details, assignments, attendance, worklist, driveSettings, appConfig, files, fileNotices] =
             await Promise.all([
                 api('/projects'), api('/members'), api('/users'), api('/positions'),
                 api('/departments'), api('/scopes'), api('/subscopes'), api('/details'),
                 api('/assignments'), api('/attendance'), api('/worklist'),
-                api('/drive-settings'), api('/app-config'), api('/files')
+                api('/drive-settings'), api('/app-config'), api('/files'), api('/file-notices')
             ]);
-        Object.assign(DB, { projects, members, users, positions, departments, scopes, subScopes, details, projectAssignments: assignments, attendance, worklist, driveSettings, appConfig, files });
+        Object.assign(DB, { projects, members, users, positions, departments, scopes, subScopes, details, projectAssignments: assignments, attendance, worklist, driveSettings, appConfig, files, fileNotices });
 
         DB.viewerScopes = {};
         const viewerUsers = (DB.users || []).filter(u => u.role === 'viewer');
@@ -101,7 +101,109 @@ const loadDB = async () => {
             try { DB.viewerScopes[u.id] = await api('/viewer-scopes/' + u.id); }
             catch (e) { DB.viewerScopes[u.id] = []; }
         }
+        renderNoticeBanners();
+        updateFileBadge(); 
     } catch (e) { console.error('Failed to load data:', e); }
+};
+
+// ==========================================================
+//   FILE NOTICE FLOATING BUTTON + MODAL (Employee)
+// ==========================================================
+
+let _noticesDismissed = true;
+
+const renderNoticeBanners = () => {
+    const btn = document.getElementById('notice-float-btn');
+    if (!btn) return;
+
+    // Admin 或未登录不显示
+    if (!currentUser || currentUser.role !== 'employee') {
+        btn.style.display = 'none';
+        return;
+    }
+
+    const notices = (DB.fileNotices || []).filter(n => n.isActive);
+
+    if (notices.length === 0) {
+        btn.style.display = 'none';
+        return;
+    }
+
+    if (_noticesDismissed) {
+        btn.style.display = 'block';
+        btn.innerHTML = `
+        <div onclick="_noticesDismissed=false;showNoticeModal()" style="width:52px;height:52px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2);transition:transform .2s,box-shadow .2s;position:relative" onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 24px rgba(0,0,0,.3)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 16px rgba(0,0,0,.2)'">
+            <span style="font-size:1.4rem;color:var(--bg)">&#128227;</span>
+            <span style="position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg)">${notices.length}</span>
+        </div>`;
+        return;
+    }
+
+    // Not dismissed yet — show small popup preview + button
+    btn.style.display = 'block';
+    btn.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+        <!-- Preview card -->
+        <div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:14px 18px;box-shadow:0 8px 32px rgba(0,0,0,.15);max-width:320px;width:320px;animation:slideInRight .3s ease">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span style="font-size:1rem">&#128227;</span>
+                    <span style="font-size:.88rem;font-weight:600;color:var(--main-text)">Reminders</span>
+                    <span style="font-size:.7rem;color:var(--main-text3);background:var(--main-border);padding:1px 7px;border-radius:10px">${notices.length}</span>
+                </div>
+                <button onclick="event.stopPropagation();_noticesDismissed=true;renderNoticeBanners()" style="background:none;border:none;cursor:pointer;font-size:.9rem;color:var(--main-text3);padding:2px 6px;border-radius:4px;transition:all .15s" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--main-text3)'" title="Close">&#10005;</button>
+            </div>
+            ${notices.slice(0, 2).map(n => `
+            <div style="padding:8px 0;border-top:1px solid var(--main-border);cursor:pointer" onclick="event.stopPropagation();showNoticeModal()">
+                <div style="font-weight:600;font-size:.84rem;color:var(--main-text)">${esc(n.title)}</div>
+                ${n.message ? `<div style="font-size:.8rem;color:var(--main-text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.message)}</div>` : ''}
+            </div>`).join('')}
+            ${notices.length > 2 ? `<div style="font-size:.78rem;color:var(--accent);text-align:center;padding-top:8px;cursor:pointer" onclick="event.stopPropagation();showNoticeModal()">View all ${notices.length} reminders →</div>` : ''}
+        </div>
+        <!-- Circle button -->
+        <div onclick="showNoticeModal()" style="width:52px;height:52px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2);transition:transform .2s,box-shadow .2s;position:relative" onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 24px rgba(0,0,0,.3)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 16px rgba(0,0,0,.2)'">
+            <span style="font-size:1.4rem;color:var(--bg)">&#128227;</span>
+            <span style="position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg)">${notices.length}</span>
+        </div>
+    </div>`;
+
+    // Auto collapse after 5 seconds
+    clearTimeout(window._noticeAutoCollapse);
+    window._noticeAutoCollapse = setTimeout(() => {
+        _noticesDismissed = true;
+        renderNoticeBanners();
+    }, 5000);
+
+    updateFileBadge();
+};
+
+const showNoticeModal = () => {
+    const notices = (DB.fileNotices || []).filter(n => n.isActive);
+
+    const cards = notices.map(n => `
+    <div style="display:flex;align-items:flex-start;gap:12px;padding:16px 18px;background:rgba(245,158,11,.06);border-left:3px solid #f59e0b;border-radius:var(--radius)">
+        <span style="font-size:1.2rem;flex-shrink:0;margin-top:1px">&#128227;</span>
+        <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:.9rem;color:var(--main-text)">${esc(n.title)}</div>
+            ${n.message ? `<div style="font-size:.84rem;color:var(--main-text2);margin-top:6px;line-height:1.6">${esc(n.message)}</div>` : ''}
+            ${n.targetType === 'multiple' ? '<div style="font-size:.72rem;color:var(--main-text3);margin-top:6px">Personal reminder</div>' : ''}
+        </div>
+    </div>`).join('');
+
+    showModal(`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:1.2rem">&#128227;</span>
+            <h3 style="margin:0">Reminders</h3>
+            <span style="font-size:.72rem;color:var(--main-text3);background:var(--main-border);padding:1px 8px;border-radius:10px">${notices.length}</span>
+        </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;max-height:60vh;overflow-y:auto;padding-right:4px">
+        ${cards}
+    </div>
+    <div class="btns" style="margin-top:20px">
+        <button class="btn btn-ghost" onclick="_noticesDismissed=true;renderNoticeBanners();hideModal()">Close</button>
+    </div>`);
 };
 
 /* ==========================================================
@@ -288,6 +390,24 @@ const safeFileName = (name) => {
     return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/\.\./g, '_').substring(0, 200);
 };
 
+// ===== file notify on sidebar =====
+const updateFileBadge = () => {
+    const badge = document.getElementById('emp-nav-file-badge');
+    if (!badge) return;
+
+    if (!currentUser || currentUser.role !== 'employee') {
+        badge.style.display = 'none';
+        return;
+    }
+
+    const notices = (DB.fileNotices || []).filter(n => n.isActive);
+    if (notices.length > 0) {
+        badge.textContent = notices.length;
+        badge.style.display = 'flex';
+    } else {
+        badge.style.display = 'none';
+    }
+};
 
 /* ==========================================================
    SECTION 3: MODAL
@@ -429,10 +549,13 @@ function handleLogin(e) {
                     adminNav('projects');
                 } else {
                     document.getElementById('employee-layout').classList.add('active');
+                    _noticesDismissed = false;  // ← 只在登录时弹一次
                     empNav('attendance');
+                    renderNoticeBanners();
                 }
                 applyNavPermissions();
                 updateAvatars();
+                updateFileBadge();
             }
         } catch (ex) { err.textContent = ex.message; }
     })();
@@ -618,13 +741,11 @@ async function empNav(tab, el) {
     const target = document.getElementById('emp-' + tab);
     if (target) target.style.display = '';
 
-    // 直接用 el 切换 active，不依赖 dataset
     if (nav) {
         nav.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         if (el) {
             el.classList.add('active');
         } else {
-            // fallback: 页面初始化时没有 el，靠 onclick 的 tab 名匹配
             nav.querySelectorAll('.nav-item').forEach(n => {
                 const handler = n.getAttribute('onclick') || '';
                 if (handler.includes("'" + tab + "'")) n.classList.add('active');
@@ -3895,9 +4016,40 @@ const renderEmployeeFiles = () => {
 
     const driveOpts = (DB.driveSettings||[]).map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
 
+    // Reminder bar
+    const notices = DB.fileNotices || [];
+    let reminderBar = '';
+    if (notices.length > 0) {
+        const preview = notices.length === 1
+            ? esc(notices[0].title)
+            : esc(notices[0].title) + (notices.length > 1 ? ` +${notices.length - 1} more` : '');
+
+        const expandedCards = notices.map(n => `
+            <div style="padding:10px 14px;border-bottom:1px solid var(--main-border)">
+                <div style="font-weight:600;font-size:.84rem;color:var(--main-text)">${esc(n.title)}</div>
+                ${n.message ? `<div style="font-size:.8rem;color:var(--main-text3);margin-top:3px;line-height:1.5">${esc(n.message)}</div>` : ''}
+                ${n.targetType === 'multiple' ? '<div style="font-size:.7rem;color:var(--main-text3);margin-top:3px">Personal</div>' : ''}
+            </div>`).join('');
+
+        reminderBar = `
+        <div id="emp-file-reminder-bar" style="margin-bottom:16px;border-radius:var(--radius);overflow:hidden;border:1px solid rgba(245,158,11,.25)">
+            <div onclick="toggleFileReminderBar()" style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:rgba(245,158,11,.1);cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(245,158,11,.16)'" onmouseout="this.style.background='rgba(245,158,11,.1)'">
+                <span id="reminder-bar-arrow" style="font-size:.7rem;color:var(--main-text3);transition:transform .2s">&#9660;</span>
+                <span style="font-size:.95rem">&#128227;</span>
+                <span style="font-size:.84rem;font-weight:600;color:var(--main-text)">Reminders</span>
+                <span style="font-size:.7rem;color:#fff;background:#ef4444;padding:1px 7px;border-radius:10px;font-weight:600">${notices.length}</span>
+                <span style="font-size:.8rem;color:var(--main-text3);margin-left:8px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${preview}</span>
+            </div>
+            <div id="reminder-bar-content" style="display:none;max-height:200px;overflow-y:auto;background:var(--main-surface)">
+                ${expandedCards}
+            </div>
+        </div>`;
+    }
+
     document.getElementById('emp-files').innerHTML = `
     <div class="app-header"><h2>Files</h2><div class="header-sub">View and download files from Google Drive</div></div>
     <div class="app-body">
+      ${reminderBar}
       <div class="pt-anim-filter filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -3908,6 +4060,14 @@ const renderEmployeeFiles = () => {
               <option value="">All Folders</option>
               ${driveOpts}
             </select>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label>
+            <input class="input" type="date" id="emp-file-date-from" onchange="applyEmpFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label>
+            <input class="input" type="date" id="emp-file-date-to" onchange="applyEmpFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
           </div>
           <div style="display:flex;gap:8px;margin-left:auto">
             <button class="btn btn-ghost btn-sm" onclick="resetEmpFileFilter()">Reset</button>
@@ -3921,9 +4081,20 @@ const renderEmployeeFiles = () => {
     setTimeout(() => applyEmpFileFilter(), 100);
 };
 
+const toggleFileReminderBar = () => {
+    const content = document.getElementById('reminder-bar-content');
+    const arrow = document.getElementById('reminder-bar-arrow');
+    if (!content) return;
+    const isOpen = content.style.display !== 'none';
+    content.style.display = isOpen ? 'none' : 'block';
+    if (arrow) arrow.style.transform = isOpen ? '' : 'rotate(180deg)';
+};
+
 const resetEmpFileFilter = () => {
     document.getElementById('emp-file-search').value = '';
     document.getElementById('emp-file-drive-filter').value = '';
+    document.getElementById('emp-file-date-from').value = '';
+    document.getElementById('emp-file-date-to').value = '';
     empFileCurrentPage = 1;
     applyEmpFileFilter();
 };
@@ -3931,16 +4102,24 @@ const resetEmpFileFilter = () => {
 const applyEmpFileFilter = () => {
     const search = (document.getElementById('emp-file-search')?.value || '').toLowerCase();
     const driveFilter = document.getElementById('emp-file-drive-filter')?.value || '';
+    const dateFrom = document.getElementById('emp-file-date-from')?.value || '';
+    const dateTo = document.getElementById('emp-file-date-to')?.value || '';
     const driveNameMap = {};
     (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name.toLowerCase(); });
 
     let filtered = (DB.files || []).filter(f => {
         if (driveFilter && String(f.driveSettingId) !== driveFilter) return false;
+        if (dateFrom || dateTo) {
+            const fileDate = f.createdAt ? f.createdAt.slice(0, 10) : '';
+            if (!fileDate) return false;
+            if (dateFrom && fileDate < dateFrom) return false;
+            if (dateTo && fileDate > dateTo) return false;
+        }
         if (search) {
             const driveName = f.driveSettingId ? (driveNameMap[f.driveSettingId] || '') : '';
             const dateFormatted = f.createdAt ? formatDateDMY(f.createdAt.slice(0,10)).toLowerCase() : '';
             const dateISO = f.createdAt ? f.createdAt.slice(0,10) : '';
-            const haystack = [f.name, f.uploaderName, f.type, f.remark, driveName, dateFormatted, dateISO].map(v => (v||'').toLowerCase()).join(' ');
+            const haystack = [f.title, f.name, f.uploaderName, f.type, f.remark, driveName, dateFormatted, dateISO].map(v => (v||'').toLowerCase()).join(' ');
             if (haystack.indexOf(search) === -1) return false;
         }
         return true;
@@ -3961,15 +4140,14 @@ const renderEmpFileTable = () => {
     const driveNameMap = {};
     (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name; });
 
-    // 找当前用户关联的 memberId
     const myMemberId = currentUser.memberId || null;
 
     const rows = filtered.length === 0
-        ? '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No files found</td></tr>'
+        ? '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No files found</td></tr>'
         : page.map((f, idx) => {
             const driveName = f.driveSettingId ? (driveNameMap[f.driveSettingId] || '—') : '—';
-            // 只能删自己上传的
             const canDelete = myMemberId && f.uploadedBy === myMemberId;
+            const displayTitle = f.title ? esc(f.title) : '<span style="color:var(--main-text3)">—</span>';
             const actions = `<div class="actions-cell">
                 <button class="btn-icon" title="Preview" onclick="empPreviewFile(${f.id})">&#128065;</button>
                 <button class="btn-icon" title="Open in Drive" onclick="window.open('${esc(f.url)}','_blank')">&#8599;</button>
@@ -3977,6 +4155,7 @@ const renderEmpFileTable = () => {
             </div>`;
             return `<tr>
                 <td style="font-family:var(--font-m);color:var(--main-text3)">${start+idx+1}</td>
+                <td title="${esc(f.title||'')}">${displayTitle}</td>
                 <td>${getFileTypeIcon(f.name)} <strong>${esc(f.name)}</strong></td>
                 <td>${getFileTypeBadge(f.type)}</td>
                 <td style="text-align:right;font-family:var(--font-m)">${formatFileSize(f.size)}</td>
@@ -4012,7 +4191,7 @@ const renderEmpFileTable = () => {
     }
     document.getElementById('emp-file-table-area').innerHTML = `
         <div class="table-wrap"><table>
-            <thead><tr><th style="width:50px">No</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:120px">Actions</th></tr></thead>
+            <thead><tr><th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:120px">Actions</th></tr></thead>
             <tbody>${rows}</tbody>
         </table></div>${pagHtml}`;
 };
@@ -4041,6 +4220,10 @@ const showEmpUploadFile = () => {
 
     showModal(`
     <h3>Upload File</h3>
+    <div class="field">
+        <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Display name, optional)</span></label>
+        <input class="input" id="upload-title" placeholder="e.g. Project Report Q1 2025">
+    </div>
     <div class="field">
         <label>Select File <span style="font-size:.72rem;color:var(--main-text3)">(Max 20MB)</span></label>
         <div id="upload-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:30px;text-align:center;cursor:pointer;transition:border-color .2s">
@@ -4092,7 +4275,6 @@ const doEmpUploadFile = async () => {
     const errEl = document.getElementById('upload-error');
     if (!empSelectedFile) { errEl.textContent = 'Select a file first'; return; }
 
-    // 前端安全检查
     if (!isFileSafe(empSelectedFile)) {
         errEl.textContent = 'File type not allowed for security reasons.';
         return;
@@ -4102,6 +4284,7 @@ const doEmpUploadFile = async () => {
     const drive = (DB.driveSettings||[]).find(d => d.id === driveId);
     if (!drive) { errEl.textContent = 'Select a drive folder'; return; }
 
+    const title = (document.getElementById('upload-title')?.value || '').trim();
     const remark = document.getElementById('upload-remark').value.trim();
     const btn = document.getElementById('upload-btn');
     const progress = document.getElementById('upload-progress');
@@ -4141,6 +4324,7 @@ const doEmpUploadFile = async () => {
         await api('/files', {
             method: 'POST',
             body: {
+                title: title,
                 name: safeNameResult,
                 type: empSelectedFile.type || 'application/octet-stream',
                 size: empSelectedFile.size,
@@ -4169,11 +4353,13 @@ const empPreviewFile = id => {
     const driveNameMap = {};
     (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name; });
     const previewUrl = `https://drive.google.com/file/d/${file.driveFileId}/preview`;
+    const displayLabel = file.title ? esc(file.title) : esc(file.name);
     showModal(`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <h3 style="margin:0">${getFileTypeIcon(file.name)} ${esc(file.name)}</h3>
+        <h3 style="margin:0">${getFileTypeIcon(file.name)} ${displayLabel}</h3>
         <button class="btn btn-ghost btn-sm" onclick="window.open('${esc(file.url)}','_blank')">&#8599; Open in Drive</button>
     </div>
+    ${file.title ? `<div style="font-size:.82rem;color:var(--main-text3);margin-bottom:8px">File: ${esc(file.name)}</div>` : ''}
     <iframe src="${previewUrl}" style="width:100%;height:65vh;border:none;border-radius:var(--radius)"></iframe>
     <div style="margin-top:8px;display:flex;gap:16px;font-size:.78rem;color:var(--main-text3)">
         <span>Size: ${formatFileSize(file.size)}</span>
@@ -6600,10 +6786,19 @@ const renderAdminFiles = () => {
               ${driveOpts}
             </select>
           </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label>
+            <input class="input" type="date" id="file-date-from" onchange="applyFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label>
+            <input class="input" type="date" id="file-date-to" onchange="applyFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
+          </div>
           <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
             <button class="btn btn-ghost btn-sm" onclick="resetFileFilter()">Reset</button>
             ${currentUser.role !== 'viewer' ? '<button class="btn btn-green" onclick="showUploadFile()">+ Upload File</button>' : ''}
-            ${currentUser.role === 'admin' ? '<button class="btn btn-ghost btn-sm" onclick="showDriveSettings()">⚙ Drive Settings</button>' : ''}
+            ${currentUser.role === 'admin' ? '<button class="btn btn-accent btn-sm" onclick="showFileNoticesModal()">📋 Reminders</button>' : ''}
+            ${currentUser.role === 'admin' ? '<button class="btn btn-blue btn-sm" onclick="showDriveSettings()">⚙ Drive Settings</button>' : ''}
           </div>
         </div>
       </div>
@@ -6622,9 +6817,294 @@ const renderAdminFiles = () => {
     setTimeout(() => { adminFileRenderLock = false; }, 850);
 };
 
+// ==========================================================
+//   FILE NOTICES MODAL
+// ==========================================================
+
+let _editingNoticeId = null;
+let _noticeFormListenersBound = false;
+
+const showFileNoticesModal = () => {
+    _editingNoticeId = null;
+    renderNoticesModalContent();
+};
+
+const renderNoticesModalContent = () => {
+    const notices = DB.fileNotices || [];
+    const members = DB.members || [];
+
+    const renderNoticeList = (list) => {
+        if (list.length === 0) {
+            return '<div style="text-align:center;color:var(--main-text3);padding:30px 0;font-size:.85rem">No reminders found.</div>';
+        }
+        return list.map(n => {
+            const targetLabel = n.targetType === 'all'
+                ? '<span style="color:var(--accent);font-size:.78rem;font-weight:600">All Employees</span>'
+                : n.targetMemberNames && n.targetMemberNames.length > 0
+                    ? `<span style="font-size:.78rem;color:var(--main-text2)">${n.targetMemberNames.map(esc).join(', ')}</span>`
+                    : '<span style="font-size:.78rem;color:var(--main-text3)">No one</span>';
+            const statusDot = n.isActive
+                ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#16a34a"></span>'
+                : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--main-text3)"></span>';
+            return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--main-bg);border-radius:var(--radius);border:1px solid var(--main-border)">
+                ${statusDot}
+                <div style="flex:1;min-width:0">
+                    <div style="font-weight:600;font-size:.88rem;color:var(--main-text)">${esc(n.title)}</div>
+                    ${n.message ? `<div style="font-size:.82rem;color:var(--main-text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.message)}</div>` : ''}
+                </div>
+                <div style="white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis">${targetLabel}</div>
+                <div style="display:flex;gap:4px">
+                    <button class="btn-icon" title="Edit" onclick="editNoticeInModal(${n.id})">&#9998;</button>
+                    <button class="btn-icon danger" title="Delete" onclick="deleteNoticeInModal(${n.id})">&#10005;</button>
+                </div>
+            </div>`;
+        }).join('');
+    };
+
+    const memberCheckboxes = members.map(m =>
+        `<label class="nm-member-label" style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:.82rem;transition:background .15s" onmouseover="this.style.background='var(--main-border)'" onmouseout="this.style.background='transparent'" data-name="${esc(m.name.toLowerCase())}">
+            <input type="checkbox" class="nm-cb" value="${m.id}"> ${esc(m.name)}
+        </label>`
+    ).join('');
+
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <!-- Header -->
+        <div style="flex-shrink:0;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+            <h3 style="margin:0">&#128227; File Reminders</h3>
+            <span style="font-size:.82rem;color:var(--main-text3)">${notices.length} total</span>
+        </div>
+
+        <!-- Form -->
+        <div style="flex-shrink:0;background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px;margin-bottom:16px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+                <input class="input" id="nm-title" placeholder="Title (required)">
+                <div style="display:flex;align-items:center;gap:10px">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer;white-space:nowrap">
+                        <input type="checkbox" id="nm-active" checked> Active
+                    </label>
+                </div>
+            </div>
+            <textarea class="input" id="nm-message" rows="2" placeholder="Message (optional)" style="margin-bottom:10px"></textarea>
+            <div style="margin-bottom:10px">
+                <div style="display:flex;align-items:center;gap:16px;margin-bottom:8px">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem">
+                        <input type="radio" name="nm-target" value="all" checked onchange="document.getElementById('nm-members').style.display='none'"> All Employees
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem">
+                        <input type="radio" name="nm-target" value="multiple" onchange="document.getElementById('nm-members').style.display='block'"> Select Employees
+                    </label>
+                </div>
+                <div id="nm-members" style="display:none">
+                    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+                        <input class="input" id="nm-member-search" placeholder="Search employee..." oninput="filterNmMembers()" style="flex:1;min-width:200px;max-width:300px;font-size:.82rem;padding:8px 12px">
+                        <button class="btn btn-ghost btn-sm" onclick="nmSelectVisible()">Select Visible</button>
+                        <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('.nm-cb').forEach(c=>c.checked=false);updateNmCount()">Deselect All</button>
+                        <span id="nm-count" style="font-size:.78rem;color:var(--main-text3)">0 selected</span>
+                    </div>
+                    <div style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius);padding:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 12px" id="nm-member-list">
+                        ${memberCheckboxes}
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px">
+                <button class="btn btn-ghost btn-sm" onclick="clearNmForm()">Clear</button>
+                <button class="btn btn-green btn-sm" id="nm-save-btn" onclick="saveNoticeFromModal()">+ Add</button>
+            </div>
+        </div>
+
+        <!-- Notice Search -->
+        <div style="flex-shrink:0;margin-bottom:10px">
+            <input class="input" id="nm-search" placeholder="Search reminders..." oninput="filterNoticeList()" style="width:100%">
+        </div>
+
+        <!-- Notice List -->
+        <div style="flex:1;min-height:250px;overflow-y:auto;max-height:35vh;padding-right:4px" id="nm-list">
+            ${renderNoticeList(notices)}
+        </div>
+
+        <!-- Footer -->
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>
+    </div>`);
+
+    setTimeout(() => {
+        document.querySelectorAll('.nm-cb').forEach(cb => {
+            cb.addEventListener('change', updateNmCount);
+        });
+    }, 100);
+};
+const filterNoticeList = () => {
+    const search = (document.getElementById('nm-search')?.value || '').toLowerCase();
+    const notices = DB.fileNotices || [];
+
+    if (!search) {
+        renderFilteredNoticeList(notices);
+        return;
+    }
+
+    const filtered = notices.filter(n => {
+        const names = (n.targetMemberNames || []).join(' ').toLowerCase();
+        const haystack = [n.title, n.message, n.targetType, names].map(v => (v || '').toLowerCase()).join(' ');
+        return haystack.indexOf(search) !== -1;
+    });
+
+    renderFilteredNoticeList(filtered);
+};
+const filterNmMembers = () => {
+    const search = (document.getElementById('nm-member-search')?.value || '').toLowerCase();
+    const labels = document.querySelectorAll('.nm-member-label');
+    labels.forEach(label => {
+        const name = label.getAttribute('data-name') || '';
+        label.style.display = (!search || name.indexOf(search) !== -1) ? 'flex' : 'none';
+    });
+};
+
+const nmSelectVisible = () => {
+    document.querySelectorAll('.nm-member-label').forEach(label => {
+        if (label.style.display !== 'none') {
+            const cb = label.querySelector('.nm-cb');
+            if (cb) cb.checked = true;
+        }
+    });
+    updateNmCount();
+};
+
+const renderFilteredNoticeList = (list) => {
+    let html = '';
+    if (list.length === 0) {
+        html = '<div style="text-align:center;color:var(--main-text3);padding:30px 0;font-size:.85rem">No reminders match your search.</div>';
+    } else {
+        html = list.map(n => {
+            const targetLabel = n.targetType === 'all'
+                ? '<span style="color:var(--accent);font-size:.78rem;font-weight:600">All Employees</span>'
+                : n.targetMemberNames && n.targetMemberNames.length > 0
+                    ? `<span style="font-size:.78rem;color:var(--main-text2)">${n.targetMemberNames.map(esc).join(', ')}</span>`
+                    : '<span style="font-size:.78rem;color:var(--main-text3)">No one</span>';
+            const statusDot = n.isActive
+                ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#16a34a"></span>'
+                : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--main-text3)"></span>';
+            return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--main-bg);border-radius:var(--radius);border:1px solid var(--main-border)">
+                ${statusDot}
+                <div style="flex:1;min-width:0">
+                    <div style="font-weight:600;font-size:.88rem;color:var(--main-text)">${esc(n.title)}</div>
+                    ${n.message ? `<div style="font-size:.82rem;color:var(--main-text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.message)}</div>` : ''}
+                </div>
+                <div style="white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis">${targetLabel}</div>
+                <div style="display:flex;gap:4px">
+                    <button class="btn-icon" title="Edit" onclick="editNoticeInModal(${n.id})">&#9998;</button>
+                    <button class="btn-icon danger" title="Delete" onclick="deleteNoticeInModal(${n.id})">&#10005;</button>
+                </div>
+            </div>`;
+        }).join('');
+    }
+    document.getElementById('nm-list').innerHTML = html;
+};
+
+const updateNmCount = () => {
+    const count = document.querySelectorAll('.nm-cb:checked').length;
+    const el = document.getElementById('nm-count');
+    if (el) el.textContent = count + ' selected';
+};
+
+const clearNmForm = () => {
+    document.getElementById('nm-title').value = '';
+    document.getElementById('nm-message').value = '';
+    document.querySelector('input[name="nm-target"][value="all"]').checked = true;
+    document.getElementById('nm-members').style.display = 'none';
+    document.getElementById('nm-active').checked = true;
+    document.querySelectorAll('.nm-cb').forEach(cb => cb.checked = false);
+    updateNmCount();
+    _editingNoticeId = null;
+    document.getElementById('nm-save-btn').textContent = '+ Add';
+};
+
+const saveNoticeFromModal = async () => {
+    const title = document.getElementById('nm-title').value.trim();
+    const message = document.getElementById('nm-message').value.trim();
+    const targetType = document.querySelector('input[name="nm-target"]:checked').value;
+    const targetMemberIds = targetType === 'multiple'
+        ? Array.from(document.querySelectorAll('.nm-cb:checked')).map(cb => parseInt(cb.value))
+        : [];
+    const isActive = document.getElementById('nm-active').checked;
+
+    if (!title) { alert('Title is required'); return; }
+    if (targetType === 'multiple' && targetMemberIds.length === 0) { alert('Select at least one employee'); return; }
+
+    const body = { title, message, targetType, targetMemberIds, isActive };
+
+    if (_editingNoticeId) {
+        await api('/file-notices/' + _editingNoticeId, { method: 'PUT', body });
+        _editingNoticeId = null;
+    } else {
+        await api('/file-notices', { method: 'POST', body });
+    }
+
+    await loadDB();
+    renderNoticesModalContent();
+};
+
+const editNoticeInModal = id => {
+    const n = (DB.fileNotices || []).find(x => x.id === id);
+    if (!n) return;
+
+    _editingNoticeId = id;
+    document.getElementById('nm-title').value = n.title;
+    document.getElementById('nm-message').value = n.message;
+    document.getElementById('nm-active').checked = n.isActive;
+
+    if (n.targetType === 'multiple') {
+        document.querySelector('input[name="nm-target"][value="multiple"]').checked = true;
+        document.getElementById('nm-members').style.display = 'block';
+        document.querySelectorAll('.nm-cb').forEach(cb => {
+            cb.checked = n.targetMemberIds.includes(parseInt(cb.value));
+        });
+    } else {
+        document.querySelector('input[name="nm-target"][value="all"]').checked = true;
+        document.getElementById('nm-members').style.display = 'none';
+        document.querySelectorAll('.nm-cb').forEach(cb => cb.checked = false);
+    }
+
+    updateNmCount();
+    document.getElementById('nm-save-btn').textContent = 'Update';
+    document.getElementById('nm-title').focus();
+};
+
+const deleteNoticeInModal = async id => {
+    const n = (DB.fileNotices || []).find(x => x.id === id);
+    if (!n) return;
+
+    const modalBox = document.getElementById('modal-box');
+    modalBox.innerHTML = `
+    <h3>Delete Reminder</h3>
+    <p style="color:var(--main-text2);line-height:1.6;margin-bottom:12px">
+        Are you sure you want to delete this reminder?
+    </p>
+    <div style="background:var(--main-bg);border:1px solid var(--main-border);border-left:3px solid var(--danger);border-radius:var(--radius);padding:14px 18px;margin-bottom:20px">
+        <div style="font-weight:600;font-size:.9rem;color:var(--main-text);margin-bottom:${n.message ? '6px' : '0'}">${esc(n.title)}</div>
+        ${n.message ? `<div style="font-size:.84rem;color:var(--main-text3);line-height:1.6">${esc(n.message)}</div>` : ''}
+    </div>
+    <div class="btns">
+        <button class="btn btn-ghost" onclick="renderNoticesModalContent()">Cancel</button>
+        <button class="btn btn-danger" onclick="doDeleteNoticeFromModal(${id})">Delete</button>
+    </div>`;
+};
+
+const restoreNoticesModal = () => {
+    renderNoticesModalContent();
+};
+
+const doDeleteNoticeFromModal = async id => {
+    await api('/file-notices/' + id, { method: 'DELETE' });
+    await loadDB();
+    renderNoticesModalContent();
+};
+
+
 const resetFileFilter = () => {
     document.getElementById('file-search').value = '';
     document.getElementById('file-drive-filter').value = '';
+    document.getElementById('file-date-from').value = '';
+    document.getElementById('file-date-to').value = '';
     fileCurrentPage = 1;
     applyFileFilter();
 };
@@ -6632,16 +7112,24 @@ const resetFileFilter = () => {
 const applyFileFilter = () => {
     const search = (document.getElementById('file-search')?.value || '').toLowerCase();
     const driveFilter = document.getElementById('file-drive-filter')?.value || '';
+    const dateFrom = document.getElementById('file-date-from')?.value || '';
+    const dateTo = document.getElementById('file-date-to')?.value || '';
     const driveNameMap = {};
     (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name.toLowerCase(); });
 
     let filtered = (DB.files || []).filter(f => {
         if (driveFilter && String(f.driveSettingId) !== driveFilter) return false;
+        if (dateFrom || dateTo) {
+            const fileDate = f.createdAt ? f.createdAt.slice(0, 10) : '';
+            if (!fileDate) return false;
+            if (dateFrom && fileDate < dateFrom) return false;
+            if (dateTo && fileDate > dateTo) return false;
+        }
         if (search) {
             const driveName = f.driveSettingId ? (driveNameMap[f.driveSettingId] || '') : '';
             const dateFormatted = f.createdAt ? formatDateDMY(f.createdAt.slice(0,10)).toLowerCase() : '';
             const dateISO = f.createdAt ? f.createdAt.slice(0,10) : '';
-            const haystack = [f.name, f.uploaderName, f.type, f.remark, driveName, dateFormatted, dateISO].map(v => (v||'').toLowerCase()).join(' ');
+            const haystack = [f.title, f.name, f.uploaderName, f.type, f.remark, driveName, dateFormatted, dateISO].map(v => (v||'').toLowerCase()).join(' ');
             if (haystack.indexOf(search) === -1) return false;
         }
         return true;
@@ -6672,10 +7160,11 @@ const renderFileTable = () => {
     (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name; });
 
     const rows = filtered.length === 0
-        ? '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No files found</td></tr>'
+        ? '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No files found</td></tr>'
         : page.map((f, idx) => {
             const canDelete = currentUser.role !== 'viewer';
             const driveName = f.driveSettingId ? (driveNameMap[f.driveSettingId] || '—') : '—';
+            const displayTitle = f.title ? esc(f.title) : '<span style="color:var(--main-text3)">—</span>';
             const actions = `<div class="actions-cell">
                 <button class="btn-icon" title="Preview" onclick="previewFile(${f.id})">&#128065;</button>
                 <button class="btn-icon" title="Open in Drive" onclick="window.open('${esc(f.url)}','_blank')">&#8599;</button>
@@ -6683,6 +7172,7 @@ const renderFileTable = () => {
             </div>`;
             return `<tr>
                 <td style="font-family:var(--font-m);color:var(--main-text3)">${start+idx+1}</td>
+                <td title="${esc(f.title||'')}">${displayTitle}</td>
                 <td>${getFileTypeIcon(f.name)} <strong>${esc(f.name)}</strong></td>
                 <td>${getFileTypeBadge(f.type)}</td>
                 <td style="text-align:right;font-family:var(--font-m)">${formatFileSize(f.size)}</td>
@@ -6718,7 +7208,8 @@ const renderFileTable = () => {
     }
     document.getElementById('files-table-area').innerHTML = `
         <div class="table-wrap"><table>
-            <thead><tr><th style="width:50px">No</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:120px">Actions</th></tr></thead>            <tbody>${rows}</tbody>
+            <thead><tr><th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:120px">Actions</th></tr></thead>
+            <tbody>${rows}</tbody>
         </table></div>${pagHtml}`;
 };
 
@@ -6748,6 +7239,10 @@ const showUploadFile = () => {
 
     showModal(`
     <h3>Upload File</h3>
+    <div class="field">
+        <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Display name, optional)</span></label>
+        <input class="input" id="upload-title" placeholder="e.g. Project Report Q1 2025">
+    </div>
     <div class="field">
         <label>Select File</label>
         <div id="upload-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:30px;text-align:center;cursor:pointer;transition:border-color .2s">
@@ -6799,7 +7294,6 @@ const doUploadFile = async () => {
     const errEl = document.getElementById('upload-error');
     if (!_selectedFile) { errEl.textContent = 'Select a file first'; return; }
 
-    // 前端安全检查
     if (!isFileSafe(_selectedFile)) {
         errEl.textContent = 'File type not allowed for security reasons.';
         return;
@@ -6809,6 +7303,7 @@ const doUploadFile = async () => {
     const drive = (DB.driveSettings||[]).find(d => d.id === driveId);
     if (!drive) { errEl.textContent = 'Select a drive folder'; return; }
 
+    const title = (document.getElementById('upload-title')?.value || '').trim();
     const btn = document.getElementById('upload-btn');
     const progress = document.getElementById('upload-progress');
     const bar = document.getElementById('upload-progress-bar');
@@ -6847,6 +7342,7 @@ const doUploadFile = async () => {
         await api('/files', {
             method: 'POST',
             body: {
+                title: title,
                 name: safeNameResult,
                 type: _selectedFile.type || 'application/octet-stream',
                 size: _selectedFile.size,
@@ -6875,11 +7371,13 @@ const previewFile = id => {
     const driveNameMap = {};
     (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name; });
     const previewUrl = `https://drive.google.com/file/d/${file.driveFileId}/preview`;
+    const displayLabel = file.title ? esc(file.title) : esc(file.name);
     showModal(`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <h3 style="margin:0">${getFileTypeIcon(file.name)} ${esc(file.name)}</h3>
+        <h3 style="margin:0">${getFileTypeIcon(file.name)} ${displayLabel}</h3>
         <button class="btn btn-ghost btn-sm" onclick="window.open('${esc(file.url)}','_blank')">&#8599; Open in Drive</button>
     </div>
+    ${file.title ? `<div style="font-size:.82rem;color:var(--main-text3);margin-bottom:8px">File: ${esc(file.name)}</div>` : ''}
     <iframe src="${previewUrl}" style="width:100%;height:65vh;border:none;border-radius:var(--radius)"></iframe>
     <div style="margin-top:8px;display:flex;gap:16px;font-size:.78rem;color:var(--main-text3)">
         <span>Size: ${formatFileSize(file.size)}</span>
@@ -7107,6 +7605,215 @@ const doDeleteDriveSetting = async id => {
     await loadDB();
     hideModal();
     setTimeout(() => showDriveSettings(), 200);
+};
+// ==========================================================
+//   FILE NOTICES MANAGEMENT (Admin)
+// ==========================================================
+
+const showFileNotices = () => {
+    const notices = DB.fileNotices || [];
+    const activeCount = notices.filter(n => n.isActive).length;
+
+    showModal(`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div>
+            <h3 style="margin:0">File Notices</h3>
+            <div style="font-size:.82rem;color:var(--main-text3);margin-top:4px">${notices.length} total · ${activeCount} active</div>
+        </div>
+        <button class="btn btn-green btn-sm" onclick="showAddFileNotice()">+ Add Notice</button>
+    </div>
+    <div id="file-notices-table-area"></div>
+    <div class="btns" style="margin-top:16px"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>`);
+
+    renderFileNoticesList();
+};
+
+const renderFileNoticesList = () => {
+    const notices = DB.fileNotices || [];
+
+    if (notices.length === 0) {
+        document.getElementById('file-notices-table-area').innerHTML =
+            '<div style="text-align:center;color:var(--main-text3);padding:40px 0">No notices yet.<br><span style="font-size:.82rem">Click "+ Add Notice" to create one.</span></div>';
+        return;
+    }
+
+    const rows = notices.map(n => {
+        const targetLabel = n.targetType === 'all'
+            ? '<span style="color:var(--accent);font-weight:500">All Employees</span>'
+            : `<span style="color:var(--main-text)">${esc(n.targetMemberName)}</span>`;
+        const statusBadge = n.isActive
+            ? '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:600;color:#16a34a;background:rgba(22,163,74,.1)">Active</span>'
+            : '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:600;color:var(--main-text3);background:var(--main-border)">Inactive</span>';
+
+        return `<tr>
+            <td style="font-family:var(--font-m);color:var(--main-text3)">${n.id}</td>
+            <td><strong>${esc(n.title)}</strong>${n.message ? `<div style="font-size:.82rem;color:var(--main-text3);margin-top:2px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n.message)}</div>` : ''}</td>
+            <td>${targetLabel}</td>
+            <td>${statusBadge}</td>
+            <td><div class="actions-cell">
+                <button class="btn-icon" title="Edit" onclick="showEditFileNotice(${n.id})">&#9998;</button>
+                <button class="btn-icon danger" title="Delete" onclick="confirmDeleteFileNotice(${n.id})">&#10005;</button>
+            </div></td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('file-notices-table-area').innerHTML = `
+        <div class="table-wrap"><table>
+            <thead><tr><th style="width:50px">ID</th><th>Notice</th><th style="width:140px">Target</th><th style="width:80px">Status</th><th style="width:80px">Actions</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table></div>`;
+};
+
+const showAddFileNotice = () => {
+    const members = DB.members || [];
+    const memberOpts = members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+
+    hideModal();
+    setTimeout(() => showModal(`
+    <h3>Add File Notice</h3>
+    <div class="field">
+        <label>Title <span style="color:var(--danger)">*</span></label>
+        <input class="input" id="notice-title" placeholder="e.g. Submit Monthly Report">
+    </div>
+    <div class="field">
+        <label>Message</label>
+        <textarea class="input" id="notice-message" rows="3" placeholder="e.g. Please submit the June 2025 expense report by end of this week."></textarea>
+    </div>
+    <div class="field">
+        <label>Send To</label>
+        <div style="display:flex;gap:16px;margin-bottom:8px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="notice-target" value="all" checked onchange="document.getElementById('notice-member-select').style.display='none'">
+                <span>All Employees</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="notice-target" value="specific" onchange="document.getElementById('notice-member-select').style.display='block'">
+                <span>Specific Employee</span>
+            </label>
+        </div>
+        <div id="notice-member-select" style="display:none">
+            <select class="input" id="notice-member-id">
+                <option value="">-- Select Employee --</option>
+                ${memberOpts}
+            </select>
+        </div>
+    </div>
+    <div class="field">
+        <label><input type="checkbox" id="notice-active" checked> Active (visible to employees)</label>
+    </div>
+    <p class="auth-error" id="notice-error"></p>
+    <div class="btns">
+        <button class="btn btn-ghost" onclick="hideModal();setTimeout(showFileNotices,200)">Cancel</button>
+        <button class="btn btn-accent" onclick="doAddFileNotice()">Add</button>
+    </div>`), 200);
+};
+
+const doAddFileNotice = async () => {
+    const title = document.getElementById('notice-title').value.trim();
+    const message = document.getElementById('notice-message').value.trim();
+    const targetType = document.querySelector('input[name="notice-target"]:checked').value;
+    const targetMemberId = targetType === 'specific' ? parseInt(document.getElementById('notice-member-id').value) : null;
+    const isActive = document.getElementById('notice-active').checked;
+    const errEl = document.getElementById('notice-error');
+
+    if (!title) { errEl.textContent = 'Title is required'; return; }
+    if (targetType === 'specific' && !targetMemberId) { errEl.textContent = 'Select an employee'; return; }
+
+    errEl.textContent = '';
+    await api('/file-notices', {
+        method: 'POST',
+        body: { title, message, targetType, targetMemberId, isActive }
+    });
+    await loadDB();
+    hideModal();
+    setTimeout(() => showFileNotices(), 200);
+};
+
+const showEditFileNotice = id => {
+    const n = (DB.fileNotices || []).find(x => x.id === id);
+    if (!n) return;
+    const members = DB.members || [];
+    const memberOpts = members.map(m => `<option value="${m.id}" ${m.id === n.targetMemberId ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
+
+    hideModal();
+    setTimeout(() => showModal(`
+    <h3>Edit File Notice</h3>
+    <div class="field">
+        <label>Title <span style="color:var(--danger)">*</span></label>
+        <input class="input" id="notice-title" value="${esc(n.title)}">
+    </div>
+    <div class="field">
+        <label>Message</label>
+        <textarea class="input" id="notice-message" rows="3">${esc(n.message)}</textarea>
+    </div>
+    <div class="field">
+        <label>Send To</label>
+        <div style="display:flex;gap:16px;margin-bottom:8px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="notice-target" value="all" ${n.targetType === 'all' ? 'checked' : ''} onchange="document.getElementById('notice-member-select').style.display='none'">
+                <span>All Employees</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="radio" name="notice-target" value="specific" ${n.targetType === 'specific' ? 'checked' : ''} onchange="document.getElementById('notice-member-select').style.display='block'">
+                <span>Specific Employee</span>
+            </label>
+        </div>
+        <div id="notice-member-select" style="display:${n.targetType === 'specific' ? 'block' : 'none'}">
+            <select class="input" id="notice-member-id">
+                <option value="">-- Select Employee --</option>
+                ${memberOpts}
+            </select>
+        </div>
+    </div>
+    <div class="field">
+        <label><input type="checkbox" id="notice-active" ${n.isActive ? 'checked' : ''}> Active (visible to employees)</label>
+    </div>
+    <p class="auth-error" id="notice-error"></p>
+    <div class="btns">
+        <button class="btn btn-ghost" onclick="hideModal();setTimeout(showFileNotices,200)">Cancel</button>
+        <button class="btn btn-accent" onclick="doEditFileNotice(${id})">Save</button>
+    </div>`), 200);
+};
+
+const doEditFileNotice = async id => {
+    const title = document.getElementById('notice-title').value.trim();
+    const message = document.getElementById('notice-message').value.trim();
+    const targetType = document.querySelector('input[name="notice-target"]:checked').value;
+    const targetMemberId = targetType === 'specific' ? parseInt(document.getElementById('notice-member-id').value) : null;
+    const isActive = document.getElementById('notice-active').checked;
+    const errEl = document.getElementById('notice-error');
+
+    if (!title) { errEl.textContent = 'Title is required'; return; }
+    if (targetType === 'specific' && !targetMemberId) { errEl.textContent = 'Select an employee'; return; }
+
+    errEl.textContent = '';
+    await api('/file-notices/' + id, {
+        method: 'PUT',
+        body: { title, message, targetType, targetMemberId, isActive }
+    });
+    await loadDB();
+    hideModal();
+    setTimeout(() => showFileNotices(), 200);
+};
+
+const confirmDeleteFileNotice = id => {
+    const n = (DB.fileNotices || []).find(x => x.id === id);
+    if (!n) return;
+    hideModal();
+    setTimeout(() => showModal(`
+    <h3>Delete Notice</h3>
+    <p style="color:var(--main-text2);line-height:1.6">Delete notice <strong>"${esc(n.title)}"</strong>?</p>
+    <div class="btns">
+        <button class="btn btn-ghost" onclick="hideModal();setTimeout(showFileNotices,200)">Cancel</button>
+        <button class="btn btn-danger" onclick="doDeleteFileNotice(${id})">Delete</button>
+    </div>`), 200);
+};
+
+const doDeleteFileNotice = async id => {
+    await api('/file-notices/' + id, { method: 'DELETE' });
+    await loadDB();
+    hideModal();
+    setTimeout(() => showFileNotices(), 200);
 };
 
 
