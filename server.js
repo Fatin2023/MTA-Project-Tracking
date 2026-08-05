@@ -1533,6 +1533,54 @@ app.post('/api/upload-to-drive', requireAuth, async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+app.put('/api/files/:id', requireAuth, async (req, res) => {
+    try {
+        const file = await pool.query('SELECT * FROM files WHERE id = $1', [req.params.id]);
+        if (file.rows.length === 0) return res.status(404).json({ error: 'File not found' });
+
+        const fileData = file.rows[0];
+
+        if (req.user.role !== 'admin') {
+            if (fileData.uploaded_by !== req.user.memberId) {
+                return res.status(403).json({ error: 'You can only edit your own files' });
+            }
+        }
+
+        const { title, remark, newName, newType, newSize, newUrl, newDriveFileId, newDriveSettingId, replaceFile } = req.body;
+
+        const safeTitle = (title || '').replace(/<[^>]*>/g, '').substring(0, 300);
+        const safeRemark = (remark || '').replace(/<[^>]*>/g, '').substring(0, 500);
+
+        if (replaceFile && newDriveFileId) {
+            if (fileData.drive_file_id) {
+                try {
+                    const cfgResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_script_url'");
+                    const tokenResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_token'");
+                    const scriptUrl = cfgResult.rows[0]?.value;
+                    const token = tokenResult.rows[0]?.value || '';
+                    if (scriptUrl) {
+                        const deleteUrl = scriptUrl + '?action=delete&token=' + encodeURIComponent(token) + '&fileId=' + fileData.drive_file_id;
+                        await fetch(deleteUrl, { redirect: 'follow' });
+                    }
+                } catch (e) { console.log('Drive delete error:', e.message); }
+            }
+            await pool.query(
+                'UPDATE files SET title=$1, remark=$2, name=$3, type=$4, size=$5, url=$6, drive_file_id=$7, drive_setting_id=$8 WHERE id=$9',
+                [safeTitle, safeRemark, newName, newType, newSize, newUrl, newDriveFileId, newDriveSettingId || fileData.drive_setting_id, req.params.id]
+            );
+        } else {
+            const safeDriveId = newDriveSettingId || fileData.drive_setting_id;
+            await pool.query(
+                'UPDATE files SET title=$1, remark=$2, drive_setting_id=$3 WHERE id=$4',
+                [safeTitle, safeRemark, safeDriveId, req.params.id]
+            );
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 // ========================================
 // FILE NOTICES

@@ -132,7 +132,7 @@ const renderNoticeBanners = () => {
     if (_noticesDismissed) {
         btn.style.display = 'block';
         btn.innerHTML = `
-        <div onclick="_noticesDismissed=false;showNoticeModal()" style="width:52px;height:52px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2);transition:transform .2s,box-shadow .2s;position:relative" onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 24px rgba(0,0,0,.3)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 16px rgba(0,0,0,.2)'">
+        <div onclick="_noticesDismissed=false;renderNoticeBanners()" style="width:52px;height:52px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2);transition:transform .2s,box-shadow .2s;position:relative" onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 24px rgba(0,0,0,.3)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 16px rgba(0,0,0,.2)'">
             <span style="font-size:1.4rem;color:var(--bg)">&#128227;</span>
             <span style="position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg)">${notices.length}</span>
         </div>`;
@@ -154,10 +154,11 @@ const renderNoticeBanners = () => {
                 <button onclick="event.stopPropagation();_noticesDismissed=true;renderNoticeBanners()" style="background:none;border:none;cursor:pointer;font-size:.9rem;color:var(--main-text3);padding:2px 6px;border-radius:4px;transition:all .15s" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--main-text3)'" title="Close">&#10005;</button>
             </div>
             ${notices.slice(0, 2).map(n => `
-            <div style="padding:8px 0;border-top:1px solid var(--main-border);cursor:pointer" onclick="event.stopPropagation();showNoticeModal()">
-                <div style="font-weight:600;font-size:.84rem;color:var(--main-text)">${esc(n.title)}</div>
-                ${n.message ? `<div style="font-size:.8rem;color:var(--main-text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.message)}</div>` : ''}
-            </div>`).join('')}
+                <div style="padding:8px 0;border-top:1px solid var(--main-border);cursor:pointer" onclick="event.stopPropagation();showNoticeModal()">
+                    <div style="font-weight:600;font-size:.84rem;color:var(--main-text)">${esc(n.title)}</div>
+                    ${n.message ? `<div style="font-size:.8rem;color:var(--main-text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.message)}</div>` : ''}
+                    <div style="font-size:.7rem;color:var(--main-text3);margin-top:4px">${formatDateDMY(n.createdAt ? n.createdAt.slice(0,10) : null)}</div>
+                </div>`).join('')}
             ${notices.length > 2 ? `<div style="font-size:.78rem;color:var(--accent);text-align:center;padding-top:8px;cursor:pointer" onclick="event.stopPropagation();showNoticeModal()">View all ${notices.length} reminders →</div>` : ''}
         </div>
         <!-- Circle button -->
@@ -167,12 +168,12 @@ const renderNoticeBanners = () => {
         </div>
     </div>`;
 
-    // Auto collapse after 5 seconds
+    // Auto collapse after 8 seconds
     clearTimeout(window._noticeAutoCollapse);
     window._noticeAutoCollapse = setTimeout(() => {
         _noticesDismissed = true;
         renderNoticeBanners();
-    }, 5000);
+    }, 8000);
 
     updateFileBadge();
 };
@@ -181,14 +182,17 @@ const showNoticeModal = () => {
     const notices = (DB.fileNotices || []).filter(n => n.isActive);
 
     const cards = notices.map(n => `
-    <div style="display:flex;align-items:flex-start;gap:12px;padding:16px 18px;background:rgba(245,158,11,.06);border-left:3px solid #f59e0b;border-radius:var(--radius)">
-        <span style="font-size:1.2rem;flex-shrink:0;margin-top:1px">&#128227;</span>
-        <div style="flex:1;min-width:0">
-            <div style="font-weight:600;font-size:.9rem;color:var(--main-text)">${esc(n.title)}</div>
-            ${n.message ? `<div style="font-size:.84rem;color:var(--main-text2);margin-top:6px;line-height:1.6">${esc(n.message)}</div>` : ''}
-            ${n.targetType === 'multiple' ? '<div style="font-size:.72rem;color:var(--main-text3);margin-top:6px">Personal reminder</div>' : ''}
-        </div>
-    </div>`).join('');
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:16px 18px;background:rgba(245,158,11,.06);border-left:3px solid #f59e0b;border-radius:var(--radius)">
+            <span style="font-size:1.2rem;flex-shrink:0;margin-top:1px">&#128227;</span>
+            <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:.9rem;color:var(--main-text)">${esc(n.title)}</div>
+                ${n.message ? `<div style="font-size:.84rem;color:var(--main-text2);margin-top:6px;line-height:1.6">${esc(n.message)}</div>` : ''}
+                <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+                    ${n.targetType === 'multiple' ? '<span style="font-size:.72rem;color:var(--main-text3)">Personal reminder</span>' : ''}
+                    <span style="font-size:.72rem;color:var(--main-text3)">${formatDateDMY(n.createdAt ? n.createdAt.slice(0,10) : null)}</span>
+                </div>
+            </div>
+        </div>`).join('');
 
     showModal(`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
@@ -4009,7 +4013,8 @@ const changeEmpRptTimePageSize = size => {
    EMPLOYEE — FILES
    ========================================================== */
 let empFileCurrentPage = 1, empFilePageSize = 10, empFileFilteredData = [];
-let empSelectedFile = null;
+let empSelectedFiles = [];
+let _empEditFileReplaceSelected = null;
 
 const renderEmployeeFiles = () => {
     empFileCurrentPage = 1; empFilePageSize = 10;
@@ -4028,7 +4033,10 @@ const renderEmployeeFiles = () => {
             <div style="padding:10px 14px;border-bottom:1px solid var(--main-border)">
                 <div style="font-weight:600;font-size:.84rem;color:var(--main-text)">${esc(n.title)}</div>
                 ${n.message ? `<div style="font-size:.8rem;color:var(--main-text3);margin-top:3px;line-height:1.5">${esc(n.message)}</div>` : ''}
-                ${n.targetType === 'multiple' ? '<div style="font-size:.7rem;color:var(--main-text3);margin-top:3px">Personal</div>' : ''}
+                <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+                    ${n.targetType === 'multiple' ? '<span style="font-size:.7rem;color:var(--main-text3)">Personal</span>' : ''}
+                    <span style="font-size:.7rem;color:var(--main-text3)">${formatDateDMY(n.createdAt ? n.createdAt.slice(0,10) : null)}</span>
+                </div>
             </div>`).join('');
 
         reminderBar = `
@@ -4146,11 +4154,13 @@ const renderEmpFileTable = () => {
         ? '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No files found</td></tr>'
         : page.map((f, idx) => {
             const driveName = f.driveSettingId ? (driveNameMap[f.driveSettingId] || '—') : '—';
+            const canEdit = myMemberId && f.uploadedBy === myMemberId;
             const canDelete = myMemberId && f.uploadedBy === myMemberId;
             const displayTitle = f.title ? esc(f.title) : '<span style="color:var(--main-text3)">—</span>';
             const actions = `<div class="actions-cell">
                 <button class="btn-icon" title="Preview" onclick="empPreviewFile(${f.id})">&#128065;</button>
                 <button class="btn-icon" title="Open in Drive" onclick="window.open('${esc(f.url)}','_blank')">&#8599;</button>
+                ${canEdit ? `<button class="btn-icon" title="Edit" onclick="showEmpEditFileModal(${f.id})">&#9998;</button>` : ''}
                 ${canDelete ? `<button class="btn-icon danger" title="Delete" onclick="empConfirmDeleteFile(${f.id})">&#10005;</button>` : ''}
             </div>`;
             return `<tr>
@@ -4191,7 +4201,7 @@ const renderEmpFileTable = () => {
     }
     document.getElementById('emp-file-table-area').innerHTML = `
         <div class="table-wrap"><table>
-            <thead><tr><th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:120px">Actions</th></tr></thead>
+            <thead><tr><th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:150px">Actions</th></tr></thead>
             <tbody>${rows}</tbody>
         </table></div>${pagHtml}`;
 };
@@ -4199,7 +4209,7 @@ const renderEmpFileTable = () => {
 const goEmpFilePage = p => { const tp=Math.ceil(empFileFilteredData.length/empFilePageSize)||1; empFileCurrentPage=Math.max(1,Math.min(p,tp)); renderEmpFileTable(); };
 const changeEmpFilePageSize = s => { empFilePageSize=parseInt(s); empFileCurrentPage=1; renderEmpFileTable(); };
 
-// ---------- Employee Upload ----------
+// ---------- Employee Multiple Upload ----------
 const showEmpUploadFile = () => {
     const drives = DB.driveSettings || [];
     const config = DB.appConfig || {};
@@ -4218,31 +4228,37 @@ const showEmpUploadFile = () => {
     const defaultDrive = drives.find(d => d.isDefault) || drives[0];
     const driveOpts = drives.map(d => `<option value="${d.id}" ${d.id===defaultDrive.id?'selected':''}>${esc(d.name)}</option>`).join('');
 
+    empSelectedFiles = [];
+
     showModal(`
     <h3>Upload File</h3>
     <div class="field">
-        <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Display name, optional)</span></label>
-        <input class="input" id="upload-title" placeholder="e.g. Project Report Q1 2025">
+        <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Display name, optional, applied to all)</span></label>
+        <input class="input" id="upload-title" placeholder="e.g. Project Report">
     </div>
     <div class="field">
-        <label>Select File <span style="font-size:.72rem;color:var(--main-text3)">(Max 20MB)</span></label>
+        <label>Select File <span style="font-size:.72rem;color:var(--main-text3)">(Max 20MB each · Multiple allowed)</span></label>
         <div id="upload-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:30px;text-align:center;cursor:pointer;transition:border-color .2s">
-            <div id="upload-file-info" style="color:var(--main-text3)">Click or drag file here (Max 20MB)</div>
-            <input type="file" id="upload-file-input" style="display:none" onchange="handleEmpFileSelect(this)">
+            <div id="upload-file-info" style="color:var(--main-text3)">Click or drag files here</div>
+            <input type="file" id="upload-file-input" style="display:none" multiple onchange="handleEmpFilesSelect(this)">
         </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+    <div id="upload-file-list" style="margin-top:8px;margin-bottom:12px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="field"><label>Drive Folder</label><select class="input" id="upload-drive">${driveOpts}</select></div>
-        <div class="field"><label>Remark</label><input class="input" id="upload-remark" placeholder="Optional remark"></div>
+        <div class="field"><label>Remark <span style="font-size:.72rem;color:var(--main-text3)">(Applied to all)</span></label><input class="input" id="upload-remark" placeholder="Optional remark"></div>
     </div>
     <div id="upload-progress" style="display:none;margin-top:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span id="upload-file-counter" style="font-size:.82rem;color:var(--main-text3)"></span>
+        </div>
         <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
             <div id="upload-progress-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s ease;border-radius:4px"></div>
         </div>
         <div id="upload-progress-text" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Uploading...</div>
     </div>
     <p class="auth-error" id="upload-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="empSelectedFile=null;hideModal()">Cancel</button><button class="btn btn-accent" id="upload-btn" onclick="doEmpUploadFile()">Upload</button></div>`);
+    <div class="btns"><button class="btn btn-ghost" onclick="empSelectedFiles=[];hideModal()">Cancel</button><button class="btn btn-accent" id="upload-btn" onclick="doEmpUploadFiles()">Upload</button></div>`);
 
     setTimeout(() => {
         const dz = document.getElementById('upload-drop-zone');
@@ -4250,35 +4266,61 @@ const showEmpUploadFile = () => {
         dz.onclick = () => fi.click();
         dz.ondragover = e => { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; };
         dz.ondragleave = () => { dz.style.borderColor = 'var(--main-border)'; };
-        dz.ondrop = e => { e.preventDefault(); dz.style.borderColor = 'var(--main-border)'; if(e.dataTransfer.files.length){fi.files=e.dataTransfer.files;handleEmpFileSelect(fi);} };
+        dz.ondrop = e => { e.preventDefault(); dz.style.borderColor = 'var(--main-border)'; if(e.dataTransfer.files.length){fi.files=e.dataTransfer.files;handleEmpFilesSelect(fi);} };
     }, 100);
 };
 
-const handleEmpFileSelect = input => {
-    const file = input.files[0];
-    if (!file) return;
-    if (file.size > 20 * 1024 * 1024) {
-        document.getElementById('upload-error').textContent = 'File too large. Max 20MB.';
-        input.value = '';
-        empSelectedFile = null;
-        document.getElementById('upload-file-info').innerHTML = '<div style="color:var(--main-text3)">Click or drag file here (Max 20MB)</div>';
-        return;
+const handleEmpFilesSelect = input => {
+    const files = Array.from(input.files);
+    const errEl = document.getElementById('upload-error');
+    errEl.textContent = '';
+
+    for (const f of files) {
+        if (f.size > 20 * 1024 * 1024) {
+            errEl.textContent = `${f.name} too large (max 20MB)`;
+            continue;
+        }
+        if (!isFileSafe(f)) {
+            errEl.textContent = `${f.name}: type not allowed`;
+            continue;
+        }
+        // 避免重复（同名+同大小）
+        const duplicate = empSelectedFiles.some(e => e.name === f.name && e.size === f.size);
+        if (!duplicate) {
+            empSelectedFiles.push(f);
+        }
     }
-    document.getElementById('upload-error').textContent = '';
-    empSelectedFile = file;
-    document.getElementById('upload-file-info').innerHTML =
-        `<div style="font-size:1.1rem;font-weight:600;color:var(--main-text)">${getFileTypeIcon(file.name)} ${esc(file.name)}</div>
-         <div style="font-size:.82rem;color:var(--main-text3);margin-top:4px">${formatFileSize(file.size)} · ${file.type||'Unknown'}</div>`;
+
+    // 清空 input 让同一文件可以再选
+    input.value = '';
+    renderEmpSelectedFileList();
 };
 
-const doEmpUploadFile = async () => {
-    const errEl = document.getElementById('upload-error');
-    if (!empSelectedFile) { errEl.textContent = 'Select a file first'; return; }
-
-    if (!isFileSafe(empSelectedFile)) {
-        errEl.textContent = 'File type not allowed for security reasons.';
+const renderEmpSelectedFileList = () => {
+    const el = document.getElementById('upload-file-list');
+    if (!el) return;
+    if (empSelectedFiles.length === 0) {
+        el.innerHTML = '';
+        document.getElementById('upload-file-info').innerHTML = '<span style="color:var(--main-text3)">Click or drag files here</span>';
         return;
     }
+    document.getElementById('upload-file-info').innerHTML =
+        `<span style="color:var(--accent);font-weight:600">${empSelectedFiles.length} file${empSelectedFiles.length>1?'s':''} selected</span>
+         <span style="font-size:.78rem;color:var(--main-text3);margin-left:6px">— click or drag to add more</span>`;
+    el.innerHTML = empSelectedFiles.map((f, i) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);margin-bottom:4px">
+        ${getFileTypeIcon(f.name)}
+        <div style="flex:1;min-width:0">
+            <div style="font-size:.84rem;font-weight:500;color:var(--main-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(f.name)}</div>
+            <div style="font-size:.75rem;color:var(--main-text3)">${formatFileSize(f.size)}</div>
+        </div>
+        <button onclick="empSelectedFiles.splice(${i},1);renderEmpSelectedFileList()" style="background:none;border:none;cursor:pointer;color:var(--main-text3);font-size:.9rem;padding:2px 6px" title="Remove">&#10005;</button>
+    </div>`).join('');
+};
+
+const doEmpUploadFiles = async () => {
+    const errEl = document.getElementById('upload-error');
+    if (empSelectedFiles.length === 0) { errEl.textContent = 'Select at least one file'; return; }
 
     const driveId = parseInt(document.getElementById('upload-drive').value);
     const drive = (DB.driveSettings||[]).find(d => d.id === driveId);
@@ -4290,59 +4332,232 @@ const doEmpUploadFile = async () => {
     const progress = document.getElementById('upload-progress');
     const bar = document.getElementById('upload-progress-bar');
     const txt = document.getElementById('upload-progress-text');
+    const counter = document.getElementById('upload-file-counter');
 
     btn.disabled = true; btn.textContent = 'Uploading...';
-    progress.style.display = 'block'; bar.style.width = '30%';
-    txt.textContent = 'Reading file...'; errEl.textContent = '';
+    progress.style.display = 'block'; errEl.textContent = '';
 
-    try {
-        const base64 = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = reject;
-            reader.readAsDataURL(empSelectedFile);
-        });
+    const total = empSelectedFiles.length;
+    let completed = 0;
+    const failedFiles = [];
+    const successFiles = [];
 
-        bar.style.width = '50%'; txt.textContent = 'Uploading to Drive...';
+    for (let i = 0; i < total; i++) {
+        const file = empSelectedFiles[i];
+        counter.textContent = `File ${i+1} of ${total}`;
+        bar.style.width = Math.round((i/total)*100) + '%';
+        txt.textContent = `Uploading: ${file.name}`;
 
-        const safeNameResult = safeFileName(empSelectedFile.name);
+        try {
+            const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
 
-        const result = await api('/upload-to-drive', {
-            method: 'POST',
-            body: {
-                fileBase64: base64,
-                fileName: safeNameResult,
-                mimeType: empSelectedFile.type || 'application/octet-stream',
-                folderId: drive.folderId
-            }
-        });
+            const safeNameResult = safeFileName(file.name);
+            const result = await api('/upload-to-drive', {
+                method: 'POST',
+                body: { fileBase64: base64, fileName: safeNameResult, mimeType: file.type || 'application/octet-stream', folderId: drive.folderId }
+            });
+            if (result.error) throw new Error(result.error);
 
-        if (result.error) throw new Error(result.error);
+            await api('/files', {
+                method: 'POST',
+                body: { title, name: safeNameResult, type: file.type || 'application/octet-stream', size: file.size, url: result.fileUrl, driveFileId: result.fileId, driveSettingId: driveId, remark }
+            });
+            completed++;
+            successFiles.push(file.name);
+        } catch (e) {
+            failedFiles.push({ name: file.name, reason: e.message });
+        }
+    }
+    bar.style.width = '100%';
 
-        bar.style.width = '80%'; txt.textContent = 'Saving record...';
-
-        await api('/files', {
-            method: 'POST',
-            body: {
-                title: title,
-                name: safeNameResult,
-                type: empSelectedFile.type || 'application/octet-stream',
-                size: empSelectedFile.size,
-                url: result.fileUrl,
-                driveFileId: result.fileId,
-                driveSettingId: driveId,
-                remark: remark
-            }
-        });
-
-        bar.style.width = '100%'; txt.textContent = 'Upload complete!';
-        empSelectedFile = null;
+    // Build result message
+    if (failedFiles.length === 0) {
+        // All success
+        txt.innerHTML = '<div style="font-weight:600;margin-bottom:4px">All uploaded successfully!</div>' +
+            successFiles.map(n => `<div style="font-size:.82rem;padding:2px 0;color:#16a34a">✓ ${esc(n)}</div>`).join('');
+        empSelectedFiles = [];
         await loadDB();
-        setTimeout(() => { hideModal(); applyEmpFileFilter(); }, 800);
-    } catch (e) {
-        errEl.textContent = 'Upload failed: ' + e.message;
-        btn.disabled = false; btn.textContent = 'Upload';
-        progress.style.display = 'none';
+        setTimeout(() => { hideModal(); applyEmpFileFilter(); }, 1500);
+    } else if (completed === 0) {
+        // All failed
+        txt.innerHTML = '';
+        errEl.innerHTML = `<div style="margin-bottom:6px;font-weight:600">All ${total} file${total>1?'s':''} failed:</div>` +
+            failedFiles.map(f => `<div style="font-size:.82rem;padding:2px 0">✕ <strong>${esc(f.name)}</strong>: ${esc(f.reason)}</div>`).join('');
+        btn.disabled = false; btn.textContent = 'Retry';
+        btn.onclick = () => { errEl.textContent = ''; doEmpUploadFiles(); };
+    } else {
+        // Mixed results
+        let resultHtml = '';
+        if (successFiles.length > 0) {
+            resultHtml += `<div style="font-weight:600;margin-bottom:4px;color:#16a34a">✓ ${successFiles.length} uploaded:</div>` +
+                successFiles.map(n => `<div style="font-size:.82rem;padding:2px 0;color:#16a34a">✓ ${esc(n)}</div>`).join('');
+        }
+        if (failedFiles.length > 0) {
+            resultHtml += `<div style="font-weight:600;margin-top:8px;margin-bottom:4px;color:var(--danger)">✕ ${failedFiles.length} failed:</div>` +
+                failedFiles.map(f => `<div style="font-size:.82rem;padding:2px 0">✕ <strong>${esc(f.name)}</strong>: ${esc(f.reason)}</div>`).join('');
+        }
+        errEl.innerHTML = resultHtml;
+        txt.textContent = `${completed} uploaded, ${failedFiles.length} failed`;
+        empSelectedFiles = empSelectedFiles.filter(f => failedFiles.some(ff => ff.name === f.name));
+        btn.disabled = false; btn.textContent = 'Retry Failed';
+        btn.onclick = () => { errEl.textContent = ''; doEmpUploadFiles(); };
+        await loadDB();
+        setTimeout(() => applyEmpFileFilter(), 500);
+    }
+};
+
+// ---------- Employee Edit File ----------
+const showEmpEditFileModal = id => {
+    const f = (DB.files||[]).find(x => x.id === id);
+    if (!f) return;
+
+    const drives = DB.driveSettings || [];
+    const driveOpts = drives.map(d => `<option value="${d.id}" ${d.id === f.driveSettingId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
+
+    _empEditFileReplaceSelected = null;
+
+    showModal(`
+    <h3>Edit File</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="field"><label>Title</label><input class="input" id="emp-edit-file-title" value="${esc(f.title || '')}" placeholder="Display name"></div>
+        <div class="field"><label>Remark</label><input class="input" id="emp-edit-file-remark" value="${esc(f.remark || '')}" placeholder="Optional remark"></div>
+    </div>
+    <div class="field" style="margin-bottom:12px">
+        <label>Drive Folder</label>
+        <select class="input" id="emp-edit-file-drive">${driveOpts}</select>
+    </div>
+    <div style="background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px">
+        <div style="font-size:.82rem;color:var(--main-text3);margin-bottom:2px">Current File</div>
+        <div style="display:flex;align-items:center;gap:8px">
+            ${getFileTypeIcon(f.name)} <strong style="color:var(--main-text)">${esc(f.name)}</strong>
+            <span style="font-size:.82rem;color:var(--main-text3)">${formatFileSize(f.size)}</span>
+        </div>
+    </div>
+    <div class="field">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="emp-edit-file-replace-toggle" onchange="document.getElementById('emp-edit-file-replace-zone').style.display=this.checked?'block':'none'"> Replace file
+        </label>
+    </div>
+    <div id="emp-edit-file-replace-zone" style="display:none;margin-top:8px;margin-bottom:16px">
+        <div id="emp-edit-file-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:border-color .2s">
+            <div id="emp-edit-file-info" style="color:var(--main-text3)">Click or drag new file here</div>
+            <input type="file" id="emp-edit-file-input" style="display:none" onchange="handleEmpEditFileSelect(this)">
+        </div>
+    </div>
+    <div id="emp-edit-file-progress" style="display:none;margin-bottom:12px">
+        <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
+            <div id="emp-edit-file-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s;border-radius:4px"></div>
+        </div>
+        <div id="emp-edit-file-txt" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Saving...</div>
+    </div>
+    <p class="auth-error" id="emp-edit-file-error"></p>
+    <div class="btns">
+        <button class="btn btn-ghost" onclick="_empEditFileReplaceSelected=null;hideModal()">Cancel</button>
+        <button class="btn btn-accent" id="emp-edit-file-btn" onclick="doEmpEditFile(${id})">Save</button>
+    </div>`);
+
+    setTimeout(() => {
+        const dz = document.getElementById('emp-edit-file-drop-zone');
+        const fi = document.getElementById('emp-edit-file-input');
+        if (dz && fi) {
+            dz.onclick = () => fi.click();
+            dz.ondragover = e => { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; };
+            dz.ondragleave = () => { dz.style.borderColor = 'var(--main-border)'; };
+            dz.ondrop = e => { e.preventDefault(); dz.style.borderColor = 'var(--main-border)'; if(e.dataTransfer.files.length){fi.files=e.dataTransfer.files;handleEmpEditFileSelect(fi);} };
+        }
+    }, 100);
+};
+
+const handleEmpEditFileSelect = input => {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+        document.getElementById('emp-edit-file-error').textContent = 'File too large. Max 20MB.';
+        input.value = '';
+        _empEditFileReplaceSelected = null;
+        document.getElementById('emp-edit-file-info').innerHTML = '<span style="color:var(--main-text3)">Click or drag new file here</span>';
+        return;
+    }
+    document.getElementById('emp-edit-file-error').textContent = '';
+    _empEditFileReplaceSelected = file;
+    document.getElementById('emp-edit-file-info').innerHTML =
+        `<div style="font-size:1rem;font-weight:600;color:var(--main-text)">${getFileTypeIcon(file.name)} ${esc(file.name)}</div>
+         <div style="font-size:.82rem;color:var(--main-text3);margin-top:4px">${formatFileSize(file.size)} · ${file.type||'Unknown'}</div>`;
+};
+
+const doEmpEditFile = async id => {
+    const title = document.getElementById('emp-edit-file-title').value.trim();
+    const remark = document.getElementById('emp-edit-file-remark').value.trim();
+    const isReplacing = document.getElementById('emp-edit-file-replace-toggle').checked;
+    const errEl = document.getElementById('emp-edit-file-error');
+    const btn = document.getElementById('emp-edit-file-btn');
+
+    if (isReplacing && _empEditFileReplaceSelected) {
+        if (!isFileSafe(_empEditFileReplaceSelected)) { errEl.textContent = 'File type not allowed.'; return; }
+
+        const driveId = parseInt(document.getElementById('emp-edit-file-drive').value);
+        const drive = (DB.driveSettings||[]).find(d => d.id === driveId);
+        if (!drive) { errEl.textContent = 'Select a drive folder'; return; }
+
+        btn.disabled = true; btn.textContent = 'Saving...';
+        const progress = document.getElementById('emp-edit-file-progress');
+        const bar = document.getElementById('emp-edit-file-bar');
+        const txt = document.getElementById('emp-edit-file-txt');
+        progress.style.display = 'block'; bar.style.width = '30%'; txt.textContent = 'Reading file...';
+        errEl.textContent = '';
+
+        try {
+            const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(_empEditFileReplaceSelected);
+            });
+            bar.style.width = '50%'; txt.textContent = 'Uploading to Drive...';
+            const safeName = safeFileName(_empEditFileReplaceSelected.name);
+            const result = await api('/upload-to-drive', {
+                method: 'POST',
+                body: { fileBase64: base64, fileName: safeName, mimeType: _empEditFileReplaceSelected.type || 'application/octet-stream', folderId: drive.folderId }
+            });
+            if (result.error) throw new Error(result.error);
+            bar.style.width = '80%'; txt.textContent = 'Saving record...';
+            await api('/files/' + id, {
+                method: 'PUT',
+                body: {
+                    title, remark, replaceFile: true,
+                    newName: safeName, newType: _empEditFileReplaceSelected.type,
+                    newSize: _empEditFileReplaceSelected.size, newUrl: result.fileUrl,
+                    newDriveFileId: result.fileId, newDriveSettingId: driveId
+                }
+            });
+            bar.style.width = '100%'; txt.textContent = 'Done!';
+            _empEditFileReplaceSelected = null;
+            await loadDB();
+            setTimeout(() => { hideModal(); applyEmpFileFilter(); }, 600);
+        } catch (e) {
+            errEl.textContent = 'Failed: ' + e.message;
+            btn.disabled = false; btn.textContent = 'Save';
+            progress.style.display = 'none';
+        }
+    } else {
+        btn.disabled = true; btn.textContent = 'Saving...';
+        try {
+            const driveId = parseInt(document.getElementById('emp-edit-file-drive')?.value) || null;
+            const safeTitle = (title || '').replace(/<[^>]*>/g, '').substring(0, 300);
+            const safeRemark = (remark || '').replace(/<[^>]*>/g, '').substring(0, 500);
+            await api('/files/' + id, { method: 'PUT', body: { title: safeTitle, remark: safeRemark, replaceFile: false, newDriveSettingId: driveId } });
+            await loadDB();
+            hideModal();
+            applyEmpFileFilter();
+        } catch (e) {
+            errEl.textContent = 'Failed: ' + e.message;
+            btn.disabled = false; btn.textContent = 'Save';
+        }
     }
 };
 
@@ -4384,7 +4599,6 @@ const doDeleteEmpFile = id => {
     const file = (DB.files||[]).find(f => f.id === id);
     if (!file) return;
 
-    // 先删 Google Drive 上的文件
     const drive = (DB.driveSettings||[]).find(d => d.id === file.driveSettingId);
     const deletePromise = (drive && file.driveFileId)
         ? api('/delete-drive-file', { method: 'POST', body: { fileId: file.driveFileId } }).catch(() => {})
@@ -6732,7 +6946,8 @@ const exportReportExcel = () => {
    ========================================================== */
 let fileCurrentPage = 1, filePageSize = 10, fileFilteredData = [];
 var _adminFileInitialLoad = false;
-let _selectedFile = null;
+let _selectedFiles = [];
+let _editFileReplaceSelected = null;
 
 const FILE_CATEGORIES = ['General', 'Report', 'Invoice', 'Drawing', 'Photo', 'Document'];
 
@@ -7162,12 +7377,14 @@ const renderFileTable = () => {
     const rows = filtered.length === 0
         ? '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No files found</td></tr>'
         : page.map((f, idx) => {
+            const canEdit = currentUser.role !== 'viewer';
             const canDelete = currentUser.role !== 'viewer';
             const driveName = f.driveSettingId ? (driveNameMap[f.driveSettingId] || '—') : '—';
             const displayTitle = f.title ? esc(f.title) : '<span style="color:var(--main-text3)">—</span>';
             const actions = `<div class="actions-cell">
                 <button class="btn-icon" title="Preview" onclick="previewFile(${f.id})">&#128065;</button>
                 <button class="btn-icon" title="Open in Drive" onclick="window.open('${esc(f.url)}','_blank')">&#8599;</button>
+                ${canEdit ? `<button class="btn-icon" title="Edit" onclick="showEditFileModal(${f.id})">&#9998;</button>` : ''}
                 ${canDelete ? `<button class="btn-icon danger" title="Delete" onclick="confirmDeleteFile(${f.id})">&#10005;</button>` : ''}
             </div>`;
             return `<tr>
@@ -7208,7 +7425,7 @@ const renderFileTable = () => {
     }
     document.getElementById('files-table-area').innerHTML = `
         <div class="table-wrap"><table>
-            <thead><tr><th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:120px">Actions</th></tr></thead>
+            <thead><tr><th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:150px">Actions</th></tr></thead>
             <tbody>${rows}</tbody>
         </table></div>${pagHtml}`;
 };
@@ -7216,7 +7433,7 @@ const renderFileTable = () => {
 const goFilePage = p => { const tp=Math.ceil(fileFilteredData.length/filePageSize)||1; fileCurrentPage=Math.max(1,Math.min(p,tp)); renderFileTable(); };
 const changeFilePageSize = s => { filePageSize=parseInt(s); fileCurrentPage=1; renderFileTable(); };
 
-// ---------- Upload ----------
+// ---------- Admin Multiple Upload ----------
 const showUploadFile = () => {
     const drives = DB.driveSettings || [];
     const config = DB.appConfig || {};
@@ -7237,31 +7454,37 @@ const showUploadFile = () => {
     const defaultDrive = drives.find(d => d.isDefault) || drives[0];
     const driveOpts = drives.map(d => `<option value="${d.id}" ${d.id===defaultDrive.id?'selected':''}>${esc(d.name)}</option>`).join('');
 
+    _selectedFiles = [];
+
     showModal(`
     <h3>Upload File</h3>
     <div class="field">
-        <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Display name, optional)</span></label>
-        <input class="input" id="upload-title" placeholder="e.g. Project Report Q1 2025">
+        <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Display name, optional, applied to all)</span></label>
+        <input class="input" id="upload-title" placeholder="e.g. Project Report">
     </div>
     <div class="field">
-        <label>Select File</label>
+        <label>Select File <span style="font-size:.72rem;color:var(--main-text3)">(Max 20MB each · Multiple allowed)</span></label>
         <div id="upload-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:30px;text-align:center;cursor:pointer;transition:border-color .2s">
-            <div id="upload-file-info" style="color:var(--main-text3)">Click or drag file here</div>
-            <input type="file" id="upload-file-input" style="display:none" onchange="handleFileSelect(this)">
+            <div id="upload-file-info" style="color:var(--main-text3)">Click or drag files here</div>
+            <input type="file" id="upload-file-input" style="display:none" multiple onchange="handleFilesSelect(this)">
         </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+    <div id="upload-file-list" style="margin-top:8px;margin-bottom:12px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="field"><label>Save to Drive Folder</label><select class="input" id="upload-drive">${driveOpts}</select></div>
-        <div class="field"><label>Remark</label><input class="input" id="upload-remark" placeholder="Optional remark"></div>
+        <div class="field"><label>Remark <span style="font-size:.72rem;color:var(--main-text3)">(Applied to all)</span></label><input class="input" id="upload-remark" placeholder="Optional remark"></div>
     </div>
     <div id="upload-progress" style="display:none;margin-top:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span id="upload-file-counter" style="font-size:.82rem;color:var(--main-text3)"></span>
+        </div>
         <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
             <div id="upload-progress-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s ease;border-radius:4px"></div>
         </div>
         <div id="upload-progress-text" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Uploading...</div>
     </div>
     <p class="auth-error" id="upload-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="_selectedFile=null;hideModal()">Cancel</button><button class="btn btn-accent" id="upload-btn" onclick="doUploadFile()">Upload</button></div>`);
+    <div class="btns"><button class="btn btn-ghost" onclick="_selectedFiles=[];hideModal()">Cancel</button><button class="btn btn-accent" id="upload-btn" onclick="doUploadFiles()">Upload</button></div>`);
 
     setTimeout(() => {
         const dz = document.getElementById('upload-drop-zone');
@@ -7269,98 +7492,294 @@ const showUploadFile = () => {
         dz.onclick = () => fi.click();
         dz.ondragover = e => { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; };
         dz.ondragleave = () => { dz.style.borderColor = 'var(--main-border)'; };
-        dz.ondrop = e => { e.preventDefault(); dz.style.borderColor = 'var(--main-border)'; if(e.dataTransfer.files.length){fi.files=e.dataTransfer.files;handleFileSelect(fi);} };
+        dz.ondrop = e => { e.preventDefault(); dz.style.borderColor = 'var(--main-border)'; if(e.dataTransfer.files.length){fi.files=e.dataTransfer.files;handleFilesSelect(fi);} };
     }, 100);
 };
 
-const handleFileSelect = input => {
-    const file = input.files[0];
-    if (!file) return;
-    if (file.size > 20 * 1024 * 1024) {
-        document.getElementById('upload-error').textContent = 'File too large. Max 20MB.';
-        input.value = '';
-        _selectedFile = null;
-        document.getElementById('upload-file-info').innerHTML = '<div style="color:var(--main-text3)">Click or drag file here (Max 20MB)</div>';
-        return;
+const handleFilesSelect = input => {
+    const files = Array.from(input.files);
+    const errEl = document.getElementById('upload-error');
+    errEl.textContent = '';
+
+    for (const f of files) {
+        if (f.size > 20 * 1024 * 1024) {
+            errEl.textContent = `${f.name} too large (max 20MB)`;
+            continue;
+        }
+        if (!isFileSafe(f)) {
+            errEl.textContent = `${f.name}: type not allowed`;
+            continue;
+        }
+        const duplicate = _selectedFiles.some(e => e.name === f.name && e.size === f.size);
+        if (!duplicate) {
+            _selectedFiles.push(f);
+        }
     }
-    document.getElementById('upload-error').textContent = '';
-    _selectedFile = file;
-    document.getElementById('upload-file-info').innerHTML =
-        `<div style="font-size:1.1rem;font-weight:600;color:var(--main-text)">${getFileTypeIcon(file.name)} ${esc(file.name)}</div>
-         <div style="font-size:.82rem;color:var(--main-text3);margin-top:4px">${formatFileSize(file.size)} · ${file.type||'Unknown'}</div>`;
+
+    input.value = '';
+    renderSelectedFileList();
 };
 
-const doUploadFile = async () => {
-    const errEl = document.getElementById('upload-error');
-    if (!_selectedFile) { errEl.textContent = 'Select a file first'; return; }
 
-    if (!isFileSafe(_selectedFile)) {
-        errEl.textContent = 'File type not allowed for security reasons.';
+const renderSelectedFileList = () => {
+    const el = document.getElementById('upload-file-list');
+    if (!el) return;
+    if (_selectedFiles.length === 0) {
+        el.innerHTML = '';
+        document.getElementById('upload-file-info').innerHTML = '<span style="color:var(--main-text3)">Click or drag files here</span>';
         return;
     }
+    document.getElementById('upload-file-info').innerHTML =
+        `<span style="color:var(--accent);font-weight:600">${_selectedFiles.length} file${_selectedFiles.length>1?'s':''} selected</span>
+         <span style="font-size:.78rem;color:var(--main-text3);margin-left:6px">— click or drag to add more</span>`;
+    el.innerHTML = _selectedFiles.map((f, i) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);margin-bottom:4px">
+        ${getFileTypeIcon(f.name)}
+        <div style="flex:1;min-width:0">
+            <div style="font-size:.84rem;font-weight:500;color:var(--main-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(f.name)}</div>
+            <div style="font-size:.75rem;color:var(--main-text3)">${formatFileSize(f.size)}</div>
+        </div>
+        <button onclick="_selectedFiles.splice(${i},1);renderSelectedFileList()" style="background:none;border:none;cursor:pointer;color:var(--main-text3);font-size:.9rem;padding:2px 6px" title="Remove">&#10005;</button>
+    </div>`).join('');
+};
+
+const doUploadFiles = async () => {
+    const errEl = document.getElementById('upload-error');
+    if (_selectedFiles.length === 0) { errEl.textContent = 'Select at least one file'; return; }
 
     const driveId = parseInt(document.getElementById('upload-drive').value);
     const drive = (DB.driveSettings||[]).find(d => d.id === driveId);
     if (!drive) { errEl.textContent = 'Select a drive folder'; return; }
 
     const title = (document.getElementById('upload-title')?.value || '').trim();
+    const remark = document.getElementById('upload-remark').value.trim();
     const btn = document.getElementById('upload-btn');
     const progress = document.getElementById('upload-progress');
     const bar = document.getElementById('upload-progress-bar');
     const txt = document.getElementById('upload-progress-text');
+    const counter = document.getElementById('upload-file-counter');
 
     btn.disabled = true; btn.textContent = 'Uploading...';
-    progress.style.display = 'block'; bar.style.width = '30%';
-    txt.textContent = 'Reading file...'; errEl.textContent = '';
+    progress.style.display = 'block'; errEl.textContent = '';
 
-    try {
-        const base64 = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.onerror = reject;
-            reader.readAsDataURL(_selectedFile);
-        });
+    const total = _selectedFiles.length;
+    let completed = 0;
+    const failedFiles = [];
+    const successFiles = [];
 
-        bar.style.width = '50%'; txt.textContent = 'Uploading to Drive...';
+    for (let i = 0; i < total; i++) {
+        const file = _selectedFiles[i];
+        counter.textContent = `File ${i+1} of ${total}`;
+        bar.style.width = Math.round((i/total)*100) + '%';
+        txt.textContent = `Uploading: ${file.name}`;
 
-        const safeNameResult = safeFileName(_selectedFile.name);
+        try {
+            const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
 
-        const result = await api('/upload-to-drive', {
-            method: 'POST',
-            body: {
-                fileBase64: base64,
-                fileName: safeNameResult,
-                mimeType: _selectedFile.type || 'application/octet-stream',
-                folderId: drive.folderId
-            }
-        });
+            const safeNameResult = safeFileName(file.name);
+            const result = await api('/upload-to-drive', {
+                method: 'POST',
+                body: { fileBase64: base64, fileName: safeNameResult, mimeType: file.type || 'application/octet-stream', folderId: drive.folderId }
+            });
+            if (result.error) throw new Error(result.error);
 
-        if (result.error) throw new Error(result.error);
+            await api('/files', {
+                method: 'POST',
+                body: { title, name: safeNameResult, type: file.type || 'application/octet-stream', size: file.size, url: result.fileUrl, driveFileId: result.fileId, driveSettingId: driveId, remark }
+            });
+            completed++;
+            successFiles.push(file.name);
+        } catch (e) {
+            failedFiles.push({ name: file.name, reason: e.message });
+        }
+    }
 
-        bar.style.width = '80%'; txt.textContent = 'Saving record...';
+    bar.style.width = '100%';
 
-        await api('/files', {
-            method: 'POST',
-            body: {
-                title: title,
-                name: safeNameResult,
-                type: _selectedFile.type || 'application/octet-stream',
-                size: _selectedFile.size,
-                url: result.fileUrl,
-                driveFileId: result.fileId,
-                driveSettingId: driveId,
-                remark: document.getElementById('upload-remark').value.trim()
-            }
-        });
-
-        bar.style.width = '100%'; txt.textContent = 'Upload complete!';
-        _selectedFile = null;
+    if (failedFiles.length === 0) {
+        txt.innerHTML = '<div style="font-weight:600;margin-bottom:4px">All uploaded successfully!</div>' +
+            successFiles.map(n => `<div style="font-size:.82rem;padding:2px 0;color:#16a34a">✓ ${esc(n)}</div>`).join('');
+        _selectedFiles = [];
         await loadDB();
-        setTimeout(() => { hideModal(); applyFileFilter(); }, 800);
-    } catch (e) {
-        errEl.textContent = 'Upload failed: ' + e.message;
-        btn.disabled = false; btn.textContent = 'Upload';
-        progress.style.display = 'none';
+        setTimeout(() => { hideModal(); applyFileFilter(); }, 1500);
+    } else if (completed === 0) {
+        txt.innerHTML = '';
+        errEl.innerHTML = `<div style="margin-bottom:6px;font-weight:600">All ${total} file${total>1?'s':''} failed:</div>` +
+            failedFiles.map(f => `<div style="font-size:.82rem;padding:2px 0">✕ <strong>${esc(f.name)}</strong>: ${esc(f.reason)}</div>`).join('');
+        btn.disabled = false; btn.textContent = 'Retry';
+        btn.onclick = () => { errEl.textContent = ''; doUploadFiles(); };
+    } else {
+        let resultHtml = '';
+        if (successFiles.length > 0) {
+            resultHtml += `<div style="font-weight:600;margin-bottom:4px;color:#16a34a">✓ ${successFiles.length} uploaded:</div>` +
+                successFiles.map(n => `<div style="font-size:.82rem;padding:2px 0;color:#16a34a">✓ ${esc(n)}</div>`).join('');
+        }
+        if (failedFiles.length > 0) {
+            resultHtml += `<div style="font-weight:600;margin-top:8px;margin-bottom:4px;color:var(--danger)">✕ ${failedFiles.length} failed:</div>` +
+                failedFiles.map(f => `<div style="font-size:.82rem;padding:2px 0">✕ <strong>${esc(f.name)}</strong>: ${esc(f.reason)}</div>`).join('');
+        }
+        errEl.innerHTML = resultHtml;
+        txt.textContent = `${completed} uploaded, ${failedFiles.length} failed`;
+        _selectedFiles = _selectedFiles.filter(f => failedFiles.some(ff => ff.name === f.name));
+        btn.disabled = false; btn.textContent = 'Retry Failed';
+        btn.onclick = () => { errEl.textContent = ''; doUploadFiles(); };
+        await loadDB();
+        setTimeout(() => applyFileFilter(), 500);
+    }
+};
+
+// ---------- Admin Edit File ----------
+const showEditFileModal = id => {
+    const f = (DB.files||[]).find(x => x.id === id);
+    if (!f) return;
+
+    const drives = DB.driveSettings || [];
+    const driveOpts = drives.map(d => `<option value="${d.id}" ${d.id === f.driveSettingId ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
+
+    _editFileReplaceSelected = null;
+
+    showModal(`
+    <h3>Edit File</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="field"><label>Title</label><input class="input" id="edit-file-title" value="${esc(f.title || '')}" placeholder="Display name"></div>
+        <div class="field"><label>Remark</label><input class="input" id="edit-file-remark" value="${esc(f.remark || '')}" placeholder="Optional remark"></div>
+    </div>
+    <div class="field" style="margin-bottom:12px">
+        <label>Drive Folder</label>
+        <select class="input" id="edit-file-drive">${driveOpts}</select>
+    </div>
+    <div style="background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px">
+        <div style="font-size:.82rem;color:var(--main-text3);margin-bottom:2px">Current File</div>
+        <div style="display:flex;align-items:center;gap:8px">
+            ${getFileTypeIcon(f.name)} <strong style="color:var(--main-text)">${esc(f.name)}</strong>
+            <span style="font-size:.82rem;color:var(--main-text3)">${formatFileSize(f.size)}</span>
+        </div>
+    </div>
+    <div class="field">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="edit-file-replace-toggle" onchange="document.getElementById('edit-file-replace-zone').style.display=this.checked?'block':'none'"> Replace file
+        </label>
+    </div>
+    <div id="edit-file-replace-zone" style="display:none;margin-top:8px;margin-bottom:16px">
+        <div id="edit-file-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:border-color .2s">
+            <div id="edit-file-info" style="color:var(--main-text3)">Click or drag new file here</div>
+            <input type="file" id="edit-file-input" style="display:none" onchange="handleEditFileSelect(this)">
+        </div>
+    </div>
+    <div id="edit-file-progress" style="display:none;margin-bottom:12px">
+        <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
+            <div id="edit-file-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s;border-radius:4px"></div>
+        </div>
+        <div id="edit-file-txt" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Saving...</div>
+    </div>
+    <p class="auth-error" id="edit-file-error"></p>
+    <div class="btns">
+        <button class="btn btn-ghost" onclick="_editFileReplaceSelected=null;hideModal()">Cancel</button>
+        <button class="btn btn-accent" id="edit-file-btn" onclick="doEditFile(${id})">Save</button>
+    </div>`);
+
+    setTimeout(() => {
+        const dz = document.getElementById('edit-file-drop-zone');
+        const fi = document.getElementById('edit-file-input');
+        if (dz && fi) {
+            dz.onclick = () => fi.click();
+            dz.ondragover = e => { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; };
+            dz.ondragleave = () => { dz.style.borderColor = 'var(--main-border)'; };
+            dz.ondrop = e => { e.preventDefault(); dz.style.borderColor = 'var(--main-border)'; if(e.dataTransfer.files.length){fi.files=e.dataTransfer.files;handleEditFileSelect(fi);} };
+        }
+    }, 100);
+};
+
+const handleEditFileSelect = input => {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+        document.getElementById('edit-file-error').textContent = 'File too large. Max 20MB.';
+        input.value = '';
+        _editFileReplaceSelected = null;
+        document.getElementById('edit-file-info').innerHTML = '<span style="color:var(--main-text3)">Click or drag new file here</span>';
+        return;
+    }
+    document.getElementById('edit-file-error').textContent = '';
+    _editFileReplaceSelected = file;
+    document.getElementById('edit-file-info').innerHTML =
+        `<div style="font-size:1rem;font-weight:600;color:var(--main-text)">${getFileTypeIcon(file.name)} ${esc(file.name)}</div>
+         <div style="font-size:.82rem;color:var(--main-text3);margin-top:4px">${formatFileSize(file.size)} · ${file.type||'Unknown'}</div>`;
+};
+
+const doEditFile = async id => {
+    const title = document.getElementById('edit-file-title').value.trim();
+    const remark = document.getElementById('edit-file-remark').value.trim();
+    const isReplacing = document.getElementById('edit-file-replace-toggle').checked;
+    const errEl = document.getElementById('edit-file-error');
+    const btn = document.getElementById('edit-file-btn');
+
+    if (isReplacing && _editFileReplaceSelected) {
+        if (!isFileSafe(_editFileReplaceSelected)) { errEl.textContent = 'File type not allowed.'; return; }
+
+        const driveId = parseInt(document.getElementById('edit-file-drive').value);
+        const drive = (DB.driveSettings||[]).find(d => d.id === driveId);
+        if (!drive) { errEl.textContent = 'Select a drive folder'; return; }
+
+        btn.disabled = true; btn.textContent = 'Saving...';
+        const progress = document.getElementById('edit-file-progress');
+        const bar = document.getElementById('edit-file-bar');
+        const txt = document.getElementById('edit-file-txt');
+        progress.style.display = 'block'; bar.style.width = '30%'; txt.textContent = 'Reading file...';
+        errEl.textContent = '';
+
+        try {
+            const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(_editFileReplaceSelected);
+            });
+            bar.style.width = '50%'; txt.textContent = 'Uploading to Drive...';
+            const safeName = safeFileName(_editFileReplaceSelected.name);
+            const result = await api('/upload-to-drive', {
+                method: 'POST',
+                body: { fileBase64: base64, fileName: safeName, mimeType: _editFileReplaceSelected.type || 'application/octet-stream', folderId: drive.folderId }
+            });
+            if (result.error) throw new Error(result.error);
+            bar.style.width = '80%'; txt.textContent = 'Saving record...';
+            await api('/files/' + id, {
+                method: 'PUT',
+                body: {
+                    title, remark, replaceFile: true,
+                    newName: safeName, newType: _editFileReplaceSelected.type,
+                    newSize: _editFileReplaceSelected.size, newUrl: result.fileUrl,
+                    newDriveFileId: result.fileId, newDriveSettingId: driveId
+                }
+            });
+            bar.style.width = '100%'; txt.textContent = 'Done!';
+            _editFileReplaceSelected = null;
+            await loadDB();
+            setTimeout(() => { hideModal(); applyFileFilter(); }, 600);
+        } catch (e) {
+            errEl.textContent = 'Failed: ' + e.message;
+            btn.disabled = false; btn.textContent = 'Save';
+            progress.style.display = 'none';
+        }
+    } else {
+        btn.disabled = true; btn.textContent = 'Saving...';
+        try {
+            const driveId = parseInt(document.getElementById('edit-file-drive')?.value) || null;
+            const safeTitle = (title || '').replace(/<[^>]*>/g, '').substring(0, 300);
+            const safeRemark = (remark || '').replace(/<[^>]*>/g, '').substring(0, 500);
+            await api('/files/' + id, { method: 'PUT', body: { title: safeTitle, remark: safeRemark, replaceFile: false, newDriveSettingId: driveId } });
+            await loadDB();
+            hideModal();
+            applyFileFilter();
+        } catch (e) {
+            errEl.textContent = 'Failed: ' + e.message;
+            btn.disabled = false; btn.textContent = 'Save';
+        }
     }
 };
 
