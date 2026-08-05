@@ -148,7 +148,7 @@ const renderNoticeBanners = () => {
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
                 <div style="display:flex;align-items:center;gap:6px">
                     <span style="font-size:1rem">&#128227;</span>
-                    <span style="font-size:.88rem;font-weight:600;color:var(--main-text)">Reminders</span>
+                    <span style="font-size:.88rem;font-weight:600;color:var(--main-text)">Announces</span>
                     <span style="font-size:.7rem;color:var(--main-text3);background:var(--main-border);padding:1px 7px;border-radius:10px">${notices.length}</span>
                 </div>
                 <button onclick="event.stopPropagation();_noticesDismissed=true;renderNoticeBanners()" style="background:none;border:none;cursor:pointer;font-size:.9rem;color:var(--main-text3);padding:2px 6px;border-radius:4px;transition:all .15s" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--main-text3)'" title="Close">&#10005;</button>
@@ -159,7 +159,7 @@ const renderNoticeBanners = () => {
                     ${n.message ? `<div style="font-size:.8rem;color:var(--main-text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.message)}</div>` : ''}
                     <div style="font-size:.7rem;color:var(--main-text3);margin-top:4px">${formatDateDMY(n.createdAt ? n.createdAt.slice(0,10) : null)}</div>
                 </div>`).join('')}
-            ${notices.length > 2 ? `<div style="font-size:.78rem;color:var(--accent);text-align:center;padding-top:8px;cursor:pointer" onclick="event.stopPropagation();showNoticeModal()">View all ${notices.length} reminders →</div>` : ''}
+            ${notices.length > 2 ? `<div style="font-size:.78rem;color:var(--accent);text-align:center;padding-top:8px;cursor:pointer" onclick="event.stopPropagation();showNoticeModal()">View all ${notices.length} announces →</div>` : ''}
         </div>
         <!-- Circle button -->
         <div onclick="showNoticeModal()" style="width:52px;height:52px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2);transition:transform .2s,box-shadow .2s;position:relative" onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 24px rgba(0,0,0,.3)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 16px rgba(0,0,0,.2)'">
@@ -188,7 +188,7 @@ const showNoticeModal = () => {
                 <div style="font-weight:600;font-size:.9rem;color:var(--main-text)">${esc(n.title)}</div>
                 ${n.message ? `<div style="font-size:.84rem;color:var(--main-text2);margin-top:6px;line-height:1.6">${esc(n.message)}</div>` : ''}
                 <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
-                    ${n.targetType === 'multiple' ? '<span style="font-size:.72rem;color:var(--main-text3)">Personal reminder</span>' : ''}
+                    ${n.targetType === 'multiple' ? '<span style="font-size:.72rem;color:var(--main-text3)">Personal Announces</span>' : ''}
                     <span style="font-size:.72rem;color:var(--main-text3)">${formatDateDMY(n.createdAt ? n.createdAt.slice(0,10) : null)}</span>
                 </div>
             </div>
@@ -198,7 +198,7 @@ const showNoticeModal = () => {
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
         <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:1.2rem">&#128227;</span>
-            <h3 style="margin:0">Reminders</h3>
+            <h3 style="margin:0">Announces</h3>
             <span style="font-size:.72rem;color:var(--main-text3);background:var(--main-border);padding:1px 8px;border-radius:10px">${notices.length}</span>
         </div>
     </div>
@@ -4044,7 +4044,7 @@ const renderEmployeeFiles = () => {
             <div onclick="toggleFileReminderBar()" style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:rgba(245,158,11,.1);cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(245,158,11,.16)'" onmouseout="this.style.background='rgba(245,158,11,.1)'">
                 <span id="reminder-bar-arrow" style="font-size:.7rem;color:var(--main-text3);transition:transform .2s">&#9660;</span>
                 <span style="font-size:.95rem">&#128227;</span>
-                <span style="font-size:.84rem;font-weight:600;color:var(--main-text)">Reminders</span>
+                <span style="font-size:.84rem;font-weight:600;color:var(--main-text)">Announces</span>
                 <span style="font-size:.7rem;color:#fff;background:#ef4444;padding:1px 7px;border-radius:10px;font-weight:600">${notices.length}</span>
                 <span style="font-size:.8rem;color:var(--main-text3);margin-left:8px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${preview}</span>
             </div>
@@ -7012,7 +7012,7 @@ const renderAdminFiles = () => {
           <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
             <button class="btn btn-ghost btn-sm" onclick="resetFileFilter()">Reset</button>
             ${currentUser.role !== 'viewer' ? '<button class="btn btn-green" onclick="showUploadFile()">+ Upload File</button>' : ''}
-            ${currentUser.role === 'admin' ? '<button class="btn btn-accent btn-sm" onclick="showFileNoticesModal()">📋 Reminders</button>' : ''}
+            ${currentUser.role === 'admin' ? '<button class="btn btn-accent btn-sm" onclick="showFileNoticesModal()">📋 Announces</button>' : ''}
             ${currentUser.role === 'admin' ? '<button class="btn btn-blue btn-sm" onclick="showDriveSettings()">⚙ Drive Settings</button>' : ''}
           </div>
         </div>
@@ -7086,7 +7086,7 @@ const renderNoticesModalContent = () => {
     <div style="max-height:85vh;display:flex;flex-direction:column">
         <!-- Header -->
         <div style="flex-shrink:0;display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-            <h3 style="margin:0">&#128227; File Reminders</h3>
+            <h3 style="margin:0">&#128227; File Announces</h3>
             <span style="font-size:.82rem;color:var(--main-text3)">${notices.length} total</span>
         </div>
 
