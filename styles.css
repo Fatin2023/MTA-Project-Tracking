@@ -894,7 +894,7 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
     .modal input[type="date"],
     .modal input[type="time"] {
         padding-right: 36px;
-        -webkit-appearance: none;
+        appearance: none;
     }
     .modal input[type="date"]::-webkit-calendar-picker-indicator,
     .modal input[type="time"]::-webkit-calendar-picker-indicator {

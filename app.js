@@ -2750,9 +2750,15 @@ const updateScopeAndProjectSelects = (scopeEl, itemEl, workplanEl, workdoneEl, e
 };
 
 const updateScopeAndProjectSelectsFromValue = (scopeId, itemEl, workplanEl, workdoneEl, extraProjectId) => {
+    if (!scopeId) {
+        ssUpdate(itemEl, [], false);
+        ssUpdate(workplanEl, [], false);
+        ssUpdate(workdoneEl, [], false);
+        return;
+    }
     const projects = getProjectsByScope(scopeId, extraProjectId);
     ssUpdate(itemEl, buildProjectOptions(projects), false);
-    const wl = scopeId ? DB.worklist.filter(w => w.scopeId === scopeId) : DB.worklist;
+    const wl = DB.worklist.filter(w => w.scopeId === scopeId);
     const wlOpts = wl.map(w => ({ value: w.id, label: w.title }));
     ssUpdate(workplanEl, wlOpts, false);
     ssUpdate(workdoneEl, wlOpts, false);
@@ -5481,17 +5487,25 @@ const buildAttEmpOpts = (scopeIds, itemIds) => {
 
 // Scope change handler (shared between add/edit)
 const adminAttScopeChanged = (scopeId) => {
+    if (!scopeId) {
+        ssUpdate('ss-att-item', [], false);
+        ssUpdate('ss-att-workplan', [], false);
+        ssUpdate('ss-att-workdone', [], false);
+        const subSel = document.getElementById('att-subscope');
+        if (subSel) subSel.innerHTML = '<option value="">-- None --</option>';
+        return;
+    }
     const projects = sortedProjects(scopeId);
     ssUpdate('ss-att-item', projects.map(p => ({ value: p.id, label: p.name })), false);
 
     const subSel = document.getElementById('att-subscope');
     if (subSel) {
-        const filtered = scopeId ? DB.subScopes.filter(s => s.scopeId === scopeId) : DB.subScopes;
+        const filtered = DB.subScopes.filter(s => s.scopeId === scopeId);
         subSel.innerHTML = '<option value="">-- None --</option>' +
             filtered.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
     }
 
-    const wl = scopeId ? DB.worklist.filter(w => w.scopeId === scopeId) : DB.worklist;
+    const wl = DB.worklist.filter(w => w.scopeId === scopeId);
     const wlOpts = wl.map(w => ({ value: w.id, label: w.title }));
     ssUpdate('ss-att-workplan', wlOpts, false);
     ssUpdate('ss-att-workdone', wlOpts, false);
