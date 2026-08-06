@@ -513,7 +513,7 @@ app.post('/api/departments', requireEdit, async (req, res) => {
     try {
         const result = await pool.query(
             'INSERT INTO departments (name, work_days_per_week, normal_day_hours, saturday_hours) VALUES ($1, $2, $3, $4) RETURNING id',
-            [name, work_days_per_week ?? 6, normal_day_hours ?? 9, saturday_hours ?? 5]
+            [name, work_days_per_week ?? 5, normal_day_hours ?? 9, saturday_hours ?? 0]
         );
         res.json({ id: result.rows[0].id, name });
     } catch (err) {
@@ -526,7 +526,7 @@ app.put('/api/departments/:id', requireEdit, async (req, res) => {
     try {
         await pool.query(
             'UPDATE departments SET name = $1, work_days_per_week = $2, normal_day_hours = $3, saturday_hours = $4 WHERE id = $5',
-            [name, work_days_per_week ?? 6, normal_day_hours ?? 9, saturday_hours ?? 5, req.params.id]
+            [name, work_days_per_week ?? 5, normal_day_hours ?? 9, saturday_hours ?? 0, req.params.id]
         );
         res.json({ success: true });
     } catch (err) {
@@ -1570,6 +1570,31 @@ app.put('/api/files/:id', requireAuth, async (req, res) => {
             );
         } else {
             const safeDriveId = newDriveSettingId || fileData.drive_setting_id;
+
+            // 如果改了 Drive Folder 且有旧文件，真正移动文件
+            if (newDriveSettingId && newDriveSettingId !== fileData.drive_setting_id && fileData.drive_file_id) {
+                try {
+                    const oldDrive = await pool.query('SELECT folder_id FROM drive_settings WHERE id = $1', [fileData.drive_setting_id]);
+                    const newDrive = await pool.query('SELECT folder_id FROM drive_settings WHERE id = $1', [newDriveSettingId]);
+                    const oldFolderId = oldDrive.rows[0]?.folder_id;
+                    const newFolderId = newDrive.rows[0]?.folder_id;
+
+                    if (oldFolderId && newFolderId) {
+                        const cfgResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_script_url'");
+                        const tokenResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_token'");
+                        const scriptUrl = cfgResult.rows[0]?.value;
+                        const token = tokenResult.rows[0]?.value || '';
+                        if (scriptUrl) {
+                            const moveUrl = scriptUrl + '?action=move&token=' + encodeURIComponent(token) +
+                                '&fileId=' + fileData.drive_file_id +
+                                '&fromFolderId=' + oldFolderId +
+                                '&toFolderId=' + newFolderId;
+                            await fetch(moveUrl, { redirect: 'follow' });
+                        }
+                    }
+                } catch (e) { console.log('Drive move error:', e.message); }
+            }
+
             await pool.query(
                 'UPDATE files SET title=$1, remark=$2, drive_setting_id=$3 WHERE id=$4',
                 [safeTitle, safeRemark, safeDriveId, req.params.id]

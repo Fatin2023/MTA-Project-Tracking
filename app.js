@@ -2749,13 +2749,23 @@ const updateScopeAndProjectSelects = (scopeEl, itemEl, workplanEl, workdoneEl, e
     if (wdEl) wdEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
 };
 
+const updateScopeAndProjectSelectsFromValue = (scopeId, itemEl, workplanEl, workdoneEl, extraProjectId) => {
+    const projects = getProjectsByScope(scopeId, extraProjectId);
+    ssUpdate(itemEl, buildProjectOptions(projects), false);
+    const wl = scopeId ? DB.worklist.filter(w => w.scopeId === scopeId) : DB.worklist;
+    const wlOpts = wl.map(w => ({ value: w.id, label: w.title }));
+    ssUpdate(workplanEl, wlOpts, false);
+    ssUpdate(workdoneEl, wlOpts, false);
+
+    const wpEl = document.getElementById(workplanEl);
+    const wdEl = document.getElementById(workdoneEl);
+    if (wpEl) wpEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
+    if (wdEl) wdEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
+};
+
 const empBuildTimeEntryModal = (title, entry, extraProjectId) => {
     const member = DB.members.find(m => m.id === currentUser.memberId);
     if (!member) return '';
-
-    const visibleScopes = getEmployeeVisibleScopes(member, extraProjectId);
-    const scopeOptions = '<option value="">-- Select Category --</option>' +
-        visibleScopes.map(s => `<option value="${s.id}" ${entry && entry.projectId && DB.projects.find(p => p.id === entry.projectId)?.categoryId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
 
     const isNew = !entry;
     const defaultStart = isNew ? '09:00' : (entry.clockIn ? entry.clockIn.split('T')[1].substring(0,5) : '');
@@ -2764,7 +2774,7 @@ const empBuildTimeEntryModal = (title, entry, extraProjectId) => {
     return `<h3>${title}</h3>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div class="field"><label>Date</label><input class="input" id="entry-date" type="date" value="${entry ? entry.date : todayStr()}"></div><br>
-            <div class="field"><label>Category</label><select class="input" id="entry-scope-filter" onchange="updateScopeAndProjectSelects(this,'ss-entry-item','ss-entry-workplan','ss-entry-workdone','${extraProjectId || ''}')">${scopeOptions}</select></div>
+            <div class="field"><label>Category</label><div id="ss-entry-scope"></div></div>
             <div class="field"><label>ID/Name</label><div id="ss-entry-item"></div></div>
             <div style="display:none"><select class="input" id="entry-detail">${detailOpts(entry ? entry.detailId : null)}</select></div>
             <div class="field"><label>Work Plan</label><div id="ss-entry-workplan"></div></div>
@@ -2783,12 +2793,17 @@ const showAddTimeEntry = () => {
         setTimeout(() => {
             const member = DB.members.find(m => m.id === currentUser.memberId);
             _empModalMember = member;
+            const visibleScopes = getEmployeeVisibleScopes(member, null);
+
+            ssCreate('ss-entry-scope', visibleScopes.map(s => ({ value: s.id, label: s.name })), '-- Select Category --', function(val) {
+                updateScopeAndProjectSelectsFromValue(val ? parseInt(val) : null, 'ss-entry-item', 'ss-entry-workplan', 'ss-entry-workdone', null);
+            });
+
             ssCreate('ss-entry-item', [], '-- Select Category First --');
             const wlOpts = DB.worklist.map(w => ({ value: w.id, label: w.title }));
             ssCreate('ss-entry-workplan', wlOpts, '-- None --');
             ssCreate('ss-entry-workdone', wlOpts, '-- None --');
 
-            // Hide if no worklist at all
             const wpEl = document.getElementById('ss-entry-workplan');
             const wdEl = document.getElementById('ss-entry-workdone');
             if (wpEl) wpEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
@@ -2809,9 +2824,17 @@ const showEditTimeEntry = entryId => {
         _empModalMember = member;
         _empModalExtraProjectId = extraProjectId;
         const curScopeId = entry.projectId ? DB.projects.find(p => p.id === entry.projectId)?.categoryId : null;
+        const visibleScopes = getEmployeeVisibleScopes(member, extraProjectId);
+
+        ssCreate('ss-entry-scope', visibleScopes.map(s => ({ value: s.id, label: s.name })), '-- Select Category --', function(val) {
+            updateScopeAndProjectSelectsFromValue(val ? parseInt(val) : null, 'ss-entry-item', 'ss-entry-workplan', 'ss-entry-workdone', extraProjectId);
+        });
+        if (curScopeId) ssSetValue('ss-entry-scope', curScopeId);
+
         const projects = getProjectsByScope(curScopeId, extraProjectId);
         ssCreate('ss-entry-item', buildProjectOptions(projects), '-- Select ID/Name --');
         if (entry.projectId) ssSetValue('ss-entry-item', entry.projectId);
+
         const wl = curScopeId ? DB.worklist.filter(w => w.scopeId === curScopeId) : DB.worklist;
         const wlOpts = wl.map(w => ({ value: w.id, label: w.title }));
         ssCreate('ss-entry-workplan', wlOpts, '-- None --');
@@ -2819,7 +2842,6 @@ const showEditTimeEntry = entryId => {
         ssCreate('ss-entry-workdone', wlOpts, '-- None --');
         if (entry.work_done_id) ssSetValue('ss-entry-workdone', entry.work_done_id);
 
-        // Hide if no worklist
         const wpEl = document.getElementById('ss-entry-workplan');
         const wdEl = document.getElementById('ss-entry-workdone');
         if (wpEl) wpEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
@@ -2853,7 +2875,7 @@ const saveTimeEntry = (entryId) => {
     // 把 "Other" (value=0) 转成真实的 project ID
     let projectId = parseInt(projectIdRaw);
     if (projectId === 0) {
-        const scopeVal = document.getElementById('entry-scope-filter')?.value;
+        const scopeVal = ssGetValue('ss-entry-scope');
         const scopeId = scopeVal ? parseInt(scopeVal) : null;
         const otherProj = DB.projects.find(p =>
             p.name.toLowerCase() === 'other' && (!scopeId || p.categoryId === scopeId)
@@ -5002,10 +5024,8 @@ function _ssRender(containerId) {
 
     var html =
         '<div class="ss-wrapper" style="position:relative">' +
-            '<div class="ss-display" onclick="ssToggle(\'' + containerId + '\')" ' +
-                'style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;' +
-                'background:var(--main-input-bg);border:1px solid var(--main-border);border-radius:var(--radius,6px);' +
-                'cursor:pointer;font-size:.85rem;min-height:38px;user-select:none;color:var(--main-text)">' +
+            '<div class="ss-display input" onclick="ssToggle(\'' + containerId + '\')" ' +
+                'style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none">' +
                 '<span style="' + (!inst.selected ? 'color:var(--main-text3)' : 'color:var(--main-text)') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' +
                     esc(selectedLabel) +
                 '</span>' +
@@ -5460,8 +5480,7 @@ const buildAttEmpOpts = (scopeIds, itemIds) => {
 };
 
 // Scope change handler (shared between add/edit)
-const adminAttScopeChanged = () => {
-    const scopeId = parseInt(document.getElementById('att-scope-filter').value) || null;
+const adminAttScopeChanged = (scopeId) => {
     const projects = sortedProjects(scopeId);
     ssUpdate('ss-att-item', projects.map(p => ({ value: p.id, label: p.name })), false);
 
@@ -5477,7 +5496,6 @@ const adminAttScopeChanged = () => {
     ssUpdate('ss-att-workplan', wlOpts, false);
     ssUpdate('ss-att-workdone', wlOpts, false);
 
-    // Hide/show Work Plan and Work Done fields
     const wpEl = document.getElementById('ss-att-workplan');
     const wdEl = document.getElementById('ss-att-workdone');
     if (wpEl) wpEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
@@ -5823,15 +5841,13 @@ const changeAdminAttPageSize = size => { adminAttPageSize = parseInt(size); admi
 // ---------- Add / Edit ----------
 const showAdminAddAttendance = () => {
     const scopeList = [...DB.scopes].sort((a, b) => a.name.localeCompare(b.name));
-    const scopeOptions = '<option value="">-- Select Category --</option>' +
-        scopeList.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
 
     showModal(`
     <h3>Add Attendance</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="field"><label>Employee</label><div id="ss-att-member"></div></div>
         <div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="${todayStr()}"></div>
-        <div class="field"><label>Category</label><select class="input" id="att-scope-filter" onchange="adminAttScopeChanged()">${scopeOptions}</select></div>
+        <div class="field"><label>Category</label><div id="ss-att-scope"></div></div>
         <div class="field"><label>ID/Name</label><div id="ss-att-item"></div></div>
         <div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- None --</option></select></div>
         <div class="field" style="display:none"><label>Detail</label><select class="input" id="att-detail">${detailOpts(null)}</select></div>
@@ -5847,6 +5863,12 @@ const showAdminAddAttendance = () => {
     setTimeout(() => {
         const memberOpts = getNonViewerMembers().map(m => ({ value: m.id, label: m.name }));
         ssCreate('ss-att-member', memberOpts, '-- Select Employee --');
+
+        const scopeOpts = scopeList.map(s => ({ value: s.id, label: s.name }));
+        ssCreate('ss-att-scope', scopeOpts, '-- Select Category --', function(val) {
+            adminAttScopeChanged(val ? parseInt(val) : null);
+        });
+
         ssCreate('ss-att-item', [], '-- Select Category First --');
         const wlOpts = DB.worklist.map(w => ({ value: w.id, label: w.title }));
         ssCreate('ss-att-workplan', wlOpts, '-- None --');
@@ -5896,10 +5918,8 @@ const showAdminEditAttendance = id => {
     if (!entry) return;
 
     const proj = entry.projectId ? DB.projects.find(p => p.id === entry.projectId) : null;
-    const currentScopeId = proj?.categoryId || '';
+    const currentScopeId = proj?.categoryId || null;
     const scopeList = [...DB.scopes].sort((a, b) => a.name.localeCompare(b.name));
-    const scopeOptions = '<option value="">-- Select Category --</option>' +
-        scopeList.map(s => `<option value="${s.id}" ${currentScopeId===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
 
     const sTime = entry.clockIn ? entry.clockIn.split('T')[1].substring(0,5) : '';
     const eTime = entry.clockOut ? entry.clockOut.split('T')[1].substring(0,5) : '';
@@ -5908,7 +5928,7 @@ const showAdminEditAttendance = id => {
     <h3>Edit Attendance</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="${entry.date}"></div><br>
-        <div class="field"><label>Category</label><select class="input" id="att-scope-filter" onchange="adminAttScopeChanged()">${scopeOptions}</select></div>
+        <div class="field"><label>Category</label><div id="ss-att-scope"></div></div>
         <div class="field"><label>ID/Name</label><div id="ss-att-item"></div></div>
         <div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- None --</option></select></div>
         <div class="field" style="display:none"><label>Detail</label><select class="input" id="att-detail">${detailOpts(entry.detailId)}</select></div>
@@ -5922,7 +5942,13 @@ const showAdminEditAttendance = id => {
     <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAdminEditAttendance(${id})">Save</button></div>`);
 
     setTimeout(() => {
-        const projects = sortedProjects(currentScopeId || null);
+        const scopeOpts = scopeList.map(s => ({ value: s.id, label: s.name }));
+        ssCreate('ss-att-scope', scopeOpts, '-- Select Category --', function(val) {
+            adminAttScopeChanged(val ? parseInt(val) : null);
+        });
+        if (currentScopeId) ssSetValue('ss-att-scope', currentScopeId);
+
+        const projects = sortedProjects(currentScopeId);
         ssCreate('ss-att-item', projects.map(p => ({ value: p.id, label: p.name })), '-- Select ID/Name --');
         if (entry.projectId) ssSetValue('ss-att-item', entry.projectId);
 
@@ -5933,7 +5959,6 @@ const showAdminEditAttendance = id => {
         ssCreate('ss-att-workdone', wlOpts, '-- None --');
         if (entry.work_done_id) ssSetValue('ss-att-workdone', entry.work_done_id);
 
-        // Hide if no worklist
         const wpEl = document.getElementById('ss-att-workplan');
         const wdEl = document.getElementById('ss-att-workdone');
         if (wpEl) wpEl.closest('.field').style.display = wlOpts.length ? '' : 'none';
