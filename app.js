@@ -1,813 +1,3 @@
-// ============================================================
-// THEME
-// ============================================================
-function getActiveLayout() {
-    const layouts = document.querySelectorAll('.app-layout.active');
-    return layouts.length > 0 ? layouts[0].id : null;
-}
-
-function initTheme() {
-    const saved = localStorage.getItem('theme') || 'light';
-    document.documentElement.setAttribute('data-theme', saved);
-    updateThemeUI(saved);
-}
-
-function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme') || 'light';
-    const next = current === 'light' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('theme', next);
-    updateThemeUI(next);
-}
-
-function updateThemeUI(theme) {
-    const isDark = theme === 'dark';
-    document.querySelectorAll('.theme-icon').forEach(icon => {
-        icon.innerHTML = isDark ? '&#9788;' : '&#9790;';
-    });
-    document.querySelectorAll('.theme-label').forEach(label => {
-        label.textContent = isDark ? 'Light Mode' : 'Dark Mode';
-    });
-}
-
-initTheme();
-
-/* ==========================================================
-   MULTITRADE — Project Salary Management (PostgreSQL version)
-   ========================================================== */
-
-const API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? 'http://localhost:3001/api'
-    : '/api';
-
-const api = async (path, opts = {}) => {
-    const url = '/api' + path;
-    const headers = { 'Content-Type': 'application/json' };
-    const session = localStorage.getItem('multitrade_session');
-    if (session) {
-        try {
-            const user = JSON.parse(session);
-            if (user?.token) headers['Authorization'] = 'Bearer ' + user.token;
-        } catch (e) {}
-    }
-    const options = { method: opts.method || 'GET', headers };
-    if (opts.body) options.body = JSON.stringify(opts.body);
-    const res = await fetch(url, options);
-    const data = await res.json();
-    if (!res.ok) {
-        if (res.status === 401) {
-            localStorage.removeItem('multitrade_session');
-            const loginPage = document.getElementById('login-page');
-            if (!loginPage || !loginPage.classList.contains('active')) {
-                window.location.href = window.location.pathname;
-            }
-        }
-        throw new Error(data.error || 'Request failed');
-    }
-    return data;
-};
-
-const localISO = (d) => {
-    if (!d) d = new Date();
-    const pad = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-};
-
-/* ==========================================================
-   SECTION 1: DATA LAYER
-   ========================================================== */
-
-let DB = {
-    projects: [], members: [], users: [], positions: [],
-    departments: [], scopes: [], subScopes: [], details: [],
-    worklist: [], projectAssignments: [], attendance: [],
-    viewerScopes: {},fileNotices: [],
-};
-
-const loadDB = async () => {
-    try {
-        const [projects, members, users, positions, departments, scopes, subScopes, details, assignments, attendance, worklist, driveSettings, appConfig, files, fileNotices] =
-            await Promise.all([
-                api('/projects'), api('/members'), api('/users'), api('/positions'),
-                api('/departments'), api('/scopes'), api('/subscopes'), api('/details'),
-                api('/assignments'), api('/attendance'), api('/worklist'),
-                api('/drive-settings'), api('/app-config'), api('/files'), api('/file-notices')
-            ]);
-        Object.assign(DB, { projects, members, users, positions, departments, scopes, subScopes, details, projectAssignments: assignments, attendance, worklist, driveSettings, appConfig, files, fileNotices });
-
-        DB.viewerScopes = {};
-        const viewerUsers = (DB.users || []).filter(u => u.role === 'viewer');
-        for (const u of viewerUsers) {
-            try { DB.viewerScopes[u.id] = await api('/viewer-scopes/' + u.id); }
-            catch (e) { DB.viewerScopes[u.id] = []; }
-        }
-        renderNoticeBanners();
-        updateFileBadge(); 
-    } catch (e) { console.error('Failed to load data:', e); }
-};
-
-// ==========================================================
-//   FILE NOTICE FLOATING BUTTON + MODAL (Employee)
-// ==========================================================
-
-let _noticesDismissed = true;
-
-const renderNoticeBanners = () => {
-    const btn = document.getElementById('notice-float-btn');
-    if (!btn) return;
-
-    // Admin 或未登录不显示
-    if (!currentUser || currentUser.role !== 'employee') {
-        btn.style.display = 'none';
-        return;
-    }
-
-    const notices = (DB.fileNotices || []).filter(n => n.isActive);
-
-    if (notices.length === 0) {
-        btn.style.display = 'none';
-        return;
-    }
-
-    if (_noticesDismissed) {
-        btn.style.display = 'block';
-        btn.innerHTML = `
-        <div onclick="_noticesDismissed=false;renderNoticeBanners()" style="width:52px;height:52px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2);transition:transform .2s,box-shadow .2s;position:relative" onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 24px rgba(0,0,0,.3)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 16px rgba(0,0,0,.2)'">
-            <span style="font-size:1.4rem;color:var(--bg)">&#128227;</span>
-            <span style="position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg)">${notices.length}</span>
-        </div>`;
-        return;
-    }
-
-    // Not dismissed yet — show small popup preview + button
-    btn.style.display = 'block';
-    btn.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
-        <!-- Preview card -->
-        <div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:14px 18px;box-shadow:0 8px 32px rgba(0,0,0,.15);max-width:320px;width:320px;animation:slideInRight .3s ease">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-                <div style="display:flex;align-items:center;gap:6px">
-                    <span style="font-size:1rem">&#128227;</span>
-                    <span style="font-size:.88rem;font-weight:600;color:var(--main-text)">Announces</span>
-                    <span style="font-size:.7rem;color:var(--main-text3);background:var(--main-border);padding:1px 7px;border-radius:10px">${notices.length}</span>
-                </div>
-                <button onclick="event.stopPropagation();_noticesDismissed=true;renderNoticeBanners()" style="background:none;border:none;cursor:pointer;font-size:.9rem;color:var(--main-text3);padding:2px 6px;border-radius:4px;transition:all .15s" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--main-text3)'" title="Close">&#10005;</button>
-            </div>
-            ${notices.slice(0, 2).map(n => `
-                <div style="padding:8px 0;border-top:1px solid var(--main-border);cursor:pointer" onclick="event.stopPropagation();showNoticeModal()">
-                    <div style="font-weight:600;font-size:.84rem;color:var(--main-text)">${esc(n.title)}</div>
-                    ${n.message ? `<div style="font-size:.8rem;color:var(--main-text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.message)}</div>` : ''}
-                    <div style="font-size:.7rem;color:var(--main-text3);margin-top:4px">${formatDateDMY(n.createdAt ? n.createdAt.slice(0,10) : null)}</div>
-                </div>`).join('')}
-            ${notices.length > 2 ? `<div style="font-size:.78rem;color:var(--accent);text-align:center;padding-top:8px;cursor:pointer" onclick="event.stopPropagation();showNoticeModal()">View all ${notices.length} announces →</div>` : ''}
-        </div>
-        <!-- Circle button -->
-        <div onclick="showNoticeModal()" style="width:52px;height:52px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2);transition:transform .2s,box-shadow .2s;position:relative" onmouseover="this.style.transform='scale(1.1)';this.style.boxShadow='0 6px 24px rgba(0,0,0,.3)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 4px 16px rgba(0,0,0,.2)'">
-            <span style="font-size:1.4rem;color:var(--bg)">&#128227;</span>
-            <span style="position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:.65rem;font-weight:700;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg)">${notices.length}</span>
-        </div>
-    </div>`;
-
-    // Auto collapse after 8 seconds
-    clearTimeout(window._noticeAutoCollapse);
-    window._noticeAutoCollapse = setTimeout(() => {
-        _noticesDismissed = true;
-        renderNoticeBanners();
-    }, 8000);
-
-    updateFileBadge();
-};
-
-const showNoticeModal = () => {
-    const notices = (DB.fileNotices || []).filter(n => n.isActive);
-
-    const cards = notices.map(n => `
-        <div style="display:flex;align-items:flex-start;gap:12px;padding:16px 18px;background:rgba(245,158,11,.06);border-left:3px solid #f59e0b;border-radius:var(--radius)">
-            <span style="font-size:1.2rem;flex-shrink:0;margin-top:1px">&#128227;</span>
-            <div style="flex:1;min-width:0">
-                <div style="font-weight:600;font-size:.9rem;color:var(--main-text)">${esc(n.title)}</div>
-                ${n.message ? `<div style="font-size:.84rem;color:var(--main-text2);margin-top:6px;line-height:1.6">${esc(n.message)}</div>` : ''}
-                <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
-                    ${n.targetType === 'multiple' ? '<span style="font-size:.72rem;color:var(--main-text3)">Personal Announces</span>' : ''}
-                    <span style="font-size:.72rem;color:var(--main-text3)">${formatDateDMY(n.createdAt ? n.createdAt.slice(0,10) : null)}</span>
-                </div>
-            </div>
-        </div>`).join('');
-
-    showModal(`
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-        <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:1.2rem">&#128227;</span>
-            <h3 style="margin:0">Announces</h3>
-            <span style="font-size:.72rem;color:var(--main-text3);background:var(--main-border);padding:1px 8px;border-radius:10px">${notices.length}</span>
-        </div>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:12px;max-height:60vh;overflow-y:auto;padding-right:4px">
-        ${cards}
-    </div>
-    <div class="btns" style="margin-top:20px">
-        <button class="btn btn-ghost" onclick="_noticesDismissed=true;renderNoticeBanners();hideModal()">Close</button>
-    </div>`);
-};
-
-/* ==========================================================
-   SECTION 2: UTILITIES
-   ========================================================== */
-
-const fmt = (n) => n == null ? '\u2014' : 'RM' + Number(n).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const esc = (s) => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
-
-const getPositionName = (pid) => DB.positions.find(x => x.id === pid)?.name || '\u2014';
-const getDeptName = (did) => DB.departments.find(x => x.id === did)?.name || '\u2014';
-const getSubScopeName = (id) => id ? (DB.subScopes.find(x => x.id === id)?.name || '\u2014') : '\u2014';
-const getDetailName = (id) => id ? (DB.details.find(x => x.id === id)?.name || '\u2014') : '\u2014';
-const getScopeName = (id) => id ? (DB.scopes.find(x => x.id === id)?.name || '\u2014') : '\u2014';
-
-const latestSalary = (member) => {
-    if (!member.salaries) return null;
-    const keys = Object.keys(member.salaries).sort().reverse();
-    return keys.length ? member.salaries[keys[0]] : null;
-};
-
-const getMemberProjects = (memberId) =>
-    DB.projectAssignments.filter(pa => pa.memberId === memberId)
-        .map(pa => DB.projects.find(p => p.id === pa.projectId)).filter(Boolean);
-
-const getProjectMembers = (projectId) =>
-    DB.projectAssignments.filter(pa => pa.projectId === projectId)
-        .map(pa => DB.members.find(m => m.id === pa.memberId)).filter(Boolean);
-
-const getProjectCost = (projectId) =>
-    getProjectMembers(projectId).reduce((s, m) => s + (latestSalary(m) || 0), 0);
-
-const todayStr = () => new Date().toISOString().slice(0, 10);
-
-const formatDuration = (ms) => {
-    if (!ms || ms <= 0) return '0h';
-    const t = Math.floor(ms / 1000);
-    const h = Math.floor(t / 3600);
-    const m = Math.floor((t % 3600) / 60);
-    const s = t % 60;
-    let parts = [];
-    if (h > 0) parts.push(h + 'h');
-    if (m > 0) parts.push(m + 'm');
-    if (s > 0) parts.push(s + 's');
-    return parts.length ? parts.join(' ') : '0h';
-};
-
-const formatDateDMY = (dateStr) => {
-    if (!dateStr) return '\u2014';
-    const parts = dateStr.slice(0, 10).split('-');
-    return parts.length !== 3 ? dateStr : `${parts[2]}/${parts[1]}/${parts[0]}`;
-};
-
-const formatTime = (isoStr) =>
-    isoStr ? new Date(isoStr).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' }) : '\u2014';
-
-const getHourlyRate = (member) => {
-    const salary = latestSalary(member);
-    return (!salary || salary <= 0) ? null : salary / 176;
-};
-
-const getEntryCost = (memberId, durationMs) => {
-    const member = DB.members.find(m => m.id === memberId);
-    if (!member) return null;
-    const hourlyRate = getHourlyRate(member);
-    return hourlyRate ? hourlyRate * (durationMs / 3600000) : null;
-};
-
-const fmtCost = (val) => val == null ? '\u2014' : 'RM ' + Number(val).toFixed(2);
-
-const fmtHourlyRate = (member) => {
-    const rate = getHourlyRate(member);
-    return rate ? 'RM ' + Number(rate).toFixed(2) + '/hr' : '\u2014';
-};
-
-const fmtStdHours = (h) => {
-    if (!h || h <= 0) return '\u2014';
-    return (h % 1 === 0 ? h.toFixed(0) : h.toFixed(1)) + 'h';
-};
-
-const _optsHtml = (list, selectedId, noneLabel) =>
-    `<option value="">-- ${noneLabel} --</option>` +
-    list.map(i => `<option value="${i.id}"${i.id === selectedId ? ' selected' : ''}>${esc(i.name)}</option>`).join('');
-
-const subScopeOpts = (selectedId) => _optsHtml(DB.subScopes, selectedId, 'None');
-const detailOpts = (selectedId) => _optsHtml(DB.details, selectedId, 'None');
-const scopeOpts = (selectedId) => _optsHtml(DB.scopes, selectedId, 'None');
-
-const animCrud = (...ids) => {
-    ids.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) { el.classList.remove('crud-anim'); void el.offsetWidth; el.classList.add('crud-anim'); }
-    });
-};
-
-// ── Time calculation helpers ──
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-const getStandardHours = (memberId, dateStr) => {
-    const member = DB.members.find(m => m.id === memberId);
-    const dept = member ? DB.departments.find(d => d.id === member.departmentId) : null;
-    const dayNum = new Date(dateStr).getDay();
-    if (dayNum === 0) return 0;
-    if (dayNum === 6) return dept ? (dept.saturdayHours ?? 0) : 0;
-    return dept ? (dept.normalDayHours ?? 9) : 9;
-};
-
-const calcOT = (clockIn, clockOut, memberId, dateStr) => {
-    if (!clockIn || !clockOut) return { hours: 0, standardHours: 0, ot: 0, otMs: 0 };
-    const ms = new Date(clockOut) - new Date(clockIn);
-    const hours = ms / 3600000;
-    const stdHrs = getStandardHours(memberId, dateStr);
-    const ot = Math.max(0, hours - stdHrs);
-    return { hours, standardHours: stdHrs, ot, otMs: ot * 3600000, ms };
-};
-
-//Upload File
-const formatFileSize = (bytes) => {
-    if (!bytes || bytes <= 0) return '—';
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / 1048576).toFixed(1) + ' MB';
-};
-
-// side bar nav collapse
-const toggleNavGroup = (sectionEl) => {
-    // sidebar collapsed 时不响应
-    const sidebar = sectionEl.closest('.sidebar');
-    if (sidebar && sidebar.classList.contains('collapsed')) return;
-
-    const group = sectionEl.nextElementSibling;
-    if (!group || !group.classList.contains('nav-group')) return;
-
-    const isCollapsed = group.classList.contains('collapsed');
-
-    // toggle
-    group.classList.toggle('collapsed');
-    sectionEl.classList.toggle('collapsed');
-
-    // 保存状态
-    const groupId = group.dataset.group;
-    if (groupId) {
-        const state = JSON.parse(localStorage.getItem('nav_collapsed') || '{}');
-        state[groupId] = !isCollapsed;
-        localStorage.setItem('nav_collapsed', JSON.stringify(state));
-    }
-};
-
-// 页面加载时恢复状态
-const restoreNavState = () => {
-    const state = JSON.parse(localStorage.getItem('nav_collapsed') || '{}');
-    document.querySelectorAll('.nav-group[data-group]').forEach(group => {
-        if (state[group.dataset.group]) {
-            group.classList.add('collapsed');
-            const section = group.previousElementSibling;
-            if (section && section.classList.contains('nav-section')) {
-                section.classList.add('collapsed');
-            }
-        }
-    });
-};
-
-// 登录成功后调用一次
-restoreNavState();
-
-// ===== file checking for security =====
-const BLOCKED_EXTENSIONS = [
-    '.exe', '.bat', '.cmd', '.com', '.msi', '.pif',
-    '.vbs', '.vbe', '.js', '.jse', '.ws', '.wsf',
-    '.ps1', '.psm1', '.psd1', '.reg', '.dll', '.sys',
-    '.scr', '.hta', '.cpl', '.inf', '.lnk', '.sh',
-    '.php', '.asp', '.aspx', '.jsp', '.cgi', '.py', '.rb', '.pl'
-];
-const isFileSafe = (file) => {
-    const name = file.name.toLowerCase();
-    for (const ext of BLOCKED_EXTENSIONS) {
-        if (name.endsWith(ext)) return false;
-    }
-    if (name.includes('..') || name.includes('/') || name.includes('\\')) return false;
-    if (file.size > 20 * 1024 * 1024) return false;
-    return true;
-};
-const safeFileName = (name) => {
-    return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/\.\./g, '_').substring(0, 200);
-};
-
-// ===== file notify on sidebar =====
-const updateFileBadge = () => {
-    const badge = document.getElementById('emp-nav-file-badge');
-    if (!badge) return;
-
-    if (!currentUser || currentUser.role !== 'employee') {
-        badge.style.display = 'none';
-        return;
-    }
-
-    const notices = (DB.fileNotices || []).filter(n => n.isActive);
-    if (notices.length > 0) {
-        badge.textContent = notices.length;
-        badge.style.display = 'flex';
-    } else {
-        badge.style.display = 'none';
-    }
-};
-
-/* ==========================================================
-   SECTION 3: MODAL
-   ========================================================== */
-
-function showModal(html) {
-    document.getElementById('modal-box').innerHTML = html;
-    document.getElementById('modal-overlay').classList.add('active');
-
-    setTimeout(function() {
-        document.querySelectorAll('.modal, .modal .field').forEach(function(el) {
-            el.style.animation = 'none';
-            el.style.opacity = '1';
-            el.style.transform = 'none';
-        });
-    }, 400);
-}
-
-function hideModal() {
-    document.getElementById('modal-overlay').classList.remove('active');
-}
-
-document.addEventListener('click', function(e) {
-    if (e.target.id === 'modal-overlay') hideModal();
-});
-
-/* ==========================================================
-   SECTION 4: AUTHENTICATION
-   ========================================================== */
-
-let currentUser = null;
-let clockInterval = null;
-
-/* ===== 权限表 ===== */
-const ROLE_PERMISSIONS = {
-    admin:    ['admin', 'manager', 'all'],
-    manager:  ['manager', 'all'],
-    employee: ['all'],
-    viewer:   ['all']
-};
-
-const getCurrentRole = () => currentUser ? currentUser.role : 'viewer';
-
-/* ===== 应用权限到 nav ===== */
-const applyNavPermissions = () => {
-    const role = getCurrentRole();
-    const allowed = ROLE_PERMISSIONS[role] || ['all'];
-
-    document.querySelectorAll('.sidebar-nav').forEach(nav => {
-        nav.querySelectorAll('.nav-group').forEach(group => {
-            let hasVisible = false;
-
-            group.querySelectorAll('.nav-item').forEach(item => {
-                const permAttr = item.dataset.permission;
-
-                if (!permAttr) {
-                    item.style.display = '';
-                    hasVisible = true;
-                    return;
-                }
-
-                const perms = permAttr.split(',').map(p => p.trim());
-                const canSee = perms.some(p => allowed.includes(p));
-
-                if (canSee) {
-                    item.style.display = '';
-                    hasVisible = true;
-                } else {
-                    item.style.display = 'none';
-                }
-            });
-
-            const section = group.previousElementSibling;
-            if (section && section.classList.contains('nav-section')) {
-                if (hasVisible) {
-                    section.style.display = '';
-                    group.style.display = '';
-                } else {
-                    section.style.display = 'none';
-                    group.style.display = 'none';
-                }
-            }
-        });
-    });
-
-    // employee: Report 只有 PIC 能看
-    var reportNav = document.getElementById('emp-nav-report');
-    if (reportNav) {
-        reportNav.style.display = empIsPIC() ? '' : 'none';
-    }
-};
-
-const _setRoleLabel = (layoutId, label) => {
-    const el = document.querySelector(`#${layoutId} .sidebar-user .user-role`);
-    if (el) el.textContent = label;
-};
-
-function handleLogin(e) {
-    e.preventDefault();
-    const u = document.getElementById('login-user').value.trim();
-    const pass = document.getElementById('login-pass').value;
-    const err = document.getElementById('login-error');
-    if (!u || !pass) { err.textContent = 'Please enter username and password'; return; }
-
-    (async () => {
-        try {
-            currentUser = await api('/login', { method: 'POST', body: { username: u, password: pass } });
-            err.textContent = '';
-            localStorage.setItem('multitrade_session', JSON.stringify(currentUser));
-
-            const isViewer = currentUser.role === 'viewer';
-
-            if (selectedModule === 'panel') {
-                if (currentUser.role !== 'admin' && !isViewer) {
-                    err.textContent = 'Panel Tracking is for admin only';
-                    currentUser = null;
-                    localStorage.removeItem('multitrade_session');
-                    return;
-                }
-                localStorage.setItem('multitrade_module', 'panel');
-                document.querySelectorAll('.auth-page,.app-layout').forEach(el => el.classList.remove('active'));
-                document.getElementById('panel-layout').classList.add('active');
-                document.getElementById('pt-avatar').textContent = currentUser.username.charAt(0).toUpperCase();
-                document.getElementById('pt-user-name').textContent = currentUser.username;
-
-                _setRoleLabel('panel-layout', isViewer ? 'Viewer' : 'Admin');
-
-                await ptLoadDB();
-                ptNav('pt-dashboard');
-                applyNavPermissions();
-            } else {
-                localStorage.setItem('multitrade_module', 'attendance');
-                await loadDB();
-                document.querySelectorAll('.auth-page,.app-layout').forEach(el => el.classList.remove('active'));
-
-                if (currentUser.role === 'admin' || isViewer) {
-                    document.getElementById('admin-layout').classList.add('active');
-                    _setRoleLabel('admin-layout', isViewer ? 'Viewer' : 'Administrator');
-                    adminNav('projects');
-                } else {
-                    document.getElementById('employee-layout').classList.add('active');
-                    _noticesDismissed = false;  // ← 只在登录时弹一次
-                    empNav('attendance');
-                    renderNoticeBanners();
-                }
-                applyNavPermissions();
-                updateAvatars();
-                updateFileBadge();
-            }
-        } catch (ex) { err.textContent = ex.message; }
-    })();
-}
-
-function handleRegister(e) {
-    e.preventDefault();
-    const name = document.getElementById('reg-name').value.trim();
-    const username = document.getElementById('reg-user').value.trim();
-    const pass = document.getElementById('reg-pass').value;
-    const pass2 = document.getElementById('reg-pass2').value;
-    const errEl = document.getElementById('reg-error');
-    const sucEl = document.getElementById('reg-success');
-    errEl.textContent = '';
-    sucEl.textContent = '';
-
-    if (!name) { errEl.textContent = 'Please enter your name'; return; }
-    if (!username) { errEl.textContent = 'Please enter a username'; return; }
-    if (username.length < 2) { errEl.textContent = 'Username min 2 characters'; return; }
-    if (pass.length < 6) { errEl.textContent = 'Password min 6 characters'; return; }
-    if (pass !== pass2) { errEl.textContent = 'Passwords do not match'; return; }
-
-    (async () => {
-        try {
-            await api('/register', { method: 'POST', body: { username, password: pass, name } });
-            const loginResult = await api('/login', { method: 'POST', body: { username, password: pass } });
-            localStorage.setItem('multitrade_session', JSON.stringify(loginResult));
-            sucEl.textContent = 'Registration successful! Redirecting\u2026';
-            errEl.textContent = '';
-            ['reg-name', 'reg-user', 'reg-pass', 'reg-pass2'].forEach(id => { document.getElementById(id).value = ''; });
-            setTimeout(() => showPage('login-page'), 1200);
-        } catch (ex) { errEl.textContent = ex.message; }
-    })();
-}
-
-function confirmLogout() {
-    showModal(`<h3>Sign Out</h3>
-        <p style="color:var(--main-text2);line-height:1.6">Are you sure you want to sign out?</p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-danger" onclick="doLogout()">Sign Out</button></div>`);
-}
-
-function doLogout() {
-    ['multitrade_session', 'multitrade_admin_page', 'multitrade_emp_page', 'multitrade_pt_page', 'multitrade_module']
-        .forEach(k => localStorage.removeItem(k));
-    currentUser = null;
-    document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
-    document.getElementById('login-page').classList.add('active');
-    selectedModule = 'attendance';
-    window.location.href = window.location.pathname;
-    hideModal();
-}
-
-/* ==========================================================
-   Side Bar Colapsed
-   ========================================================== */
-function toggleSidebar() {
-    const sidebars = document.querySelectorAll('.sidebar');
-    const isCollapsed = sidebars[0]?.classList.contains('collapsed');
-    sidebars.forEach(s => s.classList.toggle('collapsed'));
-    localStorage.setItem('multitrade_sidebar_collapsed', !isCollapsed);
-}
-
-function restoreSidebarState() {
-    if (localStorage.getItem('multitrade_sidebar_collapsed') === 'true') {
-        document.querySelectorAll('.sidebar').forEach(s => {
-            s.classList.add('collapsed');
-            // 不改 innerHTML，CSS 自动处理三条线/箭头
-        });
-    }
-}
-
-// 在初始化代码末尾加
-restoreSidebarState();
-
-/* ==========================================================
-   SECTION 5: NAVIGATION
-   ========================================================== */
-
-let activeProjectId = null;
-
-async function showPage(id) {
-    document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
-    const el = document.getElementById(id);
-    if (el) el.classList.add('active');
-    if (id === 'admin-layout') { await loadDB(); adminNav('projects'); updateAvatars(); }
-    if (id === 'employee-layout') { await loadDB(); empNav('attendance'); updateAvatars(); }
-    if (id === 'detail-layout') { await loadDB(); renderProjectDetail(); updateAvatars(); }
-}
-
-async function adminNav(tab, el) {
-    if (currentUser && currentUser.role === 'viewer' && (tab === 'users' || tab === 'departments' || tab === 'positions')) {
-        tab = 'projects';
-    }
-
-    localStorage.setItem('multitrade_admin_page', tab);
-    const nav = document.getElementById('admin-nav');
-    document.querySelectorAll('#admin-layout .admin-view').forEach(v => v.style.display = 'none');
-    const target = document.getElementById('admin-' + tab);
-    if (target) target.style.display = '';
-
-    if (nav) {
-        nav.querySelectorAll('.nav-item').forEach(n => {
-            n.classList.toggle('active', n.dataset.page === tab);
-        });
-    }
-
-    switch (tab) {
-        case 'projects': renderMainScope(); break;
-        case 'users': renderUsersList(); break;
-        case 'positions': renderPositionsList(); break;
-        case 'departments': renderDepartmentsList(); break;
-        case 'attendance': renderAdminAttendance(); break;
-        case 'subscopes': renderAdminSubScopes(); break;
-        case 'details': renderAdminDetails(); break;
-        case 'report': renderAdminReport(); break;
-        case 'worklist': renderWorkList(); break;
-        case 'files': renderAdminFiles(); break;
-    }
-    _initPTRDebounce();
-}
-
-// filter not to see viewer in employee dropdown
-function getViewerMemberIds() {
-    var viewerIds = [];
-    (DB.users || []).forEach(function(u) {
-        if (u.role === 'viewer' && u.memberId) {
-            viewerIds.push(u.memberId);
-        }
-    });
-    return viewerIds;
-}
-function getNonViewerMembers() {
-    var viewerIds = getViewerMemberIds();
-    return DB.members.filter(function(m) {
-        return viewerIds.indexOf(m.id) === -1;
-    });
-}
-
-function getViewerVisibleScopeIds() {
-    if (!currentUser || currentUser.role !== 'viewer') return null;
-    if (!currentUser.memberId) return [];
-
-    var visibleScopeIds = [];
-
-    // 只用手动指定的 scope（Edit User 里勾选的）
-    var extra = (DB.viewerScopes || {})[currentUser.id] || [];
-    extra.forEach(function(sid) {
-        if (visibleScopeIds.indexOf(sid) === -1) {
-            visibleScopeIds.push(sid);
-        }
-    });
-
-    return visibleScopeIds;
-}
-
-function getViewerVisibleProjects() {
-    var scopeIds = getViewerVisibleScopeIds();
-    if (scopeIds === null) return null;
-    return DB.projects.filter(function(p) {
-        return p.categoryId && scopeIds.indexOf(p.categoryId) !== -1;
-    });
-}
-
-function empIsPIC() {
-    if (!currentUser || !currentUser.memberId) return false;
-    return DB.scopes.some(function(s) {
-        return s.picMemberIds && s.picMemberIds.indexOf(currentUser.memberId) !== -1;
-    });
-}
-
-async function empNav(tab, el) {
-    var reportNav = document.getElementById('emp-nav-report');
-    if (reportNav) {
-        reportNav.style.display = empIsPIC() ? '' : 'none';
-    }
-    if (tab === 'report' && !empIsPIC()) {
-        tab = 'attendance';
-    }
-
-    localStorage.setItem('multitrade_emp_page', tab);
-    const nav = document.getElementById('emp-nav');
-    document.querySelectorAll('#employee-layout .emp-view').forEach(v => v.style.display = 'none');
-    const target = document.getElementById('emp-' + tab);
-    if (target) target.style.display = '';
-
-    if (nav) {
-        nav.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-        if (el) {
-            el.classList.add('active');
-        } else {
-            nav.querySelectorAll('.nav-item').forEach(n => {
-                const handler = n.getAttribute('onclick') || '';
-                if (handler.includes("'" + tab + "'")) n.classList.add('active');
-            });
-        }
-    }
-
-    switch (tab) {
-        case 'myprojects': renderEmployeeProjects(); break;
-        case 'attendance': renderEmployeeAttendance(); break;
-        case 'report': renderEmpReport(); break;
-        case 'settings': renderEmpSettings(); break;
-        case 'files': renderEmployeeFiles(); break;
-    }
-    _initPTRDebounce();
-}
-
-
-async function openProject(pid) {
-    activeProjectId = pid;
-    document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
-    document.getElementById('detail-layout').classList.add('active');
-    await loadDB();
-    renderProjectDetail();
-}
-
-function updateAvatars() {
-    if (!currentUser) return;
-    const initial = currentUser.username.charAt(0).toUpperCase();
-    ['admin-avatar', 'detail-avatar', 'emp-avatar'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = initial; });
-    ['admin-user-name', 'detail-user-name', 'emp-user-name'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = currentUser.username; });
-    const roleEl = document.getElementById('emp-user-role');
-    if (roleEl) { const member = currentUser.memberId ? DB.members.find(m => m.id === currentUser.memberId) : null; roleEl.textContent = member && member.positionId ? getPositionName(member.positionId) : 'Employee'; }
-}
-
-// Mobile menu
-function toggleMobileMenu() {
-    document.querySelectorAll('.sidebar').forEach(function(s) { s.classList.toggle('open'); });
-    document.querySelectorAll('.mobile-overlay').forEach(function(o) { o.classList.toggle('active'); });
-}
-
-function closeMobileMenu() {
-    document.querySelectorAll('.sidebar').forEach(function(s) { s.classList.remove('open'); });
-    document.querySelectorAll('.mobile-overlay').forEach(function(o) { o.classList.remove('active'); });
-}
-
-document.addEventListener('click', function(e) {
-    if (e.target.closest('.nav-item')) closeMobileMenu();
-});
-
-document.addEventListener('touchmove', function(e) {
-    if (!e.target.closest('.sidebar')) {
-        var anyOpen = document.querySelector('.sidebar.open');
-        if (anyOpen) closeMobileMenu();
-    }
-}, { passive: true });
-
-
 /* ==========================================================
    SECTION 6: Work Category/MAIN SCOPE
    ========================================================== */
@@ -1058,29 +248,9 @@ const renderItemsTable = () => {
             </tr>`;
         }).join('');
 
-    let pagHtml = '';
-    if (allItems.length > 0) {
-        const showFrom = start+1, showTo = Math.min(end, allItems.length);
-        let btns = '';
-        const maxV = 5, stP = Math.max(1, itemCurrentPage-Math.floor(maxV/2)), enP = Math.min(totalPages, stP+maxV-1);
-        const adjSt = enP-stP < maxV-1 ? Math.max(1, enP-maxV+1) : stP;
-        btns += `<button onclick="goItemPage(1)" ${itemCurrentPage===1?'disabled':''}>&laquo;</button>`;
-        btns += `<button onclick="goItemPage(${itemCurrentPage-1})" ${itemCurrentPage===1?'disabled':''}>&lsaquo;</button>`;
-        for (let p=adjSt; p<=enP; p++) btns += `<button onclick="goItemPage(${p})" class="${p===itemCurrentPage?'active':''}">${p}</button>`;
-        btns += `<button onclick="goItemPage(${itemCurrentPage+1})" ${itemCurrentPage===totalPages?'disabled':''}>&rsaquo;</button>`;
-        btns += `<button onclick="goItemPage(${totalPages})" ${itemCurrentPage===totalPages?'disabled':''}>&raquo;</button>`;
-        pagHtml = `<div class="pagination"><div class="pagination-info">Showing ${showFrom} to ${showTo} of ${allItems.length} items</div>
-            <div style="display:flex;align-items:center;gap:20px">
-                <div class="pagination-size"><label>Show</label><select onchange="changeItemPageSize(this.value)">
-                    <option value="5"${itemPageSize===5?' selected':''}>5</option>
-                    <option value="10"${itemPageSize===10?' selected':''}>10</option>
-                    <option value="25"${itemPageSize===25?' selected':''}>25</option>
-                    <option value="50"${itemPageSize===50?' selected':''}>50</option>
-                    <option value="100"${itemPageSize===100?' selected':''}>100</option>
-                </select></div>
-                <div class="pagination-controls">${btns}</div>
-            </div></div>`;
-    }
+    const pagHtml = buildPagination(allItems.length, itemCurrentPage, itemPageSize,
+    'goItemPage', 'changeItemPageSize',
+    { label: 'items', sizes: [5, 10, 25, 50, 100] });
 
     document.getElementById('items-table-area').innerHTML = `<div class="table-wrap"><table>
         <thead><tr><th style="width:50px">No</th><th>ID / Name</th><th>Customer</th><th style="width:130px">Category</th><th style="width:100px">Start</th><th style="width:100px">End</th><th style="width:100px">Install</th><th style="width:110px">Status</th><th style="width:100px">Countdown</th><th>Members</th><th style="width:100px;text-align:right">Cost</th><th style="width:90px">Actions</th></tr></thead>
@@ -1380,30 +550,9 @@ const renderWorklistTable = () => {
                 <td>${canEdit() ? `<div class="actions-cell"><button class="btn-icon" onclick="showEditWorklist(${w.id})" title="Edit">&#9998;</button><button class="btn-icon danger" onclick="confirmDeleteWorklist(${w.id})" title="Delete">&#10005;</button></div>` : ''}</td>            </tr>`;
         }).join('');
 
-    let pagHtml = '';
-    if (baseList.length > 0) {
-        const showFrom = startIdx + 1, showTo = Math.min(startIdx + wlPageSize, baseList.length);
-        const maxV = 5, stP = Math.max(1, wlCurrentPage - Math.floor(maxV/2)), enP = Math.min(totalPages, stP + maxV - 1);
-        const adjSt = enP - stP < maxV - 1 ? Math.max(1, enP - maxV + 1) : stP;
-        let btns = `<button onclick="goWlPage(1)" ${wlCurrentPage===1?'disabled':''}>&laquo;</button>
-                    <button onclick="goWlPage(${wlCurrentPage-1})" ${wlCurrentPage===1?'disabled':''}>&lsaquo;</button>`;
-        for (let p = adjSt; p <= enP; p++) btns += `<button onclick="goWlPage(${p})" class="${p===wlCurrentPage?'active':''}">${p}</button>`;
-        btns += `<button onclick="goWlPage(${wlCurrentPage+1})" ${wlCurrentPage===totalPages?'disabled':''}>&rsaquo;</button>
-                 <button onclick="goWlPage(${totalPages})" ${wlCurrentPage===totalPages?'disabled':''}>&raquo;</button>`;
-        pagHtml = `<div class="pagination">
-            <div class="pagination-info">Showing ${showFrom} to ${showTo} of ${baseList.length} items</div>
-            <div style="display:flex;align-items:center;gap:20px">
-                <div class="pagination-size"><label>Show</label>
-                    <select onchange="changeWlPageSize(this.value)">
-                        <option value="5"${wlPageSize===5?' selected':''}>5</option>
-                        <option value="10"${wlPageSize===10?' selected':''}>10</option>
-                        <option value="25"${wlPageSize===25?' selected':''}>25</option>
-                        <option value="50"${wlPageSize===50?' selected':''}>50</option>
-                        <option value="100"${wlPageSize===100?' selected':''}>100</option>
-                    </select></div>
-                <div class="pagination-controls">${btns}</div>
-            </div></div>`;
-    }
+    const pagHtml = buildPagination(baseList.length, wlCurrentPage, wlPageSize,
+    'goWlPage', 'changeWlPageSize',
+    { label: 'items', sizes: [5, 10, 25, 50, 100] });
 
     document.getElementById('worklist-table-area').innerHTML = `<div class="table-wrap"><table>
         <thead><tr><th style="width:50px">No</th><th style="width:160px">Category</th><th>Title</th><th style="width:90px">Actions</th></tr></thead>
@@ -1595,10 +744,11 @@ const renderUsersTable = () => {
     const page = filtered.slice(start, start + usrPageSize);
 
     const rows = total === 0
-        ? '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No users found</td></tr>'
+        ? '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No users found</td></tr>'
         : page.map((u, idx) => {
             const member = u.memberId ? DB.members.find(m => m.id === u.memberId) : null;
             const mName = member ? member.name : '—';
+            const mEmail = member?.email ? esc(member.email) : '<span style="color:var(--main-text3)">—</span>';
             const pos = member?.positionId ? getPositionName(member.positionId) : '—';
             const dept = member?.departmentId ? getDeptName(member.departmentId) : '—';
             const sal = member ? latestSalary(member) : null;
@@ -1609,6 +759,7 @@ const renderUsersTable = () => {
                 <td style="font-family:var(--font-m);color:var(--main-text3)">${start + idx + 1}</td>
                 <td style="font-family:var(--font-m)">${esc(u.username)}</td>
                 <td>${esc(mName)}</td>
+                <td style="font-size:.82rem">${mEmail}</td>
                 <td><span class="badge ${roleClass}">${u.role}</span></td>
                 <td>${esc(pos)}</td>
                 <td>${esc(dept)}</td>
@@ -1622,7 +773,7 @@ const renderUsersTable = () => {
 
     document.getElementById('users-table-area').innerHTML =
         `<div class="table-wrap"><table><thead><tr>
-            <th style="width:50px">No</th><th>Username</th><th>Name</th><th>Role</th><th>Position</th><th>Department</th><th>Salary</th><th>Projects</th><th style="width:90px">Actions</th>
+            <th style="width:50px">No</th><th>Username</th><th>Name</th><th>Email</th><th>Role</th><th>Position</th><th>Department</th><th>Salary</th><th>Projects</th><th style="width:90px">Actions</th>
         </tr></thead><tbody>${rows}</tbody></table></div>
         ${total > 0 ? paginationHtml(total, usrCurrentPage, usrPageSize, 'goUsrPage', 'changeUsrPageSize') : ''}`;
 };
@@ -1687,6 +838,7 @@ const showAddUser = () => {
             <option value="employee">Employee</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></div>
         <div id="emp-fields">
             <div class="field"><label>Full Name</label><input class="input" id="adduser-name" placeholder="e.g. John Smith"></div>
+            <div class="field"><label>Email <span style="font-size:.72rem;color:var(--main-text3)">(for notifications)</span></label><input class="input" id="adduser-email" type="email" placeholder="e.g. john@gmail.com"></div>
             <div class="field"><label>Position</label><select class="input" id="adduser-pos">${posOpts}</select></div>
             <div class="field"><label>Department</label><select class="input" id="adduser-dept">${deptOpts}</select></div>
             <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="adduser-salary" type="number" placeholder="e.g. 15000.00"></div>
@@ -1721,7 +873,8 @@ const doAddUser = async () => {
         const deptId = document.getElementById('adduser-dept').value;
         const sal = parseFloat(document.getElementById('adduser-salary').value);
         const now = new Date().toISOString().slice(0,7);
-        const memberRes = await api('/members', { method:'POST', body:{ name, positionId: posId?parseInt(posId):null, departmentId: deptId?parseInt(deptId):null } });
+        const email = document.getElementById('adduser-email')?.value.trim() || '';
+        const memberRes = await api('/members', { method:'POST', body:{ name, positionId: posId?parseInt(posId):null, departmentId: deptId?parseInt(deptId):null, email: email || null } });
         memberId = memberRes.id;
         if (!isNaN(sal) && sal > 0) await api('/salaries', { method:'PUT', body:{ memberId, month:now, amount:sal } });
     }
@@ -1747,6 +900,7 @@ const showEditUser = userId => {
     const html = `<h3>Edit — ${esc(user.username)}</h3>
     <div id="edit-member-fields">
         <div class="field"><label>Full Name</label><input class="input" id="edituser-name" value="${member?esc(member.name):''}"></div>
+        <div class="field"><label>Email <span style="font-size:.72rem;color:var(--main-text3)">(for notifications)</span></label><input class="input" id="edituser-email" type="email" value="${member&&member.email?esc(member.email):''}" placeholder="e.g. john@gmail.com"></div>
         <div class="field"><label>Position</label><select class="input" id="edituser-pos">${posOpts}</select></div>
         <div class="field"><label>Department</label><select class="input" id="edituser-dept">${deptOpts}</select></div>
         <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="edituser-salary" type="number" value="${curSal>0?curSal:''}" placeholder="e.g. 15000.00"></div>
@@ -1794,7 +948,8 @@ const doEditUser = async userId => {
             const deptId = document.getElementById('edituser-dept')?.value;
             const sal = parseFloat(document.getElementById('edituser-salary')?.value);
             const now = new Date().toISOString().slice(0,7);
-            const memberRes = await api('/members', { method:'POST', body:{ name, positionId: posId?parseInt(posId):null, departmentId: deptId?parseInt(deptId):null } });
+            const email = document.getElementById('edituser-email')?.value.trim() || '';
+            const memberRes = await api('/members', { method:'POST', body:{ name, positionId: posId?parseInt(posId):null, departmentId: deptId?parseInt(deptId):null, email: email || null } });
             memberId = memberRes.id;
             if (!isNaN(sal) && sal > 0) await api('/salaries', { method:'PUT', body:{ memberId, month:now, amount:sal } });
         }
@@ -1808,8 +963,10 @@ const doEditUser = async userId => {
         const deptEl = document.getElementById('edituser-dept');
         const salEl = document.getElementById('edituser-salary');
         const member = DB.members.find(m => m.id === memberId);
+                const emailEl = document.getElementById('edituser-email');
         await api('/members/'+memberId, { method:'PUT', body: {
             name: nameEl?.value.trim() || member?.name || '',
+            email: emailEl?.value.trim() || null,
             positionId: posEl?.value ? parseInt(posEl.value) : (member?.positionId || null),
             departmentId: deptEl?.value ? parseInt(deptEl.value) : (member?.departmentId || null)
         }});
@@ -1873,29 +1030,9 @@ const renderPositionsTable = () => {
             </tr>`;
         }).join('');
 
-    let pagHtml = '';
-    if (total > 0) {
-        const showFrom = start + 1, showTo = Math.min(start + posPageSize, total);
-        const maxV = 5, stP = Math.max(1, posCurrentPage - Math.floor(maxV/2)), enP = Math.min(totalPages, stP + maxV - 1);
-        const adjSt = enP - stP < maxV - 1 ? Math.max(1, enP - maxV + 1) : stP;
-        let btns = `<button onclick="goPosPage(1)" ${posCurrentPage===1?'disabled':''}>&laquo;</button>
-                    <button onclick="goPosPage(${posCurrentPage-1})" ${posCurrentPage===1?'disabled':''}>&lsaquo;</button>`;
-        for (let p = adjSt; p <= enP; p++) btns += `<button onclick="goPosPage(${p})" class="${p===posCurrentPage?'active':''}">${p}</button>`;
-        btns += `<button onclick="goPosPage(${posCurrentPage+1})" ${posCurrentPage===totalPages?'disabled':''}>&rsaquo;</button>
-                 <button onclick="goPosPage(${totalPages})" ${posCurrentPage===totalPages?'disabled':''}>&raquo;</button>`;
-        pagHtml = `<div class="pagination">
-            <div class="pagination-info">Showing ${showFrom} to ${showTo} of ${total} positions</div>
-            <div style="display:flex;align-items:center;gap:20px">
-                <div class="pagination-size"><label>Show</label>
-                    <select onchange="changePosPageSize(this.value)">
-                        <option value="5"${posPageSize===5?' selected':''}>5</option>
-                        <option value="10"${posPageSize===10?' selected':''}>10</option>
-                        <option value="25"${posPageSize===25?' selected':''}>25</option>
-                        <option value="50"${posPageSize===50?' selected':''}>50</option>
-                    </select></div>
-                <div class="pagination-controls">${btns}</div>
-            </div></div>`;
-    }
+    const pagHtml = buildPagination(DB.positions.length, posCurrentPage, posPageSize,
+    'goPosPage', 'changePosPageSize',
+    { label: 'positions', sizes: [5, 10, 25, 50] });
 
     document.getElementById('positions-table-area').innerHTML =
         `<div class="table-wrap"><table><thead><tr>
@@ -2022,29 +1159,9 @@ const renderDepartmentsTable = () => {
             </tr>`;
         }).join('');
 
-    let pagHtml = '';
-    if (total > 0) {
-        const showFrom = start + 1, showTo = Math.min(start + deptPageSize, total);
-        const maxV = 5, stP = Math.max(1, deptCurrentPage - Math.floor(maxV/2)), enP = Math.min(totalPages, stP + maxV - 1);
-        const adjSt = enP - stP < maxV - 1 ? Math.max(1, enP - maxV + 1) : stP;
-        let btns = `<button onclick="goDeptPage(1)" ${deptCurrentPage===1?'disabled':''}>&laquo;</button>
-                    <button onclick="goDeptPage(${deptCurrentPage-1})" ${deptCurrentPage===1?'disabled':''}>&lsaquo;</button>`;
-        for (let p = adjSt; p <= enP; p++) btns += `<button onclick="goDeptPage(${p})" class="${p===deptCurrentPage?'active':''}">${p}</button>`;
-        btns += `<button onclick="goDeptPage(${deptCurrentPage+1})" ${deptCurrentPage===totalPages?'disabled':''}>&rsaquo;</button>
-                 <button onclick="goDeptPage(${totalPages})" ${deptCurrentPage===totalPages?'disabled':''}>&raquo;</button>`;
-        pagHtml = `<div class="pagination">
-            <div class="pagination-info">Showing ${showFrom} to ${showTo} of ${total} departments</div>
-            <div style="display:flex;align-items:center;gap:20px">
-                <div class="pagination-size"><label>Show</label>
-                    <select onchange="changeDeptPageSize(this.value)">
-                        <option value="5"${deptPageSize===5?' selected':''}>5</option>
-                        <option value="10"${deptPageSize===10?' selected':''}>10</option>
-                        <option value="25"${deptPageSize===25?' selected':''}>25</option>
-                        <option value="50"${deptPageSize===50?' selected':''}>50</option>
-                    </select></div>
-                <div class="pagination-controls">${btns}</div>
-            </div></div>`;
-    }
+    const pagHtml = buildPagination(DB.departments.length, deptCurrentPage, deptPageSize,
+        'goDeptPage', 'changeDeptPageSize',
+        { label: 'departments', sizes: [5, 10, 25, 50] });
 
     document.getElementById('departments-table-area').innerHTML =
         `<div class="table-wrap"><table><thead><tr>
@@ -2547,8 +1664,9 @@ const renderEmpItemSummaryTable = () => {
             <td style="text-align:right;font-family:var(--font-m)">${fmtCost(r.cost)}</td>
         </tr>`).join('');
 
-    const pagHtml = data.length > 0 ? genericPagination(data.length, empItemSummaryPage, empItemSummaryPageSize,
-        'goEmpItemSummaryPage', 'changeEmpItemSummaryPageSize', [5,10,25,50,100]) : '';
+    const pagHtml = data.length > 0 ? buildPagination(data.length, empItemSummaryPage, empItemSummaryPageSize,
+    'goEmpItemSummaryPage', 'changeEmpItemSummaryPageSize',
+    { label: 'items', sizes: [5,10,25,50,100] }) : '';
 
     document.getElementById('emp-item-summary-area').innerHTML = `
         <div class="collapse-section" style="margin-bottom:16px">
@@ -2618,8 +1736,14 @@ const renderScopeItemsTable = scopeId => {
                 ${actionCell}</tr>`;
         }).join('');
 
-    const pagHtml = total > 0 ? genericPagination(total, sp.page, sp.pageSize,
-        `goScopeItemsPage(${scopeId}, __PAGE__)`, `changeScopeItemsPageSize(${scopeId}, __SIZE__)`, [5,10,25]) : '';
+    const goFnName = `goScopePage_${scopeId}`;
+    const sizeFnName = `chgScopeSize_${scopeId}`;
+    window[goFnName] = p => goScopeItemsPage(scopeId, p);
+    window[sizeFnName] = s => changeScopeItemsPageSize(scopeId, s);
+
+    const pagHtml = total > 0 ? buildPagination(total, sp.page, sp.pageSize,
+        goFnName, sizeFnName,
+        { label: 'items', sizes: [5,10,25] }) : '';
 
     document.getElementById(`scope-items-table-${scopeId}`).innerHTML = `
         <div class="table-wrap"><table>
@@ -3240,30 +2364,9 @@ const renderEmpAttendancePage = () => {
             </tr>`;
         }).join('');
 
-    let pagHtml = '';
-    if (filtered.length > 0) {
-        const showTo = Math.min(start + empAttPageSize, filtered.length);
-        const maxV = 5, stP = Math.max(1, empAttCurrentPage - Math.floor(maxV/2)), enP = Math.min(totalPages, stP + maxV - 1);
-        const adjSt = enP - stP < maxV - 1 ? Math.max(1, enP - maxV + 1) : stP;
-        let btns = `<button onclick="goEmpAttPage(1)" ${empAttCurrentPage===1?'disabled':''}>&laquo;</button>
-                    <button onclick="goEmpAttPage(${empAttCurrentPage-1})" ${empAttCurrentPage===1?'disabled':''}>&lsaquo;</button>`;
-        for (let p = adjSt; p <= enP; p++) btns += `<button onclick="goEmpAttPage(${p})" class="${p===empAttCurrentPage?'active':''}">${p}</button>`;
-        btns += `<button onclick="goEmpAttPage(${empAttCurrentPage+1})" ${empAttCurrentPage===totalPages?'disabled':''}>&rsaquo;</button>
-                 <button onclick="goEmpAttPage(${totalPages})" ${empAttCurrentPage===totalPages?'disabled':''}>&raquo;</button>`;
-        pagHtml = `<div class="pagination">
-            <div class="pagination-info">Showing ${start+1} to ${showTo} of ${filtered.length} entries</div>
-            <div style="display:flex;align-items:center;gap:20px">
-                <div class="pagination-size"><label>Show</label>
-                    <select onchange="changeEmpAttPageSize(this.value)">
-                        <option value="5"${empAttPageSize===5?' selected':''}>5</option>
-                        <option value="10"${empAttPageSize===10?' selected':''}>10</option>
-                        <option value="25"${empAttPageSize===25?' selected':''}>25</option>
-                        <option value="50"${empAttPageSize===50?' selected':''}>50</option>
-                        <option value="100"${empAttPageSize===100?' selected':''}>100</option>
-                    </select></div>
-                <div class="pagination-controls">${btns}</div>
-            </div></div>`;
-    }
+        const pagHtml = buildPagination(filtered.length, empAttCurrentPage, empAttPageSize,
+            'goEmpAttPage', 'changeEmpAttPageSize',
+            { label: 'entries', sizes: [5, 10, 25, 50, 100] });
 
     document.getElementById('emp-att-table-area').innerHTML = `<div class="table-wrap"><table><thead>${thead}</thead><tbody>${rows}</tbody></table></div>${pagHtml}`;
 };
@@ -4046,26 +3149,16 @@ let _empEditFileReplaceSelected = null;
 
 const renderEmployeeFiles = () => {
     empFileCurrentPage = 1; empFilePageSize = 10;
+    empNoticeCurrentPage = 1; empNoticePageSize = 5;
 
     const driveOpts = (DB.driveSettings||[]).map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
 
-    // Reminder bar
     const notices = DB.fileNotices || [];
     let reminderBar = '';
     if (notices.length > 0) {
         const preview = notices.length === 1
             ? esc(notices[0].title)
             : esc(notices[0].title) + (notices.length > 1 ? ` +${notices.length - 1} more` : '');
-
-        const expandedCards = notices.map(n => `
-            <div style="padding:10px 14px;border-bottom:1px solid var(--main-border)">
-                <div style="font-weight:600;font-size:.84rem;color:var(--main-text)">${esc(n.title)}</div>
-                ${n.message ? `<div style="font-size:.8rem;color:var(--main-text3);margin-top:3px;line-height:1.5">${esc(n.message)}</div>` : ''}
-                <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
-                    ${n.targetType === 'multiple' ? '<span style="font-size:.7rem;color:var(--main-text3)">Personal</span>' : ''}
-                    <span style="font-size:.7rem;color:var(--main-text3)">${formatDateDMY(n.createdAt ? n.createdAt.slice(0,10) : null)}</span>
-                </div>
-            </div>`).join('');
 
         reminderBar = `
         <div id="emp-file-reminder-bar" style="margin-bottom:16px;border-radius:var(--radius);overflow:hidden;border:1px solid rgba(245,158,11,.25)">
@@ -4076,8 +3169,8 @@ const renderEmployeeFiles = () => {
                 <span style="font-size:.7rem;color:#fff;background:#ef4444;padding:1px 7px;border-radius:10px;font-weight:600">${notices.length}</span>
                 <span style="font-size:.8rem;color:var(--main-text3);margin-left:8px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${preview}</span>
             </div>
-            <div id="reminder-bar-content" style="display:none;max-height:200px;overflow-y:auto;background:var(--main-surface)">
-                ${expandedCards}
+            <div id="reminder-bar-content" style="display:none;background:var(--main-surface)">
+                ${renderNoticeCards(notices)}
             </div>
         </div>`;
     }
@@ -4115,6 +3208,46 @@ const renderEmployeeFiles = () => {
     </div>`;
 
     setTimeout(() => applyEmpFileFilter(), 100);
+};
+
+const renderNoticeCards = (notices) => {
+    const totalPages = Math.ceil(notices.length / empNoticePageSize) || 1;
+    if (empNoticeCurrentPage > totalPages) empNoticeCurrentPage = totalPages;
+    if (empNoticeCurrentPage < 1) empNoticeCurrentPage = 1;
+    const start = (empNoticeCurrentPage - 1) * empNoticePageSize;
+    const page = notices.slice(start, start + empNoticePageSize);
+
+    const cards = page.map(n => `
+        <div style="padding:10px 14px;border-bottom:1px solid var(--main-border)">
+            <div style="font-weight:600;font-size:.84rem;color:var(--main-text)">${esc(n.title)}</div>
+            ${n.message ? `<div style="font-size:.8rem;color:var(--main-text3);margin-top:3px;line-height:1.5">${esc(n.message)}</div>` : ''}
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+                ${n.targetType === 'multiple' ? '<span style="font-size:.7rem;color:var(--main-text3)">Personal</span>' : ''}
+                <span style="font-size:.7rem;color:var(--main-text3)">${formatDateDMY(n.createdAt ? n.createdAt.slice(0,10) : null)}</span>
+            </div>
+        </div>`).join('');
+
+    const pagHtml = buildPagination(notices.length, empNoticeCurrentPage, empNoticePageSize,
+        'goNoticePage', 'changeNoticePageSize',
+        { label: 'announces', sizes: [5, 10, 25] });
+
+    return cards + pagHtml;
+};
+
+const goNoticePage = page => {
+    const notices = DB.fileNotices || [];
+    const totalPages = Math.ceil(notices.length / empNoticePageSize) || 1;
+    empNoticeCurrentPage = Math.max(1, Math.min(page, totalPages));
+    const el = document.getElementById('reminder-bar-content');
+    if (el) el.innerHTML = renderNoticeCards(notices);
+};
+
+const changeNoticePageSize = size => {
+    empNoticePageSize = parseInt(size);
+    empNoticeCurrentPage = 1;
+    const notices = DB.fileNotices || [];
+    const el = document.getElementById('reminder-bar-content');
+    if (el) el.innerHTML = renderNoticeCards(notices);
 };
 
 const toggleFileReminderBar = () => {
@@ -4205,28 +3338,10 @@ const renderEmpFileTable = () => {
             </tr>`;
         }).join('');
 
-    let pagHtml = '';
-    if (filtered.length > 0) {
-        const showTo = Math.min(start + empFilePageSize, filtered.length);
-        const maxV=5, stP=Math.max(1,empFileCurrentPage-Math.floor(maxV/2)), enP=Math.min(totalPages,stP+maxV-1);
-        const adjSt = enP-stP<maxV-1?Math.max(1,enP-maxV+1):stP;
-        let btns = `<button onclick="goEmpFilePage(1)" ${empFileCurrentPage===1?'disabled':''}>&laquo;</button>
-                    <button onclick="goEmpFilePage(${empFileCurrentPage-1})" ${empFileCurrentPage===1?'disabled':''}>&lsaquo;</button>`;
-        for(let p=adjSt;p<=enP;p++) btns += `<button onclick="goEmpFilePage(${p})" class="${p===empFileCurrentPage?'active':''}">${p}</button>`;
-        btns += `<button onclick="goEmpFilePage(${empFileCurrentPage+1})" ${empFileCurrentPage===totalPages?'disabled':''}>&rsaquo;</button>
-                 <button onclick="goEmpFilePage(${totalPages})" ${empFileCurrentPage===totalPages?'disabled':''}>&raquo;</button>`;
-        pagHtml = `<div class="pagination">
-            <div class="pagination-info">Showing ${start+1} to ${showTo} of ${filtered.length} files</div>
-            <div style="display:flex;align-items:center;gap:20px">
-                <div class="pagination-size"><label>Show</label>
-                    <select onchange="changeEmpFilePageSize(this.value)">
-                        <option value="10"${empFilePageSize===10?' selected':''}>10</option>
-                        <option value="25"${empFilePageSize===25?' selected':''}>25</option>
-                        <option value="50"${empFilePageSize===50?' selected':''}>50</option>
-                    </select></div>
-                <div class="pagination-controls">${btns}</div>
-            </div></div>`;
-    }
+    const pagHtml = buildPagination(filtered.length, empFileCurrentPage, empFilePageSize,
+        'goEmpFilePage', 'changeEmpFilePageSize',
+        { label: 'files', sizes: [10, 25, 50] });
+        
     document.getElementById('emp-file-table-area').innerHTML = `
         <div class="table-wrap"><table>
             <thead><tr><th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:150px">Actions</th></tr></thead>
@@ -4787,641 +3902,6 @@ const doChangePassword = async () => {
 
 
 /* ==========================================================
-   MULTI-SELECT COMPONENT HELPERS
-   ========================================================== */
-var _msState = {};
-var _msCallbacks = {};
-var _msIds = new Set();
-
-function msGenerate(id, options, placeholder) {
-    _msIds.add(id);
-    _msState[id] = new Set();
-    _msState[id + '_opts'] = options.slice().sort(function(a, b) {
-        var al = a.label.toLowerCase();
-        var bl = b.label.toLowerCase();
-        var aNum = /^\d/.test(al);
-        var bNum = /^\d/.test(bl);
-        if (aNum && !bNum) return -1;
-        if (!aNum && bNum) return 1;
-        return al.localeCompare(bl, undefined, { numeric: true });
-    });
-    _msState[id + '_ph'] = placeholder || 'Select...';
-
-    var itemsHtml = _msState[id + '_opts'].length > 0
-        ? _msState[id + '_opts'].map(function(o) {
-            return '<label class="multi-select-item" onclick="event.stopPropagation()">' +
-                '<input type="checkbox" value="' + o.value + '" ' +
-                'onchange="msOnCheck(\'' + id + '\', this.value, this.checked)">' +
-                '<span>' + esc(o.label) + '</span></label>';
-        }).join('')
-        : '<div style="padding:14px;text-align:center;color:var(--main-text3);font-size:.82rem">No options</div>';
-
-    return '<div class="multi-select" id="' + id + '-wrap">' +
-        '<div class="multi-select-trigger" onclick="msToggle(\'' + id + '\')">' +
-            '<span class="ms-display" id="' + id + '-disp">' + esc(placeholder || 'Select...') + '</span>' +
-            '<span class="arrow">&#9662;</span>' +
-        '</div>' +
-        '<div class="multi-select-dropdown">' +
-            '<div class="multi-select-actions">' +
-                '<button type="button" onclick="msSelectAll(\'' + id + '\');event.stopPropagation()">Select All</button>' +
-                '<button type="button" onclick="msClear(\'' + id + '\');event.stopPropagation()">Clear</button>' +
-            '</div>' +
-            itemsHtml +
-        '</div>' +
-    '</div>';
-}
-
-function msToggle(id) {
-    _msIds.forEach(function(k) {
-        if (k !== id) {
-            var wrap = document.getElementById(k + '-wrap');
-            if (wrap) wrap.classList.remove('open');
-        }
-    });
-    var wrap = document.getElementById(id + '-wrap');
-    if (wrap) wrap.classList.toggle('open');
-}
-
-function msOnCheck(id, value, checked) {
-    if (!_msState[id]) return;
-    if (checked) _msState[id].add(String(value));
-    else _msState[id].delete(String(value));
-    msUpdateDisplay(id);
-    if (_msCallbacks[id]) _msCallbacks[id](msGetValues(id));
-}
-
-function msSelectAll(id) {
-    var opts = _msState[id + '_opts'] || [];
-    _msState[id] = new Set(opts.map(function(o) { return String(o.value); }));
-    msSyncCheckboxes(id);
-    msUpdateDisplay(id);
-    if (_msCallbacks[id]) _msCallbacks[id](msGetValues(id));
-}
-
-function msClear(id) {
-    if (_msState[id]) _msState[id].clear();
-    msSyncCheckboxes(id);
-    msUpdateDisplay(id);
-    if (_msCallbacks[id]) _msCallbacks[id](msGetValues(id));
-}
-
-function msSyncCheckboxes(id) {
-    var wrap = document.getElementById(id + '-wrap');
-    if (!wrap) return;
-    var cbs = wrap.querySelectorAll('input[type="checkbox"]');
-    for (var i = 0; i < cbs.length; i++) {
-        cbs[i].checked = _msState[id] ? _msState[id].has(String(cbs[i].value)) : false;
-    }
-}
-
-function msUpdateDisplay(id) {
-    var el = document.getElementById(id + '-disp');
-    if (!el) return;
-    var sel = _msState[id];
-    var ph = _msState[id + '_ph'] || 'Select...';
-    if (!sel || sel.size === 0) {
-        el.textContent = ph;
-        el.style.color = '';
-        return;
-    }
-    var opts = _msState[id + '_opts'] || [];
-    var matches = opts.filter(function(o) { return sel.has(String(o.value)); });
-    if (matches.length === 1) {
-        el.textContent = matches[0].label;
-        el.style.color = 'var(--main-text)';
-    } else {
-        el.innerHTML = '<span class="multi-select-count">' + matches.length + ' selected</span>';
-    }
-}
-
-function msGetValues(id) {
-    if (!_msState[id]) return [];
-    return Array.from(_msState[id]).map(Number);
-}
-
-function msRebuild(id, options, keepSelection) {
-    var sorted = options.slice().sort(function(a, b) {
-        var al = a.label.toLowerCase();
-        var bl = b.label.toLowerCase();
-        var aNum = /^\d/.test(al);
-        var bNum = /^\d/.test(bl);
-        if (aNum && !bNum) return -1;
-        if (!aNum && bNum) return 1;
-        return al.localeCompare(bl, undefined, { numeric: true });
-    });
-
-    var prev = keepSelection && _msState[id] ? new Set(_msState[id]) : new Set();
-    _msState[id + '_opts'] = sorted;
-    var validSet = new Set(sorted.map(function(o) { return String(o.value); }));
-    _msState[id] = new Set(Array.from(prev).filter(function(v) { return validSet.has(v); }));
-
-    var wrap = document.getElementById(id + '-wrap');
-    if (!wrap) return;
-    var dd = wrap.querySelector('.multi-select-dropdown');
-    if (!dd) return;
-
-    var actionsHtml = '<div class="multi-select-actions">' +
-        '<button type="button" onclick="msSelectAll(\'' + id + '\');event.stopPropagation()">Select All</button>' +
-        '<button type="button" onclick="msClear(\'' + id + '\');event.stopPropagation()">Clear</button>' +
-    '</div>';
-
-    var itemsHtml = sorted.length > 0
-        ? sorted.map(function(o) {
-            var chk = _msState[id].has(String(o.value)) ? 'checked ' : '';
-            return '<label class="multi-select-item" onclick="event.stopPropagation()">' +
-                '<input type="checkbox" value="' + o.value + '" ' + chk +
-                'onchange="msOnCheck(\'' + id + '\', this.value, this.checked)">' +
-                '<span>' + esc(o.label) + '</span></label>';
-        }).join('')
-        : '<div style="padding:14px;text-align:center;color:var(--main-text3);font-size:.82rem">No options</div>';
-
-    dd.innerHTML = actionsHtml + itemsHtml;
-    msUpdateDisplay(id);
-}
-
-function msOnChange(id, fn) {
-    _msCallbacks[id] = fn;
-}
-
-/* Close dropdowns on outside click */
-document.addEventListener('click', function(e) {
-    _msIds.forEach(function(id) {
-        var wrap = document.getElementById(id + '-wrap');
-        if (wrap && !wrap.contains(e.target)) {
-            wrap.classList.remove('open');
-        }
-    });
-});
-
-/* ==========================================================
-   Searchable Select Component (Single - for modals)
-   ========================================================== */
-var _ssInstances = {};
-
-function ssCreate(containerId, options, placeholder, onChange) {
-    var container = document.getElementById(containerId);
-    if (!container) return;
-    _ssInstances[containerId] = {
-        options: options.slice(),
-        selected: '',
-        placeholder: placeholder || '-- Select --',
-        onChange: onChange || null,
-        filter: '',
-        open: false
-    };
-    _ssRender(containerId);
-}
-
-function ssUpdate(containerId, options, keepSelected) {
-    var inst = _ssInstances[containerId];
-    if (!inst) return;
-    inst.options = options.slice();
-    inst.filter = '';
-    if (!keepSelected) inst.selected = '';
-    if (keepSelected && inst.selected) {
-        var found = options.find(function(o) { return String(o.value) === String(inst.selected); });
-        if (!found) inst.selected = '';
-    }
-    _ssRender(containerId);
-}
-
-function ssGetValue(containerId) {
-    var inst = _ssInstances[containerId];
-    return inst ? inst.selected : '';
-}
-
-function ssSetValue(containerId, val) {
-    var inst = _ssInstances[containerId];
-    if (!inst) return;
-    inst.selected = String(val);
-    _ssRender(containerId);
-}
-
-function ssClear(containerId) {
-    var inst = _ssInstances[containerId];
-    if (!inst) return;
-    inst.selected = '';
-    inst.filter = '';
-    _ssRender(containerId);
-}
-
-function ssGetFiltered(containerId) {
-    var inst = _ssInstances[containerId];
-    if (!inst) return [];
-    var f = inst.filter.toLowerCase();
-    if (!f) return inst.options;
-    return inst.options.filter(function(o) { return o.label.toLowerCase().indexOf(f) !== -1; });
-}
-
-function _ssRender(containerId) {
-    var inst = _ssInstances[containerId];
-    if (!inst) return;
-    var container = document.getElementById(containerId);
-    if (!container) return;
-
-    var selectedLabel = inst.placeholder;
-    if (inst.selected) {
-        var found = inst.options.find(function(o) { return String(o.value) === String(inst.selected); });
-        if (found) selectedLabel = found.label;
-    }
-
-    var filtered = ssGetFiltered(containerId);
-    var displayFilter = inst.open ? inst.filter : '';
-
-    var html =
-        '<div class="ss-wrapper" style="position:relative">' +
-            '<div class="ss-display input" onclick="ssToggle(\'' + containerId + '\')" ' +
-                'style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none">' +
-                '<span style="' + (!inst.selected ? 'color:var(--main-text3)' : 'color:var(--main-text)') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' +
-                    esc(selectedLabel) +
-                '</span>' +
-                '<span style="margin-left:8px;color:var(--main-text3);font-size:.7rem;flex-shrink:0">' +
-                    (inst.open ? '&#9650;' : '&#9660;') +
-                '</span>' +
-            '</div>' +
-            (inst.open
-                ? '<div class="ss-dropdown" style="position:absolute;top:100%;left:0;right:0;z-index:9999;' +
-                    'background:var(--main-surface);border:1px solid var(--main-border);border-top:none;' +
-                    'border-radius:0 0 var(--radius,6px) var(--radius,6px);max-height:260px;overflow:hidden;' +
-                    'box-shadow:0 4px 12px rgba(0,0,0,.15)">' +
-                    '<div style="padding:6px 8px;border-bottom:1px solid var(--main-border)">' +
-                        '<input class="input ss-search" type="text" placeholder="Search..." ' +
-                            'value="' + esc(displayFilter) + '" ' +
-                            'oninput="ssOnFilter(\'' + containerId + '\', this.value)" ' +
-                            'onclick="event.stopPropagation()" ' +
-                            'style="width:100%;padding:6px 8px;font-size:.82rem;border:1px solid var(--main-border);' +
-                            'border-radius:4px;outline:none;background:var(--main-input-bg);color:var(--main-text)">' +
-                    '</div>' +
-                    '<div class="ss-options" style="overflow-y:auto;max-height:210px">' +
-                        (filtered.length === 0
-                            ? '<div style="padding:10px 12px;color:var(--main-text3);font-size:.82rem;text-align:center">No results found</div>'
-                            : '<div class="ss-option" data-value="" onclick="ssSelect(\'' + containerId + '\',\'\')" ' +
-                                'style="padding:8px 12px;cursor:pointer;font-size:.82rem;color:var(--main-text3);' +
-                                'border-bottom:1px solid var(--main-border);font-style:italic">' +
-                                esc(inst.placeholder) +
-                              '</div>' +
-                              filtered.map(function(o) {
-                                  var isSelected = String(o.value) === String(inst.selected);
-                                  return '<div class="ss-option" data-value="' + o.value + '" ' +
-                                      'onclick="ssSelect(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\')" ' +
-                                      'onmouseover="this.style.background=\'#2563eb\';this.style.color=\'#fff\'" ' +
-                                      'onmouseout="this.style.background=\'' + (isSelected ? '#2563eb' : 'transparent') + '\';this.style.color=\'' + (isSelected ? '#fff' : 'var(--main-text)') + '\'" ' +
-                                      'style="padding:8px 12px;cursor:pointer;font-size:.82rem;' +
-                                      (isSelected
-                                          ? 'background:#2563eb;color:#fff;font-weight:600'
-                                          : 'background:transparent;color:var(--main-text)') +
-                                      ';border-bottom:1px solid var(--main-border)">' +
-                                      esc(o.label) +
-                                      '</div>';
-                              }).join('')
-                        ) +
-                    '</div>' +
-                '</div>'
-                : ''
-            ) +
-        '</div>';
-
-    container.innerHTML = html;
-
-    if (inst.open) {
-        setTimeout(function() {
-            var searchEl = container.querySelector('.ss-search');
-            if (searchEl) searchEl.focus();
-        }, 10);
-    }
-}
-
-function ssToggle(containerId) {
-    var inst = _ssInstances[containerId];
-    if (!inst) return;
-    Object.keys(_ssInstances).forEach(function(id) {
-        if (id !== containerId && _ssInstances[id].open) {
-            _ssInstances[id].open = false;
-            _ssInstances[id].filter = '';
-            _ssRender(id);
-        }
-    });
-    if (typeof _ssmInstances !== 'undefined') {
-        Object.keys(_ssmInstances).forEach(function(id) {
-            if (_ssmInstances[id].open) {
-                _ssmInstances[id].open = false;
-                _ssmInstances[id].filter = '';
-                _ssmRender(id);
-            }
-        });
-    }
-    inst.open = !inst.open;
-    inst.filter = '';
-    _ssRender(containerId);
-}
-
-function ssOnFilter(containerId, val) {
-    var inst = _ssInstances[containerId];
-    if (!inst) return;
-    inst.filter = val;
-    var container = document.getElementById(containerId);
-    if (!container) return;
-    var optionsDiv = container.querySelector('.ss-options');
-    if (!optionsDiv) return;
-    var filtered = ssGetFiltered(containerId);
-    optionsDiv.innerHTML =
-        (filtered.length === 0
-            ? '<div style="padding:10px 12px;color:var(--main-text3);font-size:.82rem;text-align:center">No results found</div>'
-            : '<div class="ss-option" data-value="" onclick="ssSelect(\'' + containerId + '\',\'\')" ' +
-                'style="padding:8px 12px;cursor:pointer;font-size:.82rem;color:var(--main-text3);' +
-                'border-bottom:1px solid var(--main-border);font-style:italic">' +
-                esc(inst.placeholder) +
-              '</div>' +
-              filtered.map(function(o) {
-                  var isSelected = String(o.value) === String(inst.selected);
-                  return '<div class="ss-option" data-value="' + o.value + '" ' +
-                      'onclick="ssSelect(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\')" ' +
-                      'style="padding:8px 12px;cursor:pointer;font-size:.82rem;' +
-                      (isSelected
-                          ? 'background:var(--main-accent-bg,rgba(99,102,241,.1));color:var(--main-accent,#6366f1);font-weight:600'
-                          : 'color:var(--main-text)') +
-                      ';border-bottom:1px solid var(--main-border,rgba(0,0,0,.05))">' +
-                      esc(o.label) +
-                      '</div>';
-              }).join('')
-        );
-}
-
-function ssSelect(containerId, val) {
-    var inst = _ssInstances[containerId];
-    if (!inst) return;
-    inst.selected = String(val);
-    inst.open = false;
-    inst.filter = '';
-    _ssRender(containerId);
-    if (inst.onChange) inst.onChange(val);
-}
-
-document.addEventListener('click', function(e) {
-    if (!e.target.closest('.ss-wrapper') && !e.target.closest('.ssm-wrapper')) {
-        Object.keys(_ssInstances).forEach(function(id) {
-            if (_ssInstances[id].open) {
-                _ssInstances[id].open = false;
-                _ssInstances[id].filter = '';
-                _ssRender(id);
-            }
-        });
-        if (typeof _ssmInstances !== 'undefined') {
-            Object.keys(_ssmInstances).forEach(function(id) {
-                if (_ssmInstances[id].open) {
-                    _ssmInstances[id].open = false;
-                    _ssmInstances[id].filter = '';
-                    _ssmRender(id);
-                }
-            });
-        }
-    }
-});
-
-/* ==========================================================
-   Searchable Multi-Select Component (for filters)
-   ========================================================== */
-var _ssmInstances = {};
-
-function ssmCreate(containerId, options, placeholder) {
-    var container = document.getElementById(containerId);
-    if (!container) return;
-    var sorted = options.slice().sort(function(a, b) {
-        var al = a.label.toLowerCase();
-        var bl = b.label.toLowerCase();
-        // 数字开头的排前面
-        var aNum = /^\d/.test(al);
-        var bNum = /^\d/.test(bl);
-        if (aNum && !bNum) return -1;
-        if (!aNum && bNum) return 1;
-        return al.localeCompare(bl, undefined, { numeric: true });
-    });
-    _ssmInstances[containerId] = {
-        options: sorted,
-        selected: [],
-        placeholder: placeholder || 'All',
-        filter: '',
-        open: false,
-        onChange: null
-    };
-    _ssmRender(containerId);
-}
-
-function ssmUpdate(containerId, options, keepSelected) {
-    var inst = _ssmInstances[containerId];
-    if (!inst) return;
-    var sorted = options.slice().sort(function(a, b) {
-        var al = a.label.toLowerCase();
-        var bl = b.label.toLowerCase();
-        var aNum = /^\d/.test(al);
-        var bNum = /^\d/.test(bl);
-        if (aNum && !bNum) return -1;
-        if (!aNum && bNum) return 1;
-        return al.localeCompare(bl, undefined, { numeric: true });
-    });
-    inst.options = sorted;
-    inst.filter = '';
-    if (keepSelected) {
-        var validValues = sorted.map(function(o) { return String(o.value); });
-        inst.selected = inst.selected.filter(function(v) { return validValues.indexOf(String(v)) !== -1; });
-    } else {
-        inst.selected = [];
-    }
-    _ssmRender(containerId);
-}
-
-function ssmGetValues(containerId) {
-    var inst = _ssmInstances[containerId];
-    return inst ? inst.selected.map(function(v) { return parseInt(v); }) : [];
-}
-
-function ssmClear(containerId) {
-    var inst = _ssmInstances[containerId];
-    if (!inst) return;
-    inst.selected = [];
-    inst.filter = '';
-    _ssmRender(containerId);
-    if (inst.onChange) inst.onChange([]);
-}
-
-function ssmOnChange(containerId, callback) {
-    var inst = _ssmInstances[containerId];
-    if (inst) inst.onChange = callback;
-}
-
-function _ssmGetFiltered(containerId) {
-    var inst = _ssmInstances[containerId];
-    if (!inst) return [];
-    var f = inst.filter.toLowerCase();
-    if (!f) return inst.options;
-    return inst.options.filter(function(o) { return o.label.toLowerCase().indexOf(f) !== -1; });
-}
-
-function _ssmRender(containerId) {
-    var inst = _ssmInstances[containerId];
-    if (!inst) return;
-    var container = document.getElementById(containerId);
-    if (!container) return;
-
-    var count = inst.selected.length;
-    var displayText = inst.placeholder;
-    if (count === 1) {
-        var found = inst.options.find(function(o) { return String(o.value) === String(inst.selected[0]); });
-        displayText = found ? found.label : inst.selected[0];
-    } else if (count > 1) {
-        displayText = count + ' selected';
-    }
-
-    var filtered = _ssmGetFiltered(containerId);
-
-    var html = '<div class="ssm-wrapper" style="position:relative">' +
-        '<div class="ssm-display" onclick="ssmToggle(\'' + containerId + '\')" ' +
-            'style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;' +
-            'background:var(--main-input-bg);border:1px solid var(--main-border);border-radius:6px;' +
-            'cursor:pointer;font-size:.82rem;min-height:36px;user-select:none;gap:6px;color:var(--main-text)">' +
-            '<span style="' + (count === 0 ? 'color:var(--main-text3)' : 'color:var(--main-text)') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' +
-                esc(displayText) +
-            '</span>' +
-            (count > 0
-                ? '<span onclick="event.stopPropagation();ssmClear(\'' + containerId + '\');_ssmRender(\'' + containerId + '\')" style="color:var(--main-text3);font-size:.85rem;cursor:pointer;flex-shrink:0" title="Clear">&times;</span>'
-                : '<span style="color:var(--main-text3);font-size:.7rem;flex-shrink:0">' + (inst.open ? '&#9650;' : '&#9660;') + '</span>'
-            ) +
-        '</div>';
-
-    if (inst.open) {
-        html += '<div class="ssm-dropdown" style="position:absolute;top:100%;left:0;right:0;z-index:9999;' +
-            'background:var(--main-surface);border:1px solid var(--main-border);border-top:none;' +
-            'border-radius:0 0 6px 6px;max-height:300px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.15)">';
-
-        html += '<div style="padding:6px 8px;border-bottom:1px solid var(--main-border)">' +
-            '<input class="input ssm-search" type="text" placeholder="Search..." ' +
-            'value="' + esc(inst.filter) + '" ' +
-            'oninput="ssmOnFilter(\'' + containerId + '\', this.value)" ' +
-            'onclick="event.stopPropagation()" ' +
-            'style="width:100%;padding:6px 8px;font-size:.8rem;border:1px solid var(--main-border);' +
-            'border-radius:4px;outline:none;background:var(--main-input-bg);color:var(--main-text)">' +
-            '</div>';
-
-        html += '<div style="display:flex;gap:10px;padding:5px 8px;border-bottom:1px solid var(--main-border);font-size:.75rem">' +
-            '<a href="javascript:void(0)" onclick="ssmSelectAll(\'' + containerId + '\')" style="color:var(--accent);text-decoration:none">Select All</a>' +
-            '<a href="javascript:void(0)" onclick="ssmClear(\'' + containerId + '\');_ssmRender(\'' + containerId + '\')" style="color:var(--main-text3);text-decoration:none">Clear</a>' +
-            '</div>';
-
-        html += '<div class="ssm-options" style="overflow-y:auto;max-height:200px">';
-        if (filtered.length === 0) {
-            html += '<div style="padding:10px 12px;color:var(--main-text3);font-size:.82rem;text-align:center">No results</div>';
-        } else {
-            filtered.forEach(function(o) {
-                var checked = inst.selected.indexOf(String(o.value)) !== -1;
-                html += '<label onmouseover="this.style.background=\'#2563eb\';this.style.color=\'#fff\';this.querySelector(\'span\').style.color=\'#fff\'" onmouseout="this.style.background=\'' + (checked ? '#2563eb' : 'transparent') + '\';this.style.color=\'' + (checked ? '#fff' : 'var(--main-text)') + '\';this.querySelector(\'span\').style.color=\'' + (checked ? '#fff' : 'var(--main-text)') + '\'" ' +
-                    'style="display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;font-size:.82rem;' +
-                    (checked ? 'background:#2563eb;color:#fff;font-weight:600' : 'background:transparent;color:var(--main-text)') + ';border-bottom:1px solid var(--main-border)">' +
-                    '<input type="checkbox" ' + (checked ? 'checked' : '') + ' ' +
-                    'onchange="ssmToggleOption(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\',this.checked)" ' +
-                    'style="accent-color:var(--accent)">' +
-                    '<span>' + esc(o.label) + '</span>' +
-                    '</label>';
-            });
-        }
-        html += '</div></div>';
-    }
-    html += '</div>';
-    container.innerHTML = html;
-
-    if (inst.open) {
-        setTimeout(function() {
-            var el = container.querySelector('.ssm-search');
-            if (el) el.focus();
-        }, 10);
-    }
-}
-
-function ssmToggle(containerId) {
-    var inst = _ssmInstances[containerId];
-    if (!inst) return;
-    Object.keys(_ssmInstances).forEach(function(id) {
-        if (id !== containerId && _ssmInstances[id].open) {
-            _ssmInstances[id].open = false;
-            _ssmInstances[id].filter = '';
-            _ssmRender(id);
-        }
-    });
-    if (typeof _ssInstances !== 'undefined') {
-        Object.keys(_ssInstances).forEach(function(id) {
-            if (_ssInstances[id] && _ssInstances[id].open) {
-                _ssInstances[id].open = false;
-                _ssInstances[id].filter = '';
-                _ssRender(id);
-            }
-        });
-    }
-    inst.open = !inst.open;
-    inst.filter = '';
-    _ssmRender(containerId);
-}
-
-function ssmOnFilter(containerId, val) {
-    var inst = _ssmInstances[containerId];
-    if (!inst) return;
-    inst.filter = val;
-    var container = document.getElementById(containerId);
-    if (!container) return;
-    var optionsDiv = container.querySelector('.ssm-options');
-    if (!optionsDiv) return;
-    var filtered = _ssmGetFiltered(containerId);
-    if (filtered.length === 0) {
-        optionsDiv.innerHTML = '<div style="padding:10px 12px;color:var(--main-text3);font-size:.82rem;text-align:center">No results</div>';
-        return;
-    }
-    optionsDiv.innerHTML = filtered.map(function(o) {
-        var checked = inst.selected.indexOf(String(o.value)) !== -1;
-        return '<label style="display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;font-size:.82rem;' +
-            (checked ? 'background:var(--accent-soft)' : '') + ';border-bottom:1px solid var(--main-border)">' +
-            '<input type="checkbox" ' + (checked ? 'checked' : '') + ' ' +
-            'onchange="ssmToggleOption(\'' + containerId + '\',\'' + String(o.value).replace(/'/g, "\\'") + '\',this.checked)" ' +
-            'style="accent-color:var(--accent)">' +
-            '<span style="color:var(--main-text)">' + esc(o.label) + '</span>' +
-            '</label>';
-    }).join('');
-}
-
-function ssmToggleOption(containerId, val, checked) {
-    var inst = _ssmInstances[containerId];
-    if (!inst) return;
-    var strVal = String(val);
-    if (checked) {
-        if (inst.selected.indexOf(strVal) === -1) inst.selected.push(strVal);
-    } else {
-        inst.selected = inst.selected.filter(function(v) { return String(v) !== strVal; });
-    }
-    // 保存 scroll 位置
-    var container = document.getElementById(containerId);
-    var optionsDiv = container ? container.querySelector('.ssm-options') : null;
-    var scrollTop = optionsDiv ? optionsDiv.scrollTop : 0;
-    _ssmRender(containerId);
-    // 恢复 scroll 位置
-    var newContainer = document.getElementById(containerId);
-    var newOptionsDiv = newContainer ? newContainer.querySelector('.ssm-options') : null;
-    if (newOptionsDiv) newOptionsDiv.scrollTop = scrollTop;
-    if (inst.onChange) inst.onChange(inst.selected.slice());
-}
-
-function ssmSelectAll(containerId) {
-    var inst = _ssmInstances[containerId];
-    if (!inst) return;
-    var filtered = _ssmGetFiltered(containerId);
-    inst.selected = filtered.map(function(o) { return String(o.value); });
-    var container = document.getElementById(containerId);
-    var optionsDiv = container ? container.querySelector('.ssm-options') : null;
-    var scrollTop = optionsDiv ? optionsDiv.scrollTop : 0;
-    _ssmRender(containerId);
-    var newContainer = document.getElementById(containerId);
-    var newOptionsDiv = newContainer ? newContainer.querySelector('.ssm-options') : null;
-    if (newOptionsDiv) newOptionsDiv.scrollTop = scrollTop;
-    if (inst.onChange) inst.onChange(inst.selected.slice());
-}
-
-/* ==========================================================
    SECTION 10: ADMIN — ATTENDANCE (optimized)
    ========================================================== */
 let adminAttCurrentPage = 1, adminAttPageSize = 10, adminAttFilteredData = [];
@@ -5813,29 +4293,9 @@ const renderAdminAttPage = () => {
             </tr>`;
         }).join('');
 
-    let pagHtml = '';
-    if (filtered.length > 0) {
-        const showTo = Math.min(start + adminAttPageSize, filtered.length);
-        const maxV = 5, stP = Math.max(1, adminAttCurrentPage - Math.floor(maxV/2)), enP = Math.min(totalPages, stP + maxV - 1);
-        const adjSt = enP - stP < maxV - 1 ? Math.max(1, enP - maxV + 1) : stP;
-        let btns = `<button onclick="goAdminAttPage(1)" ${adminAttCurrentPage===1?'disabled':''}>&laquo;</button>
-                    <button onclick="goAdminAttPage(${adminAttCurrentPage-1})" ${adminAttCurrentPage===1?'disabled':''}>&lsaquo;</button>`;
-        for (let p = adjSt; p <= enP; p++) btns += `<button onclick="goAdminAttPage(${p})" class="${p===adminAttCurrentPage?'active':''}">${p}</button>`;
-        btns += `<button onclick="goAdminAttPage(${adminAttCurrentPage+1})" ${adminAttCurrentPage===totalPages?'disabled':''}>&rsaquo;</button>
-                 <button onclick="goAdminAttPage(${totalPages})" ${adminAttCurrentPage===totalPages?'disabled':''}>&raquo;</button>`;
-        pagHtml = `<div class="pagination">
-            <div class="pagination-info">Showing ${start+1} to ${showTo} of ${filtered.length} entries</div>
-            <div style="display:flex;align-items:center;gap:20px">
-                <div class="pagination-size"><label>Show</label>
-                    <select onchange="changeAdminAttPageSize(this.value)">
-                        <option value="10"${adminAttPageSize===10?' selected':''}>10</option>
-                        <option value="25"${adminAttPageSize===25?' selected':''}>25</option>
-                        <option value="50"${adminAttPageSize===50?' selected':''}>50</option>
-                        <option value="100"${adminAttPageSize===100?' selected':''}>100</option>
-                    </select></div>
-                <div class="pagination-controls">${btns}</div>
-            </div></div>`;
-    }
+    const pagHtml = buildPagination(filtered.length, adminAttCurrentPage, adminAttPageSize,
+        'goAdminAttPage', 'changeAdminAttPageSize',
+        { label: 'entries', sizes: [10, 25, 50, 100] });
 
     document.getElementById('admin-att-table-area').innerHTML = `
         <div class="table-wrap"><table>
@@ -7086,34 +5546,7 @@ const showFileNoticesModal = () => {
 const renderNoticesModalContent = () => {
     const notices = DB.fileNotices || [];
     const members = DB.members || [];
-
-    const renderNoticeList = (list) => {
-        if (list.length === 0) {
-            return '<div style="text-align:center;color:var(--main-text3);padding:30px 0;font-size:.85rem">No reminders found.</div>';
-        }
-        return list.map(n => {
-            const targetLabel = n.targetType === 'all'
-                ? '<span style="color:var(--accent);font-size:.78rem;font-weight:600">All Employees</span>'
-                : n.targetMemberNames && n.targetMemberNames.length > 0
-                    ? `<span style="font-size:.78rem;color:var(--main-text2)">${n.targetMemberNames.map(esc).join(', ')}</span>`
-                    : '<span style="font-size:.78rem;color:var(--main-text3)">No one</span>';
-            const statusDot = n.isActive
-                ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#16a34a"></span>'
-                : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--main-text3)"></span>';
-            return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--main-bg);border-radius:var(--radius);border:1px solid var(--main-border)">
-                ${statusDot}
-                <div style="flex:1;min-width:0">
-                    <div style="font-weight:600;font-size:.88rem;color:var(--main-text)">${esc(n.title)}</div>
-                    ${n.message ? `<div style="font-size:.82rem;color:var(--main-text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.message)}</div>` : ''}
-                </div>
-                <div style="white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis">${targetLabel}</div>
-                <div style="display:flex;gap:4px">
-                    <button class="btn-icon" title="Edit" onclick="editNoticeInModal(${n.id})">&#9998;</button>
-                    <button class="btn-icon danger" title="Delete" onclick="deleteNoticeInModal(${n.id})">&#10005;</button>
-                </div>
-            </div>`;
-        }).join('');
-    };
+    _modalNoticePage = 1;
 
     const memberCheckboxes = members.map(m =>
         `<label class="nm-member-label" style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:.82rem;transition:background .15s" onmouseover="this.style.background='var(--main-border)'" onmouseout="this.style.background='transparent'" data-name="${esc(m.name.toLowerCase())}">
@@ -7161,9 +5594,14 @@ const renderNoticesModalContent = () => {
                     </div>
                 </div>
             </div>
-            <div style="display:flex;justify-content:flex-end;gap:8px">
-                <button class="btn btn-ghost btn-sm" onclick="clearNmForm()">Clear</button>
-                <button class="btn btn-green btn-sm" id="nm-save-btn" onclick="saveNoticeFromModal()">+ Add</button>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer">
+                    <input type="checkbox" id="nm-send-email"> Also send email notification
+                </label>
+                <div style="display:flex;gap:8px">
+                    <button class="btn btn-ghost btn-sm" onclick="clearNmForm()">Clear</button>
+                    <button class="btn btn-green btn-sm" id="nm-save-btn" onclick="saveNoticeFromModal()">+ Add</button>
+                </div>
             </div>
         </div>
 
@@ -7173,8 +5611,8 @@ const renderNoticesModalContent = () => {
         </div>
 
         <!-- Notice List -->
-        <div style="flex:1;min-height:250px;overflow-y:auto;max-height:35vh;padding-right:4px" id="nm-list">
-            ${renderNoticeList(notices)}
+        <div id="nm-list" style="flex:1;min-height:0;overflow-y:auto">
+            ${renderPaginatedNoticeList(notices)}
         </div>
 
         <!-- Footer -->
@@ -7187,12 +5625,55 @@ const renderNoticesModalContent = () => {
         });
     }, 100);
 };
+
+const renderPaginatedNoticeList = (list) => {
+    if (list.length === 0) {
+        return '<div style="text-align:center;color:var(--main-text3);padding:30px 0;font-size:.85rem">No reminders found.</div>';
+    }
+
+    const totalPages = Math.ceil(list.length / _modalNoticePageSize) || 1;
+    if (_modalNoticePage > totalPages) _modalNoticePage = totalPages;
+    if (_modalNoticePage < 1) _modalNoticePage = 1;
+    const start = (_modalNoticePage - 1) * _modalNoticePageSize;
+    const page = list.slice(start, start + _modalNoticePageSize);
+
+    const cards = page.map(n => {
+        const targetLabel = n.targetType === 'all'
+            ? '<span style="color:var(--accent);font-size:.78rem;font-weight:600">All Employees</span>'
+            : n.targetMemberNames && n.targetMemberNames.length > 0
+                ? `<span style="font-size:.78rem;color:var(--main-text2)">${n.targetMemberNames.map(esc).join(', ')}</span>`
+                : '<span style="font-size:.78rem;color:var(--main-text3)">No one</span>';
+        const statusDot = n.isActive
+            ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#16a34a"></span>'
+            : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--main-text3)"></span>';
+        return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--main-bg);border-radius:var(--radius);border:1px solid var(--main-border);margin-bottom:6px">
+            ${statusDot}
+            <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:.88rem;color:var(--main-text)">${esc(n.title)}</div>
+                ${n.message ? `<div style="font-size:.82rem;color:var(--main-text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.message)}</div>` : ''}
+            </div>
+            <div style="white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis">${targetLabel}</div>
+            <div style="display:flex;gap:4px">
+                <button class="btn-icon" title="Edit" onclick="editNoticeInModal(${n.id})">&#9998;</button>
+                <button class="btn-icon danger" title="Delete" onclick="deleteNoticeInModal(${n.id})">&#10005;</button>
+            </div>
+        </div>`;
+    }).join('');
+
+    const pagHtml = buildPagination(list.length, _modalNoticePage, _modalNoticePageSize,
+        'goModalNoticePage', 'changeModalNoticePageSize',
+        { label: 'notices', sizes: [3, 5, 10, 25] });
+
+    return cards + pagHtml;
+};
+
 const filterNoticeList = () => {
+    _modalNoticePage = 1;
     const search = (document.getElementById('nm-search')?.value || '').toLowerCase();
     const notices = DB.fileNotices || [];
 
     if (!search) {
-        renderFilteredNoticeList(notices);
+        document.getElementById('nm-list').innerHTML = renderPaginatedNoticeList(notices);
         return;
     }
 
@@ -7202,8 +5683,9 @@ const filterNoticeList = () => {
         return haystack.indexOf(search) !== -1;
     });
 
-    renderFilteredNoticeList(filtered);
+    document.getElementById('nm-list').innerHTML = renderPaginatedNoticeList(filtered);
 };
+
 const filterNmMembers = () => {
     const search = (document.getElementById('nm-member-search')?.value || '').toLowerCase();
     const labels = document.querySelectorAll('.nm-member-label');
@@ -7223,35 +5705,32 @@ const nmSelectVisible = () => {
     updateNmCount();
 };
 
-const renderFilteredNoticeList = (list) => {
-    let html = '';
-    if (list.length === 0) {
-        html = '<div style="text-align:center;color:var(--main-text3);padding:30px 0;font-size:.85rem">No reminders match your search.</div>';
-    } else {
-        html = list.map(n => {
-            const targetLabel = n.targetType === 'all'
-                ? '<span style="color:var(--accent);font-size:.78rem;font-weight:600">All Employees</span>'
-                : n.targetMemberNames && n.targetMemberNames.length > 0
-                    ? `<span style="font-size:.78rem;color:var(--main-text2)">${n.targetMemberNames.map(esc).join(', ')}</span>`
-                    : '<span style="font-size:.78rem;color:var(--main-text3)">No one</span>';
-            const statusDot = n.isActive
-                ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#16a34a"></span>'
-                : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--main-text3)"></span>';
-            return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--main-bg);border-radius:var(--radius);border:1px solid var(--main-border)">
-                ${statusDot}
-                <div style="flex:1;min-width:0">
-                    <div style="font-weight:600;font-size:.88rem;color:var(--main-text)">${esc(n.title)}</div>
-                    ${n.message ? `<div style="font-size:.82rem;color:var(--main-text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.message)}</div>` : ''}
-                </div>
-                <div style="white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis">${targetLabel}</div>
-                <div style="display:flex;gap:4px">
-                    <button class="btn-icon" title="Edit" onclick="editNoticeInModal(${n.id})">&#9998;</button>
-                    <button class="btn-icon danger" title="Delete" onclick="deleteNoticeInModal(${n.id})">&#10005;</button>
-                </div>
-            </div>`;
-        }).join('');
-    }
-    document.getElementById('nm-list').innerHTML = html;
+let _modalNoticePage = 1, _modalNoticePageSize = 5;
+
+const goModalNoticePage = page => {
+    const search = (document.getElementById('nm-search')?.value || '').toLowerCase();
+    const notices = DB.fileNotices || [];
+    const list = search ? notices.filter(n => {
+        const names = (n.targetMemberNames || []).join(' ').toLowerCase();
+        const haystack = [n.title, n.message, n.targetType, names].map(v => (v || '').toLowerCase()).join(' ');
+        return haystack.indexOf(search) !== -1;
+    }) : notices;
+    const totalPages = Math.ceil(list.length / _modalNoticePageSize) || 1;
+    _modalNoticePage = Math.max(1, Math.min(page, totalPages));
+    document.getElementById('nm-list').innerHTML = renderPaginatedNoticeList(list);
+};
+
+const changeModalNoticePageSize = size => {
+    _modalNoticePageSize = parseInt(size);
+    _modalNoticePage = 1;
+    const search = (document.getElementById('nm-search')?.value || '').toLowerCase();
+    const notices = DB.fileNotices || [];
+    const list = search ? notices.filter(n => {
+        const names = (n.targetMemberNames || []).join(' ').toLowerCase();
+        const haystack = [n.title, n.message, n.targetType, names].map(v => (v || '').toLowerCase()).join(' ');
+        return haystack.indexOf(search) !== -1;
+    }) : notices;
+    document.getElementById('nm-list').innerHTML = renderPaginatedNoticeList(list);
 };
 
 const updateNmCount = () => {
@@ -7280,21 +5759,93 @@ const saveNoticeFromModal = async () => {
         ? Array.from(document.querySelectorAll('.nm-cb:checked')).map(cb => parseInt(cb.value))
         : [];
     const isActive = document.getElementById('nm-active').checked;
+    const sendEmail = document.getElementById('nm-send-email')?.checked || false;
 
     if (!title) { alert('Title is required'); return; }
     if (targetType === 'multiple' && targetMemberIds.length === 0) { alert('Select at least one employee'); return; }
 
+    const saveBtn = document.getElementById('nm-save-btn');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+
     const body = { title, message, targetType, targetMemberIds, isActive };
 
-    if (_editingNoticeId) {
-        await api('/file-notices/' + _editingNoticeId, { method: 'PUT', body });
-        _editingNoticeId = null;
-    } else {
-        await api('/file-notices', { method: 'POST', body });
+    try {
+        if (_editingNoticeId) {
+            await api('/file-notices/' + _editingNoticeId, { method: 'PUT', body });
+            _editingNoticeId = null;
+        } else {
+            await api('/file-notices', { method: 'POST', body });
+        }
+    } catch (e) {
+        alert('Failed to save notice: ' + e.message);
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = _editingNoticeId ? 'Update' : '+ Add'; }
+        return;
+    }
+
+    // --- Send Email ---
+    let emailResult = null;
+    if (sendEmail) {
+        const members = DB.members || [];
+        let targetEmails = [];
+
+        if (targetType === 'all') {
+            targetEmails = members.map(m => m.email).filter(Boolean);
+        } else {
+            targetEmails = members
+                .filter(m => targetMemberIds.includes(m.id) && m.email)
+                .map(m => m.email);
+        }
+
+        if (targetEmails.length === 0) {
+            emailResult = { success: false, message: 'No email addresses found for selected employees. Check that members have email set.' };
+        } else {
+            const htmlBody = `
+                <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
+                    <div style="background:#f59e0b;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">
+                        <h2 style="margin:0;font-size:1.2rem">${esc(title)}</h2>
+                    </div>
+                    <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;padding:24px;border-radius:0 0 8px 8px">
+                        ${message ? `<p style="color:#374151;line-height:1.6">${esc(message)}</p>` : ''}
+                        <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0">
+                        <p style="color:#9ca3af;font-size:.82rem">This is notification from Multitrade Management System.</p>
+                    </div>
+                </div>`;
+
+            console.log('[Email] Attempting to send to:', targetEmails);
+
+            try {
+                const emailResponse = await api('/send-email', {
+                    method: 'POST',
+                    body: {
+                        to: targetEmails,
+                        subject: `[Multitrade] ${title}`,
+                        htmlBody: htmlBody
+                    }
+                });
+                console.log('[Email] Response:', emailResponse);
+                emailResult = { success: true, message: `Email sent to ${targetEmails.length} recipient(s): ${targetEmails.join(', ')}` };
+            } catch (e) {
+                console.error('[Email] Send failed:', e);
+                emailResult = { success: false, message: `Email failed: ${e.message}` };
+            }
+        }
     }
 
     await loadDB();
     renderNoticesModalContent();
+
+    // --- Show result to user ---
+    if (sendEmail) {
+        setTimeout(() => {
+            const color = emailResult.success ? '#16a34a' : 'var(--danger)';
+            const icon = emailResult.success ? '✓' : '✕';
+            const resultDiv = document.createElement('div');
+            resultDiv.style.cssText = `position:fixed;top:20px;right:20px;z-index:10000;background:var(--main-surface);border:1px solid ${color};border-radius:var(--radius);padding:14px 20px;box-shadow:0 4px 12px rgba(0,0,0,.15);max-width:400px;font-size:.85rem;color:${color}`;
+            resultDiv.innerHTML = `<strong>${icon}</strong> ${esc(emailResult.message)}`;
+            document.body.appendChild(resultDiv);
+            setTimeout(() => resultDiv.remove(), 6000);
+        }, 300);
+    }
 };
 
 const editNoticeInModal = id => {
@@ -7440,28 +5991,10 @@ const renderFileTable = () => {
             </tr>`;
         }).join('');
 
-    let pagHtml = '';
-    if (filtered.length > 0) {
-        const showTo = Math.min(start + filePageSize, filtered.length);
-        const maxV=5, stP=Math.max(1,fileCurrentPage-Math.floor(maxV/2)), enP=Math.min(totalPages,stP+maxV-1);
-        const adjSt = enP-stP<maxV-1?Math.max(1,enP-maxV+1):stP;
-        let btns = `<button onclick="goFilePage(1)" ${fileCurrentPage===1?'disabled':''}>&laquo;</button>
-                    <button onclick="goFilePage(${fileCurrentPage-1})" ${fileCurrentPage===1?'disabled':''}>&lsaquo;</button>`;
-        for(let p=adjSt;p<=enP;p++) btns += `<button onclick="goFilePage(${p})" class="${p===fileCurrentPage?'active':''}">${p}</button>`;
-        btns += `<button onclick="goFilePage(${fileCurrentPage+1})" ${fileCurrentPage===totalPages?'disabled':''}>&rsaquo;</button>
-                 <button onclick="goFilePage(${totalPages})" ${fileCurrentPage===totalPages?'disabled':''}>&raquo;</button>`;
-        pagHtml = `<div class="pagination">
-            <div class="pagination-info">Showing ${start+1} to ${showTo} of ${filtered.length} files</div>
-            <div style="display:flex;align-items:center;gap:20px">
-                <div class="pagination-size"><label>Show</label>
-                    <select onchange="changeFilePageSize(this.value)">
-                        <option value="10"${filePageSize===10?' selected':''}>10</option>
-                        <option value="25"${filePageSize===25?' selected':''}>25</option>
-                        <option value="50"${filePageSize===50?' selected':''}>50</option>
-                    </select></div>
-                <div class="pagination-controls">${btns}</div>
-            </div></div>`;
-    }
+    const pagHtml = buildPagination(filtered.length, fileCurrentPage, filePageSize,
+        'goFilePage', 'changeFilePageSize',
+        { label: 'files', sizes: [10, 25, 50] });
+        
     document.getElementById('files-table-area').innerHTML = `
         <div class="table-wrap"><table>
             <thead><tr><th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:150px">Actions</th></tr></thead>
@@ -7936,29 +6469,11 @@ const renderDriveTable = () => {
         </tr>`).join('');
     }
 
-    let pagHtml = '';
-    if (drives.length > 0) {
-        const showTo = Math.min(start + _drivePageSize, drives.length);
-        const maxV = 5, stP = Math.max(1, _drivePage - Math.floor(maxV/2)), enP = Math.min(totalPages, stP + maxV - 1);
-        const adjSt = enP - stP < maxV - 1 ? Math.max(1, enP - maxV + 1) : stP;
-        let btns = `<button onclick="goDrivePage(1)" ${_drivePage===1?'disabled':''}>&laquo;</button>
-                     <button onclick="goDrivePage(${_drivePage-1})" ${_drivePage===1?'disabled':''}>&lsaquo;</button>`;
-        for (let p = adjSt; p <= enP; p++) btns += `<button onclick="goDrivePage(${p})" class="${p===_drivePage?'active':''}">${p}</button>`;
-        btns += `<button onclick="goDrivePage(${_drivePage+1})" ${_drivePage===totalPages?'disabled':''}>&rsaquo;</button>
-                  <button onclick="goDrivePage(${totalPages})" ${_drivePage===totalPages?'disabled':''}>&raquo;</button>`;
-        pagHtml = `<div class="pagination" style="margin-top:8px">
-            <div class="pagination-info">Showing ${start+1} to ${showTo} of ${drives.length}</div>
-            <div style="display:flex;align-items:center;gap:16px">
-                <div class="pagination-size"><label>Show</label>
-                    <select onchange="changeDrivePageSize(this.value)">
-                        <option value="3"${_drivePageSize===3?' selected':''}>3</option>
-                        <option value="5"${_drivePageSize===5?' selected':''}>5</option>
-                        <option value="10"${_drivePageSize===10?' selected':''}>10</option>
-                        <option value="25"${_drivePageSize===25?' selected':''}>25</option>
-                    </select></div>
-                <div class="pagination-controls">${btns}</div>
-            </div></div>`;
-    }
+    const pagHtml = drives.length > 0
+        ? buildPagination(drives.length, _drivePage, _drivePageSize,
+            'goDrivePage', 'changeDrivePageSize',
+            { label: 'drives', sizes: [3, 5, 10, 25] })
+        : '';
 
     document.getElementById('drive-table-area').innerHTML = `
         <div class="table-wrap"><table>
@@ -8087,13 +6602,19 @@ const showFileNotices = () => {
 };
 
 const renderFileNoticesList = () => {
-    const notices = DB.fileNotices || [];
+    const allNotices = DB.fileNotices || [];
 
-    if (notices.length === 0) {
+    if (allNotices.length === 0) {
         document.getElementById('file-notices-table-area').innerHTML =
             '<div style="text-align:center;color:var(--main-text3);padding:40px 0">No notices yet.<br><span style="font-size:.82rem">Click "+ Add Notice" to create one.</span></div>';
         return;
     }
+
+    const totalPages = Math.ceil(allNotices.length / _noticePageSize) || 1;
+    if (_noticePage > totalPages) _noticePage = totalPages;
+    if (_noticePage < 1) _noticePage = 1;
+    const start = (_noticePage - 1) * _noticePageSize;
+    const notices = allNotices.slice(start, start + _noticePageSize);
 
     const rows = notices.map(n => {
         const targetLabel = n.targetType === 'all'
@@ -8115,11 +6636,16 @@ const renderFileNoticesList = () => {
         </tr>`;
     }).join('');
 
+    const pagHtml = buildPagination(allNotices.length, _noticePage, _noticePageSize,
+        'goNoticePage', 'changeNoticePageSize',
+        { label: 'notices', sizes: [5, 10, 25, 50] });
+
     document.getElementById('file-notices-table-area').innerHTML = `
         <div class="table-wrap"><table>
             <thead><tr><th style="width:50px">ID</th><th>Notice</th><th style="width:140px">Target</th><th style="width:80px">Status</th><th style="width:80px">Actions</th></tr></thead>
             <tbody>${rows}</tbody>
-        </table></div>`;
+        </table></div>
+        ${pagHtml}`;
 };
 
 const showAddFileNotice = () => {
@@ -10107,6 +8633,7 @@ document.addEventListener('touchstart', (e) => {
 document.addEventListener('touchstart', (e) => {
     if (!e.target.closest('table')) _hideMobileTooltip();
 }, { passive: true });
+
 /* ==========================================================
    Pre-load data on page load
    ========================================================== */
@@ -10192,189 +8719,6 @@ document.addEventListener('touchstart', (e) => {
             document.getElementById('login-page').classList.add('active');
         }
     }
-})();
-
-/* ===== Pull to Refresh (Mobile) ===== */
-let _ptrStartY = 0, _ptrPulling = false, _ptrRefreshing = false;
-
-const _ptrRefreshData = async () => {
-    if (_ptrRefreshing) return;
-    _ptrRefreshing = true;
-
-    const indicator = document.querySelector('.ptr-indicator');
-    if (indicator) {
-        indicator.classList.remove('pulling');
-        indicator.classList.add('refreshing');
-        indicator.querySelector('.ptr-text').textContent = 'Refreshing...';
-    }
-
-    try {
-        const savedModule = localStorage.getItem('multitrade_module') || 'attendance';
-        if (savedModule === 'panel') {
-            await ptLoadDB();
-            const activePage = localStorage.getItem('multitrade_pt_page') || 'pt-dashboard';
-            if (typeof ptNav === 'function') ptNav(activePage);
-        } else {
-            await loadDB();
-            if (currentUser.role === 'admin' || currentUser.role === 'viewer') {
-                const activePage = localStorage.getItem('multitrade_admin_page') || 'projects';
-                if (typeof adminNav === 'function') adminNav(activePage);
-            } else {
-                const activePage = localStorage.getItem('multitrade_emp_page') || 'attendance';
-                if (typeof empNav === 'function') empNav(activePage);
-            }
-        }
-        showToast('Data refreshed');
-    } catch (e) {
-        // session 过期，跳回登录
-        if (e.message && (e.message.includes('401') || e.message.includes('Unauthorized'))) {
-            showToast('Session expired, please login again');
-            setTimeout(() => doLogout(), 1000);
-        } else {
-            showToast('Refresh failed');
-        }
-    }
-
-    if (indicator) {
-        indicator.classList.remove('refreshing');
-        indicator.querySelector('.ptr-text').textContent = '';
-    }
-    _ptrRefreshing = false;
-};
-
-const initPullToRefresh = () => {
-    const main = document.querySelector('.app-layout.active .app-main');
-    if (!main) return;
-
-    if (!main.querySelector('.ptr-indicator')) {
-        const div = document.createElement('div');
-        div.className = 'ptr-indicator';
-        div.innerHTML = '<span class="ptr-spinner"></span><span class="ptr-text"></span>';
-        main.insertBefore(div, main.firstChild);
-    }
-
-    // 先移除旧监听，防止重复绑定
-    main.removeEventListener('touchstart', _ptrTouchStart);
-    main.removeEventListener('touchmove', _ptrTouchMove);
-    main.removeEventListener('touchend', _ptrTouchEnd);
-
-    main.addEventListener('touchstart', _ptrTouchStart, { passive: true });
-    main.addEventListener('touchmove', _ptrTouchMove, { passive: false });
-    main.addEventListener('touchend', _ptrTouchEnd, { passive: true });
-};
-
-function _ptrTouchStart(e) {
-    if (_ptrRefreshing) return;
-    const main = e.currentTarget;
-    if (main.scrollTop > 0) return;
-    _ptrStartY = e.touches[0].clientY;
-    _ptrPulling = true;
-}
-
-function _ptrTouchMove(e) {
-    if (!_ptrPulling || _ptrRefreshing) return;
-    const main = e.currentTarget;
-    if (main.scrollTop > 0) { _ptrPulling = false; return; }
-
-    const diff = e.touches[0].clientY - _ptrStartY;
-    const indicator = main.querySelector('.ptr-indicator');
-    if (!indicator) return;
-
-    if (diff > 0 && main.scrollTop <= 0) {
-        // 阻止页面本身的弹性滚动
-        e.preventDefault();
-
-        if (diff > 80) {
-            indicator.classList.add('pulling');
-            indicator.querySelector('.ptr-text').textContent = '松开刷新';
-        } else if (diff > 30) {
-            indicator.classList.add('pulling');
-            indicator.querySelector('.ptr-text').textContent = '下拉刷新';
-        }
-    }
-}
-
-function _ptrTouchEnd(e) {
-    if (!_ptrPulling) return;
-    _ptrPulling = false;
-    const main = document.querySelector('.app-layout.active .app-main');
-    if (!main) return;
-    const indicator = main.querySelector('.ptr-indicator');
-    if (!indicator) return;
-
-    if (indicator.classList.contains('pulling') && indicator.querySelector('.ptr-text').textContent.includes('松开')) {
-        _ptrRefreshData();
-    } else {
-        indicator.classList.remove('pulling');
-        indicator.querySelector('.ptr-text').textContent = '';
-    }
-}
-
-// 在 sidebar 开关和页面切换时重新初始化
-const _originalShowPage = typeof showPage === 'function' ? showPage : null;
-
-// 初始化
-document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(initPullToRefresh, 500);
-});
-
-// 每次切页面也重新绑定
-const _initPTRDebounce = () => setTimeout(initPullToRefresh, 300);
-
-// ============================================================
-// AUTO LOGOUT 
-// ============================================================
-(function() {
-    let logoutTimer;
-    const TIMEOUT = 45 * 60 * 1000;
-
-    function resetTimer() {
-        clearTimeout(logoutTimer);
-        logoutTimer = setTimeout(autoLogout, TIMEOUT);
-    }
-
-    function autoLogout() {
-        const saved = localStorage.getItem('multitrade_session');
-        if (!saved) return;
-
-        localStorage.removeItem('multitrade_session');
-        localStorage.removeItem('multitrade_module');
-        localStorage.removeItem('multitrade_admin_page');
-        localStorage.removeItem('multitrade_emp_page');
-        localStorage.removeItem('multitrade_pt_page');
-
-        document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
-        document.querySelectorAll('.pt-drawer').forEach(d => d.classList.remove('active'));
-        document.querySelectorAll('.pt-drawer-overlay').forEach(d => d.classList.remove('active'));
-        document.querySelectorAll('.sidebar').forEach(s => s.classList.remove('open'));
-        document.querySelectorAll('.mobile-overlay').forEach(o => o.classList.remove('active'));
-
-        const modalBox = document.getElementById('modal-box');
-        if (modalBox) modalBox.innerHTML = '';
-
-        document.getElementById('login-pass').value = '';
-
-        const goToLogin = () => {
-            hideModal();
-            document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
-            document.getElementById('login-page').classList.add('active');
-            document.getElementById('login-pass').focus();
-        };
-
-        showModal(`
-            <div style="text-align:center;padding:20px 0">
-                <div style="font-size:2.5rem;margin-bottom:16px">&#128274;</div>
-                <h3 style="margin-bottom:8px">Session Expired</h3>
-                <p style="color:var(--main-text2);line-height:1.6;margin-bottom:20px">You have been inactive for 45 minutes.<br>Please sign in again.</p>
-                <button class="btn btn-accent" id="session-expired-btn">Sign In</button>
-            </div>`);
-
-        document.getElementById('session-expired-btn').onclick = goToLogin;
-    }
-
-    const events = ['mousemove', 'mousedown', 'keypress', 'scroll', 'touchstart', 'click'];
-    events.forEach(e => document.addEventListener(e, resetTimer, { passive: true }));
-    resetTimer();
 })();
 
 // ← file end, empty from here

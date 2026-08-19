@@ -258,6 +258,7 @@ app.get('/api/members', requireAuth, async (req, res) => {
             return {
                 id: r.id,
                 name: r.name,
+                email: r.email,
                 positionId: r.position_id,
                 departmentId: r.department_id,
                 salaries
@@ -270,11 +271,11 @@ app.get('/api/members', requireAuth, async (req, res) => {
 });
 
 app.post('/api/members', requireEdit, async (req, res) => {
-    const { name, positionId, departmentId } = req.body;
+    const { name, positionId, departmentId, email } = req.body;
     try {
         const result = await pool.query(
-            'INSERT INTO members (name, position_id, department_id) VALUES ($1, $2, $3) RETURNING id',
-            [name, positionId || null, departmentId || null]
+            'INSERT INTO members (name, position_id, department_id, email) VALUES ($1, $2, $3, $4) RETURNING id',
+            [name, positionId || null, departmentId || null, email || null]
         );
         res.json({ id: result.rows[0].id });
     } catch (err) {
@@ -283,11 +284,11 @@ app.post('/api/members', requireEdit, async (req, res) => {
 });
 
 app.put('/api/members/:id', requireEdit, async (req, res) => {
-    const { name, positionId, departmentId } = req.body;
+    const { name, positionId, departmentId, email } = req.body;
     try {
         await pool.query(
-            'UPDATE members SET name = $1, position_id = $2, department_id = $3 WHERE id = $4',
-            [name, positionId || null, departmentId || null, req.params.id]
+            'UPDATE members SET name = $1, position_id = $2, department_id = $3, email = $4 WHERE id = $5',
+            [name, positionId || null, departmentId || null, email || null, req.params.id]
         );
         res.json({ success: true });
     } catch (err) {
@@ -1704,7 +1705,83 @@ app.delete('/api/file-notices/:id', requireAuth, async (req, res) => {
     }
 });
 
+// Send emial with file notification
+app.post('/api/send-email', requireAuth, async (req, res) => {
+    const { to, subject, htmlBody } = req.body;
 
+    try {
+        const cfgResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_script_url'");
+        const tokenResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_token'");
+        const scriptUrl = cfgResult.rows[0]?.value;
+        const token = tokenResult.rows[0]?.value || '';
+
+        if (!scriptUrl || !token) {
+            return res.status(400).json({ error: 'Email service not configured.' });
+        }
+
+        const response = await fetch(scriptUrl, {
+            method: 'POST',
+            body: JSON.stringify({
+                token: token,
+                action: 'sendEmail',
+                to: to,
+                subject: subject,
+                htmlBody: htmlBody
+            }),
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+        if (data.error) throw new Error(data.error);
+        res.json(data);
+    } catch (err) {
+        console.error('[send-email] ERROR:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+// use for app script access permission
+// function authorizeEmail() {
+//   MailApp.sendEmail({
+//     to: 'ongts@multitradepac.com',
+//     subject: 'Multitrade Mail Authorization',
+//     body: 'Testing MailApp permission'
+//   });
+//   Logger.log('Done! Permission granted.');
+// }
+
+// Test email endpoint
+app.get('/api/test-email', requireAuth, async (req, res) => {
+    try {
+        const config = await pool.query('SELECT * FROM app_config WHERE id = 1');
+        const cfg = config.rows[0];
+
+        if (!cfg || !cfg.drive_script_url || !cfg.drive_token) {
+            return res.json({ error: 'Missing config', cfg: { hasUrl: !!cfg?.drive_script_url, hasToken: !!cfg?.drive_token } });
+        }
+
+        console.log('[Test Email] Sending to Apps Script:', cfg.drive_script_url);
+
+        const response = await fetch(cfg.drive_script_url, {
+            method: 'POST',
+            body: JSON.stringify({
+                token: cfg.drive_token,
+                action: 'sendEmail',
+                to: [req.query.email || 'test@example.com'],
+                subject: 'Test Email from Multitrade',
+                htmlBody: '<h1>It works!</h1><p>This is a test email from Multitrade Management System.</p>'
+            }),
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        console.log('[Test Email] Apps Script response:', data);
+        res.json(data);
+    } catch (err) {
+        console.error('[Test Email] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// project template download
 app.get('/api/template/projects/:scopeId', async (req, res) => {
     try {
         const scope = await pool.query('SELECT name FROM scopes WHERE id = $1', [req.params.scopeId]);
@@ -1903,6 +1980,7 @@ async function initDB() {
         "ALTER TABLE files ADD COLUMN IF NOT EXISTS remark VARCHAR(500) DEFAULT ''",
         "ALTER TABLE files ADD COLUMN IF NOT EXISTS title VARCHAR(300) DEFAULT ''",
         "ALTER TABLE file_notices ADD COLUMN IF NOT EXISTS target_member_ids TEXT DEFAULT ''",
+        "ALTER TABLE members ADD COLUMN IF NOT EXISTS email VARCHAR(255) DEFAULT NULL;"
     ];
 
     for (var i = 0; i < alterStatements.length; i++) {
