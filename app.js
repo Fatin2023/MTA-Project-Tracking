@@ -5884,11 +5884,6 @@ const renderAdminFiles = () => {
 let _editingNoticeId = null;
 let _noticeFormListenersBound = false;
 
-const showFileNoticesModal = () => {
-    _editingNoticeId = null;
-    renderNoticesModalContent();
-};
-
 const renderNoticesModalContent = () => {
     const notices = DB.fileNotices || [];
     const members = (DB.members || []).filter(m => m.role === 'employee');
@@ -5908,57 +5903,62 @@ const renderNoticesModalContent = () => {
             <span style="font-size:.82rem;color:var(--main-text3)">${notices.length} total</span>
         </div>
 
-        <!-- Form -->
-        <div style="flex-shrink:0;background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px;margin-bottom:16px">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-                <input class="input" id="nm-title" placeholder="Title (required)">
-                <div style="display:flex;align-items:center;gap:10px">
-                    <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer;white-space:nowrap">
-                        <input type="checkbox" id="nm-active" checked> Active
+        <!-- Scrollable area: form + search + list -->
+        <div style="flex:1;min-height:0;overflow-y:auto">
+
+            <!-- Form -->
+            <div style="background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px;margin-bottom:16px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+                    <input class="input" id="nm-title" placeholder="Title (required)">
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer;white-space:nowrap">
+                            <input type="checkbox" id="nm-active" checked> Active
+                        </label>
+                    </div>
+                </div>
+                <textarea class="input" id="nm-message" rows="2" placeholder="Message (optional)" style="margin-bottom:10px"></textarea>
+                <div style="margin-bottom:10px">
+                    <div style="display:flex;align-items:center;gap:16px;margin-bottom:8px">
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem">
+                            <input type="radio" name="nm-target" value="all" checked onchange="document.getElementById('nm-members').style.display='none'"> All Employees
+                        </label>
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem">
+                            <input type="radio" name="nm-target" value="multiple" onchange="document.getElementById('nm-members').style.display='block'"> Select Employees
+                        </label>
+                    </div>
+                    <div id="nm-members" style="display:none">
+                        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+                            <input class="input" id="nm-member-search" placeholder="Search employee..." oninput="filterNmMembers()" style="flex:1;min-width:200px;max-width:300px;font-size:.82rem;padding:8px 12px">
+                            <button class="btn btn-ghost btn-sm" onclick="nmSelectVisible()">Select Visible</button>
+                            <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('.nm-cb').forEach(c=>c.checked=false);updateNmCount()">Deselect All</button>
+                            <span id="nm-count" style="font-size:.78rem;color:var(--main-text3)">0 selected</span>
+                        </div>
+                        <div style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius);padding:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 12px" id="nm-member-list">
+                            ${memberCheckboxes}
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer">
+                        <input type="checkbox" id="nm-send-email"> Also send email notification
                     </label>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-ghost btn-sm" onclick="clearNmForm()">Clear</button>
+                        <button class="btn btn-green btn-sm" id="nm-save-btn" onclick="saveNoticeFromModal()">+ Add</button>
+                    </div>
                 </div>
             </div>
-            <textarea class="input" id="nm-message" rows="2" placeholder="Message (optional)" style="margin-bottom:10px"></textarea>
+
+            <!-- Notice Search -->
             <div style="margin-bottom:10px">
-                <div style="display:flex;align-items:center;gap:16px;margin-bottom:8px">
-                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem">
-                        <input type="radio" name="nm-target" value="all" checked onchange="document.getElementById('nm-members').style.display='none'"> All Employees
-                    </label>
-                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem">
-                        <input type="radio" name="nm-target" value="multiple" onchange="document.getElementById('nm-members').style.display='block'"> Select Employees
-                    </label>
-                </div>
-                <div id="nm-members" style="display:none">
-                    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
-                        <input class="input" id="nm-member-search" placeholder="Search employee..." oninput="filterNmMembers()" style="flex:1;min-width:200px;max-width:300px;font-size:.82rem;padding:8px 12px">
-                        <button class="btn btn-ghost btn-sm" onclick="nmSelectVisible()">Select Visible</button>
-                        <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('.nm-cb').forEach(c=>c.checked=false);updateNmCount()">Deselect All</button>
-                        <span id="nm-count" style="font-size:.78rem;color:var(--main-text3)">0 selected</span>
-                    </div>
-                    <div style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius);padding:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 12px" id="nm-member-list">
-                        ${memberCheckboxes}
-                    </div>
-                </div>
+                <input class="input" id="nm-search" placeholder="Search reminders..." oninput="filterNoticeList()" style="width:100%">
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-                <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;cursor:pointer">
-                    <input type="checkbox" id="nm-send-email"> Also send email notification
-                </label>
-                <div style="display:flex;gap:8px">
-                    <button class="btn btn-ghost btn-sm" onclick="clearNmForm()">Clear</button>
-                    <button class="btn btn-green btn-sm" id="nm-save-btn" onclick="saveNoticeFromModal()">+ Add</button>
-                </div>
+
+            <!-- Notice List -->
+            <div id="nm-list">
+                ${renderPaginatedNoticeList(notices)}
             </div>
-        </div>
 
-        <!-- Notice Search -->
-        <div style="flex-shrink:0;margin-bottom:10px">
-            <input class="input" id="nm-search" placeholder="Search reminders..." oninput="filterNoticeList()" style="width:100%">
-        </div>
-
-        <!-- Notice List -->
-        <div id="nm-list" style="flex:1;min-height:0;overflow-y:auto">
-            ${renderPaginatedNoticeList(notices)}
         </div>
 
         <!-- Footer -->
