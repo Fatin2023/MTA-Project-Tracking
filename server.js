@@ -243,10 +243,11 @@ app.delete('/api/projects/:id', requireEditOrPic, async (req, res) => {
 app.get('/api/members', requireAuth, async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT m.*, p.name as position_name, d.name as department_name
+            SELECT m.*, p.name as position_name, d.name as department_name, u.role
             FROM members m
             LEFT JOIN positions p ON m.position_id = p.id
             LEFT JOIN departments d ON m.department_id = d.id
+            LEFT JOIN users u ON u.member_id = m.id
             ORDER BY m.id
         `);
         const members = await Promise.all(result.rows.map(async (r) => {
@@ -259,6 +260,7 @@ app.get('/api/members', requireAuth, async (req, res) => {
                 id: r.id,
                 name: r.name,
                 email: r.email,
+                role: r.role,
                 positionId: r.position_id,
                 departmentId: r.department_id,
                 salaries
@@ -1784,7 +1786,8 @@ app.get('/api/file-tasks', requireAuth, async (req, res) => {
             // Count total targets
             let targetCount = 0;
             if (t.target_type === 'all') {
-                const mc = await pool.query('SELECT COUNT(*) FROM members');
+                const mc = await pool.query(`SELECT COUNT(*) FROM members m
+                    JOIN users u ON u.member_id = m.id WHERE u.role = 'employee'`);
                 targetCount = parseInt(mc.rows[0].count);
             } else {
                 targetCount = (t.target_member_ids || []).length;
@@ -1867,8 +1870,11 @@ app.post('/api/file-tasks', requireEdit, async (req, res) => {
             try {
                 let targetMembers;
                 if (targetType === 'all') {
-                    targetMembers = await pool.query('SELECT id, name, email FROM members');
+                    // ✅ 改这里，只查 employee
+                    targetMembers = await pool.query(`SELECT m.id, m.name, m.email FROM members m
+                        JOIN users u ON u.member_id = m.id WHERE u.role = 'employee'`);
                 } else {
+                    // ✅ 不改，admin 手动选的人可能是故意的
                     const ids = targetMemberIds || [];
                     if (ids.length > 0) {
                         targetMembers = await pool.query('SELECT id, name, email FROM members WHERE id = ANY($1)', [ids]);
@@ -1927,6 +1933,9 @@ app.post('/api/file-tasks', requireEdit, async (req, res) => {
 
                     console.log('[FileTask] Immediate notify sent to: ' + member.name);
                 }
+
+                await pool.query('UPDATE file_tasks SET last_checked_at = NOW() WHERE id = $1', [taskId]);
+                
             } catch (notifyErr) {
                 console.error('[FileTask] Immediate notify error:', notifyErr.message);
                 // Don't fail the task creation
@@ -1957,7 +1966,8 @@ app.put('/api/file-tasks/:id', requireEdit, async (req, res) => {
                 const taskTitle = title.trim();
                 let targetMembers;
                 if (targetType === 'all') {
-                    targetMembers = await pool.query('SELECT id, name, email FROM members');
+                    targetMembers = await pool.query(`SELECT m.id, m.name, m.email FROM members m
+                        JOIN users u ON u.member_id = m.id WHERE u.role = 'employee'`);
                 } else {
                     const ids = targetMemberIds || [];
                     if (ids.length > 0) {
@@ -2028,6 +2038,9 @@ app.put('/api/file-tasks/:id', requireEdit, async (req, res) => {
 
                     console.log('[FileTask] Edit notify sent to: ' + member.name);
                 }
+                
+                await pool.query('UPDATE file_tasks SET last_checked_at = NOW() WHERE id = $1', [taskId]);
+
             } catch (notifyErr) {
                 console.error('[FileTask] Edit notify error:', notifyErr.message);
             }
@@ -2135,7 +2148,9 @@ app.get('/api/file-tasks/:id/pending', requireEdit, async (req, res) => {
         let members;
 
         if (t.target_type === 'all') {
-            members = await pool.query('SELECT id, name, email FROM members ORDER BY name');
+            // ✅ 只查 employee
+            members = await pool.query(`SELECT m.id, m.name, m.email FROM members m
+                JOIN users u ON u.member_id = m.id WHERE u.role = 'employee' ORDER BY m.name`);
         } else {
             const ids = t.target_member_ids || [];
             if (ids.length === 0) return res.json([]);
@@ -2662,7 +2677,8 @@ const checkOverdueTasks = async () => {
 
             let targetMembers;
             if (task.target_type === 'all') {
-                targetMembers = await pool.query('SELECT id, name, email FROM members');
+                targetMembers = await pool.query(`SELECT m.id, m.name, m.email FROM members m
+                    JOIN users u ON u.member_id = m.id WHERE u.role = 'employee'`);
             } else {
                 const ids = task.target_member_ids || [];
                 if (ids.length === 0) continue;
@@ -2762,7 +2778,8 @@ const checkUpcomingTasks = async () => {
 
             let targetMembers;
             if (task.target_type === 'all') {
-                targetMembers = await pool.query('SELECT id, name, email FROM members');
+                targetMembers = await pool.query(`SELECT m.id, m.name, m.email FROM members m
+                    JOIN users u ON u.member_id = m.id WHERE u.role = 'employee'`);
             } else {
                 const ids = task.target_member_ids || [];
                 if (ids.length === 0) {

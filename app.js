@@ -5891,7 +5891,7 @@ const showFileNoticesModal = () => {
 
 const renderNoticesModalContent = () => {
     const notices = DB.fileNotices || [];
-    const members = DB.members || [];
+    const members = (DB.members || []).filter(m => m.role === 'employee');
     _modalNoticePage = 1;
 
     const memberCheckboxes = members.map(m =>
@@ -6131,11 +6131,11 @@ const saveNoticeFromModal = async () => {
     // --- Send Email ---
     let emailResult = null;
     if (sendEmail) {
-        const members = DB.members || [];
+        const members = (DB.members || []).filter(m => m.role === 'employee');
         let targetEmails = [];
 
         if (targetType === 'all') {
-            targetEmails = members.map(m => m.email).filter(Boolean);
+            targetEmails = members.filter(m => m.role === 'employee').map(m => m.email).filter(Boolean);
         } else {
             targetEmails = members
                 .filter(m => targetMemberIds.includes(m.id) && m.email)
@@ -7010,7 +7010,7 @@ const renderFileNoticesList = () => {
 };
 
 const showAddFileNotice = () => {
-    const members = DB.members || [];
+    const members = (DB.members || []).filter(m => m.role === 'employee');
     const memberOpts = members.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
 
     hideModal();
@@ -7077,7 +7077,7 @@ const doAddFileNotice = async () => {
 const showEditFileNotice = id => {
     const n = (DB.fileNotices || []).find(x => x.id === id);
     if (!n) return;
-    const members = DB.members || [];
+    const members = (DB.members || []).filter(m => m.role === 'employee');
     const memberOpts = members.map(m => `<option value="${m.id}" ${m.id === n.targetMemberId ? 'selected' : ''}>${esc(m.name)}</option>`).join('');
 
     hideModal();
@@ -7330,7 +7330,7 @@ const toggleSendNow = () => {
 
 const showAddFileTask = () => {
     _editingFileTaskId = null;
-    const members = DB.members || [];
+    const members = (DB.members || []).filter(m => m.role === 'employee');
     const memberCheckboxes = members.map(m =>
         `<div style="width:100%">
             <label class="ft-member-label" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;font-size:.85rem;transition:background .15s;width:100%;box-sizing:border-box" onmouseover="this.style.background='var(--main-border)'" onmouseout="this.style.background='transparent'" data-name="${esc(m.name.toLowerCase())}">
@@ -7446,7 +7446,7 @@ const editFileTask = id => {
     if (!t) return;
     _editingFileTaskId = id;
 
-    const members = DB.members || [];
+    const members = (DB.members || []).filter(m => m.role === 'employee');
     const memberCheckboxes = members.map(m =>
         `<div style="width:100%">
             <label class="ft-member-label" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;font-size:.85rem;transition:background .15s;width:100%;box-sizing:border-box" onmouseover="this.style.background='var(--main-border)'" onmouseout="this.style.background='transparent'" data-name="${esc(m.name.toLowerCase())}">
