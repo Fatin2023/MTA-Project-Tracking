@@ -5884,6 +5884,11 @@ const renderAdminFiles = () => {
 let _editingNoticeId = null;
 let _noticeFormListenersBound = false;
 
+const showFileNoticesModal = () => {
+    _editingNoticeId = null;
+    renderNoticesModalContent();
+};
+
 const renderNoticesModalContent = () => {
     const notices = DB.fileNotices || [];
     const members = (DB.members || []).filter(m => m.role === 'employee');
