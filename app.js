@@ -5857,8 +5857,8 @@ const renderAdminFiles = () => {
             <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
                 <button class="btn btn-ghost btn-sm" onclick="resetFileFilter()">Reset</button>
                 ${currentUser.role !== 'viewer' ? '<button class="btn btn-green" onclick="showUploadFile()">+ Upload File</button>' : ''}
-                ${currentUser.role === 'admin' ? '<button class="btn btn-accent btn-sm" onclick="showFileNoticesModal()">📋 Announces</button>' : ''}
-                ${currentUser.role === 'admin' ? '<button class="btn btn-purple btn-sm" onclick="showFileTasksModal()" style="background:#8b5cf6;color:#fff;border:none">📋 File Request</button>' : ''}
+                ${currentUser.role === 'admin' ? '<button class="btn btn-accent" onclick="showFileNoticesModal()">📋 Announces</button>' : ''}
+                ${currentUser.role === 'admin' ? '<button class="btn btn-purple" onclick="showFileTasksModal()" style="background:#8b5cf6;color:#fff;border:none">📋 File Request</button>' : ''}
             </div>
             </div>
         </div>
