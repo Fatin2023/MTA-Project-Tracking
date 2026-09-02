@@ -1738,15 +1738,6 @@ app.post('/api/send-email', requireAuth, async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-// use for app script access permission
-// function authorizeEmail() {
-//   MailApp.sendEmail({
-//     to: 'ongts@multitradepac.com',
-//     subject: 'Multitrade Mail Authorization',
-//     body: 'Testing MailApp permission'
-//   });
-//   Logger.log('Done! Permission granted.');
-// }
 
 // Test email endpoint
 app.get('/api/test-email', requireAuth, async (req, res) => {
@@ -1777,6 +1768,472 @@ app.get('/api/test-email', requireAuth, async (req, res) => {
         res.json(data);
     } catch (err) {
         console.error('[Test Email] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ========================================
+// FILE TASKS — Admin CRUD
+// ========================================
+app.get('/api/file-tasks', requireAuth, async (req, res) => {
+    try {
+        const tasks = await pool.query('SELECT * FROM file_tasks ORDER BY created_at DESC');
+        const result = [];
+
+        for (const t of tasks.rows) {
+            // Count total targets
+            let targetCount = 0;
+            if (t.target_type === 'all') {
+                const mc = await pool.query('SELECT COUNT(*) FROM members');
+                targetCount = parseInt(mc.rows[0].count);
+            } else {
+                targetCount = (t.target_member_ids || []).length;
+            }
+
+            // Count submissions
+            const sc = await pool.query(
+                'SELECT COUNT(*) FROM file_task_submissions WHERE task_id = $1', [t.id]
+            );
+            const submittedCount = parseInt(sc.rows[0].count);
+
+            // Get submission details
+            const subs = await pool.query(`
+                SELECT fts.*, m.name as member_name
+                FROM file_task_submissions fts
+                LEFT JOIN members m ON fts.member_id = m.id
+                WHERE fts.task_id = $1
+                ORDER BY fts.submitted_at DESC
+            `, [t.id]);
+
+            result.push({
+                id: t.id,
+                title: t.title,
+                description: t.description || '',
+                deadline: t.deadline,
+                targetType: t.target_type,
+                targetMemberIds: t.target_member_ids || [],
+                notifyType: t.notify_type,
+                checkIntervalMinutes: t.check_interval_minutes,
+                lastCheckedAt: t.last_checked_at,
+                isActive: t.is_active,
+                createdBy: t.created_by,
+                createdAt: t.created_at,
+                targetCount,
+                submittedCount,
+                submissions: subs.rows.map(s => ({
+                    id: s.id,
+                    memberId: s.member_id,
+                    memberName: s.member_name,
+                    fileName: s.submitted_file_name,
+                    fileUrl: s.submitted_file_url,
+                    driveFileId: s.submitted_drive_file_id,
+                    submittedAt: s.submitted_at
+                }))
+            });
+        }
+
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/file-tasks', requireEdit, async (req, res) => {
+    const { title, description, deadline, targetType, targetMemberIds, notifyType, checkIntervalMinutes, isActive, sendNow } = req.body;
+    if (!title || !deadline) return res.status(400).json({ error: 'Title and deadline required' });
+
+    try {
+        const result = await pool.query(
+            `INSERT INTO file_tasks (title, description, deadline, target_type, target_member_ids, notify_type, check_interval_minutes, is_active, created_by, last_checked_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+            [
+                title.trim(),
+                (description || '').trim(),
+                deadline,
+                targetType || 'all',
+                targetMemberIds || [],
+                notifyType || 'both',
+                checkIntervalMinutes || 1440,
+                isActive !== false,
+                req.user.memberId || null,
+                sendNow ? null : new Date()  // ✅ NOW，scheduler will not immediate trigger
+            ]
+        );
+
+        const taskId = result.rows[0].id;
+
+        // Send immediate notification (wrapped so it NEVER breaks task creation)
+        if (sendNow) {
+            try {
+                let targetMembers;
+                if (targetType === 'all') {
+                    targetMembers = await pool.query('SELECT id, name, email FROM members');
+                } else {
+                    const ids = targetMemberIds || [];
+                    if (ids.length > 0) {
+                        targetMembers = await pool.query('SELECT id, name, email FROM members WHERE id = ANY($1)', [ids]);
+                    } else {
+                        targetMembers = { rows: [] };
+                    }
+                }
+
+                const deadlineStr = new Date(deadline).toLocaleDateString('en-GB', {
+                    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                });
+                const notifTitle = title.trim();
+                const notifMsg = description
+                    ? description.trim() + ' | Deadline: ' + deadlineStr
+                    : 'Deadline: ' + deadlineStr;
+
+                for (const member of targetMembers.rows) {
+                    if (notifyType === 'inapp' || notifyType === 'both') {
+                        await pool.query(
+                            'INSERT INTO notifications (member_id, title, message, type, related_type, related_id) VALUES ($1,$2,$3,$4,$5,$6)',
+                            [member.id, notifTitle, notifMsg, 'file_task', 'file_task', taskId]
+                        );
+                    }
+
+                    if ((notifyType === 'email' || notifyType === 'both') && member.email) {
+                        try {
+                            const cfgResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_script_url'");
+                            const tokenResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_token'");
+                            const scriptUrl = cfgResult.rows[0]?.value;
+                            const token = tokenResult.rows[0]?.value || '';
+
+                            if (scriptUrl && token) {
+                                await fetch(scriptUrl, {
+                                    method: 'POST',
+                                    body: JSON.stringify({
+                                        token: token,
+                                        action: 'sendEmail',
+                                        to: [member.email],
+                                        subject: '[Multitrade] ' + notifTitle,
+                                        htmlBody: '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">'
+                                            + '<div style="background:#f59e0b;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">'
+                                            + '<h2 style="margin:0;font-size:1.1rem">' + notifTitle + '</h2></div>'
+                                            + '<div style="background:#fff;border:1px solid #e5e7eb;padding:24px;border-radius:0 0 8px 8px">'
+                                            + (description ? '<p style="color:#374151;line-height:1.6">' + description.trim() + '</p>' : '')
+                                            + '<p style="color:#6b7280">Deadline: ' + deadlineStr + '</p>'
+                                            + '<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0">'
+                                            + '<p style="color:#9ca3af;font-size:.82rem">Multitrade Management System</p></div></div>'
+                                    }),
+                                    headers: { 'Content-Type': 'application/json' }
+                                });
+                            }
+                        } catch (emailErr) {
+                            console.error('[FileTask] Immediate email failed for ' + member.email + ':', emailErr.message);
+                        }
+                    }
+
+                    console.log('[FileTask] Immediate notify sent to: ' + member.name);
+                }
+            } catch (notifyErr) {
+                console.error('[FileTask] Immediate notify error:', notifyErr.message);
+                // Don't fail the task creation
+            }
+        }
+
+        res.json({ id: taskId });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/file-tasks/:id', requireEdit, async (req, res) => {
+    const { title, description, deadline, targetType, targetMemberIds, notifyType, checkIntervalMinutes, isActive, sendNow } = req.body;
+    try {
+        await pool.query(
+            `UPDATE file_tasks SET title=$1, description=$2, deadline=$3, target_type=$4, target_member_ids=$5,
+             notify_type=$6, check_interval_minutes=$7, is_active=$8 WHERE id=$9`,
+            [title.trim(), (description||'').trim(), deadline, targetType||'all', targetMemberIds||[],
+             notifyType||'both', checkIntervalMinutes||1440, isActive!==false, req.params.id]
+        );
+
+        const taskId = parseInt(req.params.id);
+
+        // Send notification now (edit)
+        if (sendNow) {
+            try {
+                const taskTitle = title.trim();
+                let targetMembers;
+                if (targetType === 'all') {
+                    targetMembers = await pool.query('SELECT id, name, email FROM members');
+                } else {
+                    const ids = targetMemberIds || [];
+                    if (ids.length > 0) {
+                        targetMembers = await pool.query('SELECT id, name, email FROM members WHERE id = ANY($1)', [ids]);
+                    } else {
+                        targetMembers = { rows: [] };
+                    }
+                }
+
+                const deadlineStr = new Date(deadline).toLocaleDateString('en-GB', {
+                    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                });
+                const notifMsg = description
+                    ? description.trim() + ' | Deadline: ' + deadlineStr
+                    : 'Deadline: ' + deadlineStr;
+
+                for (const member of targetMembers.rows) {
+                    // Avoid duplicate: check if already notified recently for this task
+                    const exists = await pool.query(
+                        `SELECT id FROM notifications
+                         WHERE member_id = $1 AND related_type = 'file_task' AND related_id = $2
+                         AND created_at > NOW() - INTERVAL '5 minutes'`,
+                        [member.id, taskId]
+                    );
+                    if (exists.rows.length > 0) {
+                        console.log('[FileTask] Skip duplicate notify for: ' + member.name);
+                        continue;
+                    }
+
+                    if (notifyType === 'inapp' || notifyType === 'both') {
+                        await pool.query(
+                            'INSERT INTO notifications (member_id, title, message, type, related_type, related_id) VALUES ($1,$2,$3,$4,$5,$6)',
+                            [member.id, taskTitle, notifMsg, 'file_task', 'file_task', taskId]
+                        );
+                    }
+
+                    if ((notifyType === 'email' || notifyType === 'both') && member.email) {
+                        try {
+                            const cfgResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_script_url'");
+                            const tokenResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_token'");
+                            const scriptUrl = cfgResult.rows[0]?.value;
+                            const token = tokenResult.rows[0]?.value || '';
+
+                            if (scriptUrl && token) {
+                                await fetch(scriptUrl, {
+                                    method: 'POST',
+                                    body: JSON.stringify({
+                                        token: token,
+                                        action: 'sendEmail',
+                                        to: [member.email],
+                                        subject: '[Multitrade] ' + taskTitle,
+                                        htmlBody: '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">'
+                                            + '<div style="background:#f59e0b;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">'
+                                            + '<h2 style="margin:0;font-size:1.1rem">' + taskTitle + '</h2></div>'
+                                            + '<div style="background:#fff;border:1px solid #e5e7eb;padding:24px;border-radius:0 0 8px 8px">'
+                                            + (description ? '<p style="color:#374151;line-height:1.6">' + description.trim() + '</p>' : '')
+                                            + '<p style="color:#6b7280">Deadline: ' + deadlineStr + '</p>'
+                                            + '<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0">'
+                                            + '<p style="color:#9ca3af;font-size:.82rem">Multitrade Management System</p></div></div>'
+                                    }),
+                                    headers: { 'Content-Type': 'application/json' }
+                                });
+                            }
+                        } catch (emailErr) {
+                            console.error('[FileTask] Edit email failed for ' + member.email + ':', emailErr.message);
+                        }
+                    }
+
+                    console.log('[FileTask] Edit notify sent to: ' + member.name);
+                }
+            } catch (notifyErr) {
+                console.error('[FileTask] Edit notify error:', notifyErr.message);
+            }
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/file-tasks/:id', requireEdit, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM file_tasks WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ========================================
+// FILE TASKS — Employee Submit
+// ========================================
+app.get('/api/file-tasks/my-tasks', requireAuth, async (req, res) => {
+    try {
+        const memberId = req.user.memberId;
+        if (!memberId) return res.json([]);
+
+        const tasks = await pool.query(`
+            SELECT ft.*,
+                fts.id as submission_id,
+                fts.submitted_file_name,
+                fts.submitted_file_url,
+                fts.submitted_drive_file_id,
+                fts.submitted_at
+            FROM file_tasks ft
+            LEFT JOIN file_task_submissions fts ON ft.id = fts.task_id AND fts.member_id = $1
+            WHERE ft.is_active = true
+            AND (ft.target_type = 'all' OR $1 = ANY(ft.target_member_ids))
+            ORDER BY ft.deadline ASC
+        `, [memberId]);
+
+        const result = tasks.rows.map(t => ({
+            id: t.id,
+            title: t.title,
+            description: t.description || '',
+            deadline: t.deadline,
+            targetType: t.target_type,
+            notifyType: t.notify_type,
+            isActive: t.is_active,
+            createdAt: t.created_at,
+            submitted: !!t.submission_id,
+            submittedFileName: t.submitted_file_name,
+            submittedFileUrl: t.submitted_file_url,
+            submittedDriveFileId: t.submitted_drive_file_id,
+            submittedAt: t.submitted_at
+        }));
+
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/file-tasks/:id/submit', requireAuth, async (req, res) => {
+    try {
+        const taskId = req.params.id;
+        const memberId = req.user.memberId;
+        if (!memberId) return res.status(400).json({ error: 'Member not found' });
+
+        const task = await pool.query('SELECT * FROM file_tasks WHERE id = $1 AND is_active = true', [taskId]);
+        if (!task.rows.length) return res.status(404).json({ error: 'Task not found' });
+
+        const existing = await pool.query(
+            'SELECT id FROM file_task_submissions WHERE task_id = $1 AND member_id = $2', [taskId, memberId]
+        );
+        if (existing.rows.length) return res.status(400).json({ error: 'Already submitted' });
+
+        const { fileName, fileUrl, driveFileId, fileSize, fileType, driveSettingId, remark } = req.body;
+
+        // Create file record with remark and drive_setting_id
+        const fileResult = await pool.query(
+            'INSERT INTO files (title, name, type, size, url, drive_file_id, drive_setting_id, uploaded_by, remark) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
+            [task.rows[0].title + ' - Submission', fileName, fileType || '', fileSize || 0, fileUrl, driveFileId, driveSettingId || null, memberId, remark || '']
+        );
+
+        await pool.query(
+            'INSERT INTO file_task_submissions (task_id, member_id, submitted_file_name, submitted_file_url, submitted_drive_file_id) VALUES ($1,$2,$3,$4,$5)',
+            [taskId, memberId, fileName, fileUrl, driveFileId]
+        );
+
+        res.json({ success: true, fileId: fileResult.rows[0].id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get who hasn't submitted (admin view)
+app.get('/api/file-tasks/:id/pending', requireEdit, async (req, res) => {
+    try {
+        const task = await pool.query('SELECT * FROM file_tasks WHERE id = $1', [req.params.id]);
+        if (!task.rows.length) return res.status(404).json({ error: 'Task not found' });
+
+        const t = task.rows[0];
+        let members;
+
+        if (t.target_type === 'all') {
+            members = await pool.query('SELECT id, name, email FROM members ORDER BY name');
+        } else {
+            const ids = t.target_member_ids || [];
+            if (ids.length === 0) return res.json([]);
+            members = await pool.query('SELECT id, name, email FROM members WHERE id = ANY($1) ORDER BY name', [ids]);
+        }
+
+        const submitted = await pool.query(
+            'SELECT member_id FROM file_task_submissions WHERE task_id = $1', [t.id]
+        );
+        const submittedIds = new Set(submitted.rows.map(r => r.member_id));
+
+        const result = members.rows.map(m => ({
+            id: m.id,
+            name: m.name,
+            email: m.email,
+            submitted: submittedIds.has(m.id)
+        }));
+
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ========================================
+// NOTIFICATIONS
+// ========================================
+app.get('/api/notifications', requireAuth, async (req, res) => {
+    try {
+        const memberId = req.user.memberId;
+        if (!memberId) return res.json([]);
+
+        const result = await pool.query(
+            'SELECT * FROM notifications WHERE member_id = $1 ORDER BY created_at DESC LIMIT 50', [memberId]
+        );
+        res.json(result.rows.map(n => ({
+            id: n.id,
+            memberId: n.member_id,
+            title: n.title,
+            message: n.message,
+            type: n.type,
+            relatedType: n.related_type,
+            relatedId: n.related_id,
+            isRead: n.is_read,
+            createdAt: n.created_at
+        })));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/notifications/:id/read', requireAuth, async (req, res) => {
+    try {
+        await pool.query('UPDATE notifications SET is_read = true WHERE id = $1 AND member_id = $2',
+            [req.params.id, req.user.memberId]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/notifications/read-all', requireAuth, async (req, res) => {
+    try {
+        await pool.query('UPDATE notifications SET is_read = true WHERE member_id = $1', [req.user.memberId]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// delete one — 加 requireAuth + 限制只能删自己的
+app.delete('/api/notifications/:id', requireAuth, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM notifications WHERE id = $1 AND member_id = $2',
+            [req.params.id, req.user.memberId]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// delete all
+app.delete('/api/notifications/member/me', requireAuth, async (req, res) => {
+    try {
+        // 只删已完成任务的通知 + 非 task 类型的通知
+        await pool.query(`
+            DELETE FROM notifications
+            WHERE member_id = $1
+            AND (
+                type NOT IN ('file_task', 'file_task_reminder')
+                OR related_id IN (
+                    SELECT task_id FROM file_task_submissions
+                    WHERE member_id = $1
+                )
+            )
+        `, [req.user.memberId]);
+        res.json({ success: true });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
@@ -1945,6 +2402,41 @@ async function initDB() {
             is_active BOOLEAN DEFAULT true,
             created_at TIMESTAMP DEFAULT NOW()
         )`,
+        `CREATE TABLE IF NOT EXISTS file_tasks (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(300) NOT NULL,
+            description TEXT DEFAULT '',
+            deadline TIMESTAMP NOT NULL,
+            target_type VARCHAR(20) DEFAULT 'all',
+            target_member_ids INTEGER[] DEFAULT '{}',
+            notify_type VARCHAR(20) DEFAULT 'both',
+            check_interval_minutes INTEGER DEFAULT 1440,
+            last_checked_at TIMESTAMP,
+            is_active BOOLEAN DEFAULT true,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS file_task_submissions (
+            id SERIAL PRIMARY KEY,
+            task_id INTEGER REFERENCES file_tasks(id) ON DELETE CASCADE,
+            member_id INTEGER,
+            submitted_file_name VARCHAR(500),
+            submitted_file_url TEXT,
+            submitted_drive_file_id VARCHAR(200),
+            submitted_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(task_id, member_id)
+        )`,
+        `CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            member_id INTEGER,
+            title VARCHAR(300),
+            message TEXT DEFAULT '',
+            type VARCHAR(50) DEFAULT 'general',
+            related_type VARCHAR(50),
+            related_id INTEGER,
+            is_read BOOLEAN DEFAULT false,
+            created_at TIMESTAMP DEFAULT NOW()
+        )`
     ];
 
     for (var i = 0; i < tables.length; i++) {
@@ -2055,8 +2547,321 @@ async function initDB() {
     console.log('Database fully initialized');
 }
 
+
+// ========================================
+// RUNTIME STATE FLAGS — prevent overlapping runs
+// ========================================
+let isOverdueChecking = false;
+let isUpcomingChecking = false;
+
+// ========================================
+// SAFE WRAPPERS — sequential, no overlap
+// ========================================
+const checkOverdueTasksSafe = async () => {
+    if (isOverdueChecking) return;
+    isOverdueChecking = true;
+    try {   
+        await checkOverdueTasks();
+    } catch (error) {
+        console.error('[Scheduler] Error in overdue check:', error);
+    } finally {
+        isOverdueChecking = false;
+        setTimeout(checkOverdueTasksSafe, 60 * 1000 );
+    }
+};
+
+const checkUpcomingTasksSafe = async () => {
+    if (isUpcomingChecking) return;
+    isUpcomingChecking = true;
+    try {
+        await checkUpcomingTasks();
+    } catch (error) {
+        console.error('[Scheduler] Error in upcoming check:', error);
+    } finally {
+        isUpcomingChecking = false;
+        setTimeout(checkUpcomingTasksSafe, 60 * 1000);
+    }
+};
+
+// ========================================
+// FILE TASK AUTO-CHECK SCHEDULER
+// ========================================
+const cleanupOldNotifications = async () => {
+    try {
+        const result = await pool.query(
+            `DELETE FROM notifications WHERE created_at < NOW() - INTERVAL '30 days'`
+        );
+        if (result.rowCount > 0) {
+            console.log('[Scheduler] Cleaned up ' + result.rowCount + ' old notifications');
+        }
+    } catch (err) {
+        console.error('[Scheduler] Cleanup error:', err.message);
+    }
+};
+
+const cleanupOldSessions = async () => {
+    try {
+        const result = await pool.query(
+            `DELETE FROM sessions WHERE created_at < NOW() - INTERVAL '7 days'`
+        );
+        if (result.rowCount > 0) {
+            console.log('[Scheduler] Cleaned up ' + result.rowCount + ' old sessions');
+        }
+    } catch (err) {
+    }
+};
+
+const startFileTaskScheduler = () => {
+    console.log('[Scheduler] Started Safely');
+    checkOverdueTasksSafe();
+    checkUpcomingTasksSafe();
+
+    // 每 24 小时清理一次旧通知
+    // Clean old notice every 24 hour 
+    setInterval(cleanupOldNotifications, 24 * 60 * 60 * 1000);
+    cleanupOldNotifications(); // auto run
+};
+
+// ========================================
+// OVERDUE CHECK — deadline passed, not submitted
+// ========================================
+const checkOverdueTasks = async () => {
+    try {
+        const now = new Date();
+        const tasks = await pool.query(`
+            SELECT ft.* FROM file_tasks ft
+            WHERE ft.is_active = true
+            AND ft.deadline <= $1
+            AND EXISTS (
+                SELECT 1 FROM members m
+                WHERE (ft.target_type = 'all' OR m.id = ANY(ft.target_member_ids))
+                AND NOT EXISTS (
+                    SELECT 1 FROM file_task_submissions fts
+                    WHERE fts.task_id = ft.id AND fts.member_id = m.id
+                )
+            )
+        `, [now]);
+
+        if (tasks.rows.length === 0) return;
+
+        for (const task of tasks.rows) {
+            const lastChecked = task.last_checked_at ? new Date(task.last_checked_at) : null;
+            const intervalMs = (task.check_interval_minutes || 30) * 60 * 1000;
+
+            if (lastChecked && (now - lastChecked) < intervalMs) {
+                console.log('[Scheduler] Overdue — cooldown for "' + task.title + '", skipping');
+                continue;
+            }
+
+            console.log('[Scheduler] Processing overdue "' + task.title + '"');
+
+            const submitted = await pool.query(
+                'SELECT member_id FROM file_task_submissions WHERE task_id = $1', [task.id]
+            );
+            const submittedIds = new Set(submitted.rows.map(r => r.member_id));
+
+            let targetMembers;
+            if (task.target_type === 'all') {
+                targetMembers = await pool.query('SELECT id, name, email FROM members');
+            } else {
+                const ids = task.target_member_ids || [];
+                if (ids.length === 0) continue;
+                targetMembers = await pool.query('SELECT id, name, email FROM members WHERE id = ANY($1)', [ids]);
+            }
+
+            const pendingMembers = targetMembers.rows.filter(m => !submittedIds.has(m.id));
+            if (pendingMembers.length === 0) continue;
+
+            // ✅ check email one time，take to outside cycle
+            let scriptUrl = null, token = null;
+            if (task.notify_type === 'email' || task.notify_type === 'both') {
+                const cfgResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_script_url'");
+                const tokenResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_token'");
+                scriptUrl = cfgResult.rows[0]?.value;
+                token = tokenResult.rows[0]?.value || '';
+            }
+
+            const deadlineStr = new Date(task.deadline).toLocaleDateString('en-GB', {
+                day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+            const notifTitle = 'Overdue: ' + task.title;
+            const notifMsg = 'The submission was due on ' + deadlineStr + '. Please submit ASAP.';
+
+            // ✅ collect all，and execute
+            const promises = [];
+
+            for (const member of pendingMembers) {
+                // In-app 通知
+                if (task.notify_type === 'inapp' || task.notify_type === 'both') {
+                    promises.push(
+                        pool.query(
+                            'INSERT INTO notifications (member_id, title, message, type, related_type, related_id) VALUES ($1,$2,$3,$4,$5,$6)',
+                            [member.id, notifTitle, notifMsg, 'file_task_reminder', 'file_task', task.id]
+                        ).then(() => console.log('[Scheduler] Overdue in-app sent to: ' + member.name))
+                    );
+                }
+
+                // Email
+                if ((task.notify_type === 'email' || task.notify_type === 'both') && member.email && scriptUrl && token) {
+                    promises.push(
+                        fetch(scriptUrl, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                token: token,
+                                action: 'sendEmail',
+                                to: [member.email],
+                                subject: '[Multitrade] OVERDUE: ' + task.title,
+                                htmlBody: '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">'
+                                    + '<div style="background:#dc2626;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">'
+                                    + '<h2 style="margin:0">Overdue Submission Reminder</h2></div>'
+                                    + '<div style="background:#fff;border:1px solid #e5e7eb;padding:24px;border-radius:0 0 8px 8px">'
+                                    + '<p style="font-weight:600">' + task.title + '</p>'
+                                    + '<p style="color:#dc2626">Deadline was: ' + deadlineStr + '</p>'
+                                    + '<p>Please submit as soon as possible.</p></div></div>'
+                            }),
+                            headers: { 'Content-Type': 'application/json' }
+                        })
+                        .then(() => console.log('[Scheduler] Overdue email sent to: ' + member.email))
+                        .catch(err => console.error('[Scheduler] Overdue email failed for ' + member.email + ':', err.message))
+                    );
+                }
+            }
+
+            // ✅ send all
+            await Promise.all(promises);
+
+            await pool.query('UPDATE file_tasks SET last_checked_at = $1 WHERE id = $2', [now, task.id]);
+        }
+    } catch (err) {
+        console.error('[Scheduler] checkOverdueTasks error:', err.message);
+    }
+};
+
+// ========================================
+// UPCOMING CHECK — before deadline, interval-based reminders
+// ========================================
+const checkUpcomingTasks = async () => {
+    try {
+        const now = new Date();
+        const tasks = await pool.query(
+            `SELECT * FROM file_tasks WHERE is_active = true AND deadline > NOW()`
+        );
+
+        for (const task of tasks.rows) {
+            const lastChecked = task.last_checked_at ? new Date(task.last_checked_at) : null;
+            const intervalMs = (task.check_interval_minutes || 1440) * 60 * 1000;
+
+            if (lastChecked && (now - lastChecked) < intervalMs) continue;
+
+            console.log('[Scheduler] Processing upcoming "' + task.title + '"');
+
+            const submitted = await pool.query(
+                'SELECT member_id FROM file_task_submissions WHERE task_id = $1', [task.id]
+            );
+            const submittedIds = new Set(submitted.rows.map(r => r.member_id));
+
+            let targetMembers;
+            if (task.target_type === 'all') {
+                targetMembers = await pool.query('SELECT id, name, email FROM members');
+            } else {
+                const ids = task.target_member_ids || [];
+                if (ids.length === 0) {
+                    await pool.query('UPDATE file_tasks SET last_checked_at = $1 WHERE id = $2', [now, task.id]);
+                    continue;
+                }
+                targetMembers = await pool.query('SELECT id, name, email FROM members WHERE id = ANY($1)', [ids]);
+            }
+
+            const pendingMembers = targetMembers.rows.filter(m => !submittedIds.has(m.id));
+            if (pendingMembers.length === 0) {
+                await pool.query('UPDATE file_tasks SET last_checked_at = $1 WHERE id = $2', [now, task.id]);
+                continue;
+            }
+
+            // ✅ check one time
+            let scriptUrl = null, token = null;
+            if (task.notify_type === 'email' || task.notify_type === 'both') {
+                const cfgResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_script_url'");
+                const tokenResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_token'");
+                scriptUrl = cfgResult.rows[0]?.value;
+                token = tokenResult.rows[0]?.value || '';
+            }
+
+            const deadlineStr = new Date(task.deadline).toLocaleDateString('en-GB', {
+                day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+            const notifTitle = task.title;
+            const notifMsg = task.description
+                ? task.description + ' | Deadline: ' + deadlineStr
+                : 'Deadline: ' + deadlineStr;
+
+            // ✅ collect all，and execute
+            const promises = [];
+
+            for (const member of pendingMembers) {
+                // In-app 通知
+                if (task.notify_type === 'inapp' || task.notify_type === 'both') {
+                    promises.push(
+                        pool.query(
+                            'INSERT INTO notifications (member_id, title, message, type, related_type, related_id) VALUES ($1,$2,$3,$4,$5,$6)',
+                            [member.id, notifTitle, notifMsg, 'file_task', 'file_task', task.id]
+                        ).then(() => console.log('[Scheduler] Upcoming in-app sent to: ' + member.name))
+                    );
+                }
+
+                // Email
+                if ((task.notify_type === 'email' || task.notify_type === 'both') && member.email && scriptUrl && token) {
+                    promises.push(
+                        fetch(scriptUrl, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                token: token,
+                                action: 'sendEmail',
+                                to: [member.email],
+                                subject: '[Multitrade] ' + notifTitle,
+                                htmlBody: '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">'
+                                    + '<div style="background:#f59e0b;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">'
+                                    + '<h2 style="margin:0;font-size:1.1rem">' + notifTitle + '</h2></div>'
+                                    + '<div style="background:#fff;border:1px solid #e5e7eb;padding:24px;border-radius:0 0 8px 8px">'
+                                    + (task.description ? '<p style="color:#374151;line-height:1.6">' + task.description + '</p>' : '')
+                                    + '<p style="color:#6b7280">Deadline: ' + deadlineStr + '</p>'
+                                    + '<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0">'
+                                    + '<p style="color:#9ca3af;font-size:.82rem">Multitrade Management System</p></div></div>'
+                            }),
+                            headers: { 'Content-Type': 'application/json' }
+                        })
+                        .then(() => console.log('[Scheduler] Upcoming email sent to: ' + member.email))
+                        .catch(err => console.error('[Scheduler] Upcoming email failed for ' + member.email + ':', err.message))
+                    );
+                }
+            }
+
+            // ✅ send all in one time
+            await Promise.all(promises);
+
+            await pool.query('UPDATE file_tasks SET last_checked_at = $1 WHERE id = $2', [now, task.id]);
+        }
+    } catch (err) {
+        console.error('[Scheduler] checkUpcomingTasks error:', err.message);
+    }
+};
+
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {
     await initDB();
     console.log('Multitrade server running on port ' + PORT);
+
+    // Call this after server starts
+    startFileTaskScheduler();
 });
+
+// use for app script access permission
+// function authorizeEmail() {
+//   MailApp.sendEmail({
+//     to: 'ongts@multitradepac.com',
+//     subject: 'Multitrade Mail Authorization',
+//     body: 'Testing MailApp permission'
+//   });
+//   Logger.log('Done! Permission granted.');
+// }

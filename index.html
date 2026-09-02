@@ -406,75 +406,81 @@
 
 <!-- Add Panel -->
 <div class="modal-overlay" id="modal-pt-add-panel">
-    <div class="modal">
-        <h3>Add Panel</h3>
-        <div class="field"><label>Panel ID / Name *</label><input class="input" id="pt-ap-name" placeholder="e.g. P10093"></div>
-        <div class="field"><label>Customer</label><input class="input" id="pt-ap-customer" placeholder="e.g. Petronas"></div>
-        <div class="field"><label>Start Date</label><input class="input" id="pt-ap-start" type="date"></div>
-        <div class="field"><label>End Date</label><input class="input" id="pt-ap-end" type="date"></div>
-        <div class="field"><label>Install Date</label><input class="input" id="pt-ap-instdate" type="date"></div>
-        <div class="field"><label>Status</label><select class="input" id="pt-ap-status"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>
-        <p class="error-msg" id="pt-ap-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-add-panel')">Cancel</button><button class="btn btn-accent" onclick="ptDoAddPanel()">Create</button></div>
+    <div class="modal" style="max-height:90vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0"><h3>Add Panel</h3></div>
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <div class="field"><label>Panel ID / Name *</label><input class="input" id="pt-ap-name" placeholder="e.g. P10093"></div>
+            <div class="field"><label>Customer</label><input class="input" id="pt-ap-customer" placeholder="e.g. Petronas"></div>
+            <div class="field"><label>Start Date</label><input class="input" id="pt-ap-start" type="date"></div>
+            <div class="field"><label>End Date</label><input class="input" id="pt-ap-end" type="date"></div>
+            <div class="field"><label>Install Date</label><input class="input" id="pt-ap-instdate" type="date"></div>
+            <div class="field"><label>Status</label><select class="input" id="pt-ap-status"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>
+            <p class="error-msg" id="pt-ap-error"></p>
+        </div>
+        <div style="flex-shrink:0;margin-top:12px" class="btns"><button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-add-panel')">Cancel</button><button class="btn btn-accent" onclick="ptDoAddPanel()">Create</button></div>
     </div>
 </div>
 
 <!-- Edit Panel -->
 <div class="modal-overlay" id="modal-pt-edit-panel">
-    <div class="modal">
-        <h3>Edit Panel</h3>
-        <input type="hidden" id="pt-ep-id">
-        <div class="field"><label>Panel ID / Name *</label><input class="input" id="pt-ep-name"></div>
-        <div class="field"><label>Customer</label><input class="input" id="pt-ep-customer"></div>
-        <div class="field"><label>Start Date</label><input class="input" id="pt-ep-start" type="date"></div>
-        <div class="field"><label>End Date</label><input class="input" id="pt-ep-end" type="date"></div>
-        <div class="field"><label>Install Date</label><input class="input" id="pt-ep-instdate" type="date"></div>
-        <div class="field"><label>Status</label><select class="input" id="pt-ep-status"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>
-        <p class="error-msg" id="pt-ep-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-edit-panel')">Cancel</button><button class="btn btn-accent" onclick="ptDoEditPanel()">Save</button></div>
+    <div class="modal" style="max-height:90vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0"><h3>Edit Panel</h3><input type="hidden" id="pt-ep-id"></div>
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <div class="field"><label>Panel ID / Name *</label><input class="input" id="pt-ep-name"></div>
+            <div class="field"><label>Customer</label><input class="input" id="pt-ep-customer"></div>
+            <div class="field"><label>Start Date</label><input class="input" id="pt-ep-start" type="date"></div>
+            <div class="field"><label>End Date</label><input class="input" id="pt-ep-end" type="date"></div>
+            <div class="field"><label>Install Date</label><input class="input" id="pt-ep-instdate" type="date"></div>
+            <div class="field"><label>Status</label><select class="input" id="pt-ep-status"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>
+            <p class="error-msg" id="pt-ep-error"></p>
+        </div>
+        <div style="flex-shrink:0;margin-top:12px" class="btns"><button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-edit-panel')">Cancel</button><button class="btn btn-accent" onclick="ptDoEditPanel()">Save</button></div>
     </div>
 </div>
 
 <!-- Add Material -->
 <div class="modal-overlay" id="modal-pt-add-material">
-    <div class="modal">
-        <h3>Add Material</h3>
-        <div class="field"><label>Part No *</label><input class="input" id="pt-am-partno" placeholder="e.g. CB-MCCB100"></div>
-        <div class="field"><label>Brand</label><input class="input" id="pt-am-brand" placeholder="e.g. Schneider"></div>
-        <div class="field"><label>Description</label><input class="input" id="pt-am-desc" placeholder="e.g. MCCB 100A 3P"></div>
-        <div class="field"><label>Serial No</label><input class="input" id="pt-am-serial" placeholder="e.g. SN-20240001"></div>
-        <div class="field"><label>YOM</label><input class="input" id="pt-am-yom" placeholder="e.g. 2024"></div>
-        <div class="field"><label>Vendor</label><input class="input" id="pt-am-vendor" placeholder="e.g. Supplier Sdn Bhd"></div>
-        <div class="field"><label>Vendor PO No</label><input class="input" id="pt-am-vpo" placeholder="e.g. PO-2024-001"></div>
-        <div class="field"><label>Panel ID</label><select class="input" id="pt-am-panelno"><option value="">— Select Panel ID —</option></select></div>
-        <div class="field"><label>Install Date</label><input class="input" id="pt-am-instdate" type="date"></div>
-        <div class="field"><label>Category</label><input class="input" id="pt-am-cat" placeholder="e.g. Breaker"></div>
-        <div class="field"><label>Unit</label><input class="input" id="pt-am-unit" placeholder="e.g. pc" value="pc"></div>
-        <div class="field"><label>Unit Price</label><input class="input input-mono" id="pt-am-price" type="number" step="0.01" placeholder="e.g. 250.00"></div>
-        <p class="error-msg" id="pt-am-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-add-material')">Cancel</button><button class="btn btn-accent" onclick="ptDoAddMaterial()">Create</button></div>
+    <div class="modal" style="max-height:90vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0"><h3>Add Material</h3></div>
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <div class="field"><label>Part No *</label><input class="input" id="pt-am-partno" placeholder="e.g. CB-MCCB100"></div>
+            <div class="field"><label>Brand</label><input class="input" id="pt-am-brand" placeholder="e.g. Schneider"></div>
+            <div class="field"><label>Description</label><input class="input" id="pt-am-desc" placeholder="e.g. MCCB 100A 3P"></div>
+            <div class="field"><label>Serial No</label><input class="input" id="pt-am-serial" placeholder="e.g. SN-20240001"></div>
+            <div class="field"><label>YOM</label><input class="input" id="pt-am-yom" placeholder="e.g. 2024"></div>
+            <div class="field"><label>Vendor</label><input class="input" id="pt-am-vendor" placeholder="e.g. Supplier Sdn Bhd"></div>
+            <div class="field"><label>Vendor PO No</label><input class="input" id="pt-am-vpo" placeholder="e.g. PO-2024-001"></div>
+            <div class="field"><label>Panel ID</label><select class="input" id="pt-am-panelno"><option value="">— Select Panel ID —</option></select></div>
+            <div class="field"><label>Install Date</label><input class="input" id="pt-am-instdate" type="date"></div>
+            <div class="field"><label>Category</label><input class="input" id="pt-am-cat" placeholder="e.g. Breaker"></div>
+            <div class="field"><label>Unit</label><input class="input" id="pt-am-unit" placeholder="e.g. pc" value="pc"></div>
+            <div class="field"><label>Unit Price</label><input class="input input-mono" id="pt-am-price" type="number" step="0.01" placeholder="e.g. 250.00"></div>
+            <p class="error-msg" id="pt-am-error"></p>
+        </div>
+        <div style="flex-shrink:0;margin-top:12px" class="btns"><button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-add-material')">Cancel</button><button class="btn btn-accent" onclick="ptDoAddMaterial()">Create</button></div>
     </div>
 </div>
 
 <!-- Edit Material -->
 <div class="modal-overlay" id="modal-pt-edit-material">
-    <div class="modal">
-        <h3>Edit Material</h3>
-        <input type="hidden" id="pt-em-id">
-        <div class="field"><label>Part No *</label><input class="input" id="pt-em-partno"></div>
-        <div class="field"><label>Brand</label><input class="input" id="pt-em-brand"></div>
-        <div class="field"><label>Description</label><input class="input" id="pt-em-desc"></div>
-        <div class="field"><label>Serial No</label><input class="input" id="pt-em-serial"></div>
-        <div class="field"><label>YOM</label><input class="input" id="pt-em-yom"></div>
-        <div class="field"><label>Vendor</label><input class="input" id="pt-em-vendor"></div>
-        <div class="field"><label>Vendor PO No</label><input class="input" id="pt-em-vpo"></div>
-        <div class="field"><label>Panel ID</label><select class="input" id="pt-em-panelno"><option value="">— Select Panel ID —</option></select></div>
-        <div class="field"><label>Install Date</label><input class="input" id="pt-em-instdate" type="date"></div>
-        <div class="field"><label>Category</label><input class="input" id="pt-em-cat"></div>
-        <div class="field"><label>Unit</label><input class="input" id="pt-em-unit"></div>
-        <div class="field"><label>Unit Price</label><input class="input input-mono" id="pt-em-price" type="number" step="0.01"></div>
-        <p class="error-msg" id="pt-em-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-edit-material')">Cancel</button><button class="btn btn-accent" onclick="ptDoEditMaterial()">Save</button></div>
+    <div class="modal" style="max-height:90vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0"><h3>Edit Material</h3><input type="hidden" id="pt-em-id"></div>
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <div class="field"><label>Part No *</label><input class="input" id="pt-em-partno"></div>
+            <div class="field"><label>Brand</label><input class="input" id="pt-em-brand"></div>
+            <div class="field"><label>Description</label><input class="input" id="pt-em-desc"></div>
+            <div class="field"><label>Serial No</label><input class="input" id="pt-em-serial"></div>
+            <div class="field"><label>YOM</label><input class="input" id="pt-em-yom"></div>
+            <div class="field"><label>Vendor</label><input class="input" id="pt-em-vendor"></div>
+            <div class="field"><label>Vendor PO No</label><input class="input" id="pt-em-vpo"></div>
+            <div class="field"><label>Panel ID</label><select class="input" id="pt-em-panelno"><option value="">— Select Panel ID —</option></select></div>
+            <div class="field"><label>Install Date</label><input class="input" id="pt-em-instdate" type="date"></div>
+            <div class="field"><label>Category</label><input class="input" id="pt-em-cat"></div>
+            <div class="field"><label>Unit</label><input class="input" id="pt-em-unit"></div>
+            <div class="field"><label>Unit Price</label><input class="input input-mono" id="pt-em-price" type="number" step="0.01"></div>
+            <p class="error-msg" id="pt-em-error"></p>
+        </div>
+        <div style="flex-shrink:0;margin-top:12px" class="btns"><button class="btn btn-ghost" onclick="ptCloseModal('modal-pt-edit-material')">Cancel</button><button class="btn btn-accent" onclick="ptDoEditMaterial()">Save</button></div>
     </div>
 </div>
 

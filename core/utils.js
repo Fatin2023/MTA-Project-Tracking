@@ -200,6 +200,15 @@ const updateFileBadge = () => {
         badge.style.display = 'none';
     }
 };
+const updateNotificationBadge = () => {
+    const unread = (DB.notifications || []).filter(n => !n.isRead).length;
+    // 找导航栏里的通知图标更新数字，按你的导航结构来
+    const badge = document.getElementById('notif-badge');
+    if (badge) {
+        badge.textContent = unread;
+        badge.style.display = unread > 0 ? 'inline-block' : 'none';
+    }
+};
 
 // pagination
 const buildPagination = (totalItems, currentPage, pageSize, goFn, changeFn, opts = {}) => {

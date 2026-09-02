@@ -27,6 +27,19 @@ const loadDB = async () => {
             catch (e) { DB.viewerScopes[u.id] = []; }
         }
         renderNoticeBanners();
-        updateFileBadge(); 
+        updateFileBadge();
+
+        // ========== 新加入 ==========
+        const [ftResult, notifResult] = await Promise.all([
+            api('/file-tasks').catch(() => []),
+            currentUser.memberId ? api('/notifications').catch(() => []) : Promise.resolve([])
+        ]);
+        DB.fileTasks = ftResult;
+        DB.notifications = notifResult;
+        updateNotificationBadge();
+
+        const notifRes = await api('/notifications');
+        DB.notifications = notifRes || [];
+
     } catch (e) { console.error('Failed to load data:', e); }
 };

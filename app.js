@@ -307,25 +307,30 @@ const adminDoItemImport = async () => {
 const showAddCategory = () => {
     const picHtml = buildCheckboxes(DB.members, [], true);
     const deptHtml = buildCheckboxes(DB.departments, [], false);
-    showModal(`<h3>New Category</h3>
-        <div class="field"><label>Name</label><input class="input" id="inp-cat-name" placeholder="e.g. Electrical, Mechanical"></div>
-        <div style="margin-top:8px"><label style="font-size:.85rem;display:block;margin-bottom:6px">PIC (Can update details)</label>
-            <div style="display:flex;gap:6px;margin-bottom:6px">
-                <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#pic-list-add input').forEach(c=>c.checked=true)">All</button>
-                <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#pic-list-add input').forEach(c=>c.checked=false)">Clear</button>
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <h3>New Category</h3>
+            <div class="field"><label>Name</label><input class="input" id="inp-cat-name" placeholder="e.g. Electrical, Mechanical"></div>
+            <div style="margin-top:8px"><label style="font-size:.85rem;display:block;margin-bottom:6px">PIC (Can update details)</label>
+                <div style="display:flex;gap:6px;margin-bottom:6px">
+                    <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#pic-list-add input').forEach(c=>c.checked=true)">All</button>
+                    <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#pic-list-add input').forEach(c=>c.checked=false)">Clear</button>
+                </div>
+                <div id="pic-list-add" style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">${picHtml}</div>
             </div>
-            <div id="pic-list-add" style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">${picHtml}</div>
-        </div>
-        <div style="margin-top:12px"><label style="font-size:.85rem;display:block;margin-bottom:6px">Attendance Access <span style="font-size:.76rem;color:var(--main-text3);font-weight:normal">— Departments that can see this category</span></label>
-            <div style="display:flex;gap:6px;margin-bottom:6px">
-                <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#dept-list-add input').forEach(c=>c.checked=true)">All</button>
-                <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#dept-list-add input').forEach(c=>c.checked=false)">Clear</button>
+            <div style="margin-top:12px"><label style="font-size:.85rem;display:block;margin-bottom:6px">Attendance Access <span style="font-size:.76rem;color:var(--main-text3);font-weight:normal">— Departments that can see this category</span></label>
+                <div style="display:flex;gap:6px;margin-bottom:6px">
+                    <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#dept-list-add input').forEach(c=>c.checked=true)">All</button>
+                    <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#dept-list-add input').forEach(c=>c.checked=false)">Clear</button>
+                </div>
+                <div id="dept-list-add" style="max-height:150px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">${deptHtml}</div>
+                <div style="font-size:.76rem;color:var(--main-text3);margin-top:5px">Clear = all departments can view.</div>
             </div>
-            <div id="dept-list-add" style="max-height:150px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">${deptHtml}</div>
-            <div style="font-size:.76rem;color:var(--main-text3);margin-top:5px">Clear = all departments can view.</div>
+            <p class="auth-error" id="cat-error"></p>
         </div>
-        <p class="auth-error" id="cat-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddCategory()">Create</button></div>`);
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddCategory()">Create</button></div>
+    </div>`);
     setTimeout(() => document.getElementById('inp-cat-name').focus(), 100);
 };
 
@@ -344,25 +349,30 @@ const showEditCategory = sid => {
     const pics = scope.picMemberIds || [], depts = scope.departmentIds || [];
     const picHtml = buildCheckboxes(DB.members, pics, true);
     const deptHtml = buildCheckboxes(DB.departments, depts, false);
-    showModal(`<h3>Edit Category</h3>
-        <div class="field"><label>Name</label><input class="input" id="inp-cat-edit" value="${esc(scope.name)}"></div>
-        <div style="margin-top:8px"><label style="font-size:.85rem;display:block;margin-bottom:6px">PIC (Can update details)</label>
-            <div style="display:flex;gap:6px;margin-bottom:6px">
-                <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#pic-list-edit input').forEach(c=>c.checked=true)">All</button>
-                <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#pic-list-edit input').forEach(c=>c.checked=false)">Clear</button>
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <h3>Edit Category</h3>
+            <div class="field"><label>Name</label><input class="input" id="inp-cat-edit" value="${esc(scope.name)}"></div>
+            <div style="margin-top:8px"><label style="font-size:.85rem;display:block;margin-bottom:6px">PIC (Can update details)</label>
+                <div style="display:flex;gap:6px;margin-bottom:6px">
+                    <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#pic-list-edit input').forEach(c=>c.checked=true)">All</button>
+                    <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#pic-list-edit input').forEach(c=>c.checked=false)">Clear</button>
+                </div>
+                <div id="pic-list-edit" style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">${picHtml}</div>
             </div>
-            <div id="pic-list-edit" style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">${picHtml}</div>
-        </div>
-        <div style="margin-top:12px"><label style="font-size:.85rem;display:block;margin-bottom:6px">Attendance Access <span style="font-size:.76rem;color:var(--main-text3);font-weight:normal">— Departments that can see <strong>${esc(scope.name)}</strong></span></label>
-            <div style="display:flex;gap:6px;margin-bottom:6px">
-                <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#dept-list-edit input').forEach(c=>c.checked=true)">All</button>
-                <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#dept-list-edit input').forEach(c=>c.checked=false)">Clear</button>
+            <div style="margin-top:12px"><label style="font-size:.85rem;display:block;margin-bottom:6px">Attendance Access <span style="font-size:.76rem;color:var(--main-text3);font-weight:normal">— Departments that can see <strong>${esc(scope.name)}</strong></span></label>
+                <div style="display:flex;gap:6px;margin-bottom:6px">
+                    <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#dept-list-edit input').forEach(c=>c.checked=true)">All</button>
+                    <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('#dept-list-edit input').forEach(c=>c.checked=false)">Clear</button>
+                </div>
+                <div id="dept-list-edit" style="max-height:150px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">${deptHtml}</div>
+                <div style="font-size:.76rem;color:var(--main-text3);margin-top:5px">Clear = all departments can view.</div>
             </div>
-            <div id="dept-list-edit" style="max-height:150px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius-sm);padding:4px">${deptHtml}</div>
-            <div style="font-size:.76rem;color:var(--main-text3);margin-top:5px">Clear = all departments can view.</div>
+            <p class="auth-error" id="cat-error"></p>
         </div>
-        <p class="auth-error" id="cat-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditCategory(${sid})">Save</button></div>`);
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditCategory(${sid})">Save</button></div>
+    </div>`);
     setTimeout(() => { const el = document.getElementById('inp-cat-edit'); el.focus(); el.select(); }, 100);
 };
 
@@ -387,18 +397,23 @@ const doDeleteCategory = async sid => { await api('/scopes/'+sid, { method:'DELE
 // ── Item CRUD（只刷表格，无动画） ──
 const showAddItem = () => {
     const catOpts = DB.scopes.map(s => `<option value="${s.id}" ${activeCategoryId===s.id?'selected':''}>${esc(s.name)}</option>`).join('');
-    showModal(`<h3>Add Item</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="field"><label>ID / Name</label><input class="input" id="inp-item-name" placeholder="e.g. PLC-001"></div>
-            <div class="field"><label>Customer</label><input class="input" id="inp-item-customer" placeholder="e.g. Petronas"></div>
-            <div class="field"><label>Category</label><select class="input" id="inp-item-cat"><option value="">-- None --</option>${catOpts}</select></div>
-            <div class="field"><label>Start</label><input class="input" id="inp-item-start" type="date"></div>
-            <div class="field"><label>End</label><input class="input" id="inp-item-end" type="date"></div>
-            <div class="field"><label>Install</label><input class="input" id="inp-item-install" type="date"></div>
-            <div class="field"><label>Status</label><select class="input" id="inp-item-status"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <h3>Add Item</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="field"><label>ID / Name</label><input class="input" id="inp-item-name" placeholder="e.g. PLC-001"></div>
+                <div class="field"><label>Customer</label><input class="input" id="inp-item-customer" placeholder="e.g. Petronas"></div>
+                <div class="field"><label>Category</label><select class="input" id="inp-item-cat"><option value="">-- None --</option>${catOpts}</select></div>
+                <div class="field"><label>Start</label><input class="input" id="inp-item-start" type="date"></div>
+                <div class="field"><label>End</label><input class="input" id="inp-item-end" type="date"></div>
+                <div class="field"><label>Install</label><input class="input" id="inp-item-install" type="date"></div>
+                <div class="field"><label>Status</label><select class="input" id="inp-item-status"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>
+            </div>
+            <p class="auth-error" id="item-error"></p>
         </div>
-        <p class="auth-error" id="item-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddItem()">Create</button></div>`);
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddItem()">Create</button></div>
+    </div>`);
     setTimeout(() => document.getElementById('inp-item-name').focus(), 100);
 };
 
@@ -435,27 +450,32 @@ const showEditItem = pid => {
             </div>
             <div id="assign-new-list">${avail.map(m => `<label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;font-size:.84rem;border-bottom:1px solid var(--main-border)"><input type="checkbox" value="${m.id}" style="accent-color:var(--accent);width:15px;height:15px">${esc(m.name)} <span style="color:var(--main-text3);font-size:.76rem">(${esc(getPositionName(m.positionId))}${latestSalary(m)?' — '+fmt(latestSalary(m)):''})</span></label>`).join('')}</div></div>`;
     const cd = getProjectCountdown(proj), cost = getProjectCost(pid);
-    showModal(`<h3>${esc(proj.name)}</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="field"><label>Name</label><input class="input" id="inp-item-edit" value="${esc(proj.name)}"></div>
-            <div class="field"><label>Customer</label><input class="input" id="inp-item-customer-edit" value="${esc(proj.customer||'')}"></div>
-            <div class="field"><label>Category</label><select class="input" id="inp-item-cat-edit"><option value="">-- None --</option>${catOpts}</select></div>
-            <div class="field"><label>Start</label><input class="input" id="inp-item-start-edit" type="date" value="${proj.startDate||''}"></div>
-            <div class="field"><label>End</label><input class="input" id="inp-item-end-edit" type="date" value="${proj.endDate||''}"></div>
-            <div class="field"><label>Install</label><input class="input" id="inp-item-install-edit" type="date" value="${proj.installDate||''}"></div>
-            <div class="field"><label>Status</label><select class="input" id="inp-item-status-edit"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <h3>${esc(proj.name)}</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="field"><label>Name</label><input class="input" id="inp-item-edit" value="${esc(proj.name)}"></div>
+                <div class="field"><label>Customer</label><input class="input" id="inp-item-customer-edit" value="${esc(proj.customer||'')}"></div>
+                <div class="field"><label>Category</label><select class="input" id="inp-item-cat-edit"><option value="">-- None --</option>${catOpts}</select></div>
+                <div class="field"><label>Start</label><input class="input" id="inp-item-start-edit" type="date" value="${proj.startDate||''}"></div>
+                <div class="field"><label>End</label><input class="input" id="inp-item-end-edit" type="date" value="${proj.endDate||''}"></div>
+                <div class="field"><label>Install</label><input class="input" id="inp-item-install-edit" type="date" value="${proj.installDate||''}"></div>
+                <div class="field"><label>Status</label><select class="input" id="inp-item-status-edit"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>
+            </div>
+            <div style="display:flex;gap:24px;margin:14px 0 8px;padding:10px 0;border-top:1px solid var(--main-border);border-bottom:1px solid var(--main-border)">
+                <div><span style="font-size:.72rem;color:var(--main-text3)">Countdown</span><div>${cd!==null?(cd>30?`<span style="color:var(--ok)">${cd}d</span>`:cd>7?`<span style="color:var(--warning)">${cd}d</span>`:cd>0?`<span style="color:var(--danger)">${cd}d</span>`:cd===0?`<span style="color:var(--warning)">Today</span>`:`<span style="color:var(--danger)">${Math.abs(cd)}d overdue</span>`):'—'}</div></div>
+                <div><span style="font-size:.72rem;color:var(--main-text3)">Members</span><div>${assigned.length}</div></div>
+                <div><span style="font-size:.72rem;color:var(--main-text3)">Monthly Cost</span><div>${fmt(cost)}</div></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:12px">
+                <div><div style="font-weight:600;margin-bottom:8px">Assigned</div><div style="border:1px solid var(--main-border);border-radius:var(--radius-sm);max-height:220px;overflow-y:auto" id="edit-assigned-area">${assignedHtml}</div></div>
+                <div><div style="font-weight:600;margin-bottom:8px">Add Members</div>${availHtml}</div>
+            </div>
+            <p class="auth-error" id="item-error"></p>
         </div>
-        <div style="display:flex;gap:24px;margin:14px 0 8px;padding:10px 0;border-top:1px solid var(--main-border);border-bottom:1px solid var(--main-border)">
-            <div><span style="font-size:.72rem;color:var(--main-text3)">Countdown</span><div>${cd!==null?(cd>30?`<span style="color:var(--ok)">${cd}d</span>`:cd>7?`<span style="color:var(--warning)">${cd}d</span>`:cd>0?`<span style="color:var(--danger)">${cd}d</span>`:cd===0?`<span style="color:var(--warning)">Today</span>`:`<span style="color:var(--danger)">${Math.abs(cd)}d overdue</span>`):'—'}</div></div>
-            <div><span style="font-size:.72rem;color:var(--main-text3)">Members</span><div>${assigned.length}</div></div>
-            <div><span style="font-size:.72rem;color:var(--main-text3)">Monthly Cost</span><div>${fmt(cost)}</div></div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:12px">
-            <div><div style="font-weight:600;margin-bottom:8px">Assigned</div><div style="border:1px solid var(--main-border);border-radius:var(--radius-sm);max-height:220px;overflow-y:auto" id="edit-assigned-area">${assignedHtml}</div></div>
-            <div><div style="font-weight:600;margin-bottom:8px">Add Members</div>${availHtml}</div>
-        </div>
-        <p class="auth-error" id="item-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditItemFull(${pid})">Save</button></div>`);
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditItemFull(${pid})">Save</button></div>
+    </div>`);
     setTimeout(() => { const el = document.getElementById('inp-item-edit'); el.focus(); el.select(); document.getElementById('inp-item-status-edit').value = proj.status||'pending'; }, 100);
 };
 
@@ -826,28 +846,32 @@ const renderUsersList = () => {
     setTimeout(() => { usrListRenderLock = false; }, 850);
 };
 
-// ── CRUD（只刷表格，无动画） ──
 const showAddUser = () => {
     const posOpts = selectOptions(DB.positions, null);
     const deptOpts = selectOptions(DB.departments, null);
     const viewerHtml = `<div id="viewer-scope-fields" style="display:none">
         <div class="field"><label>Work Category Access</label>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${scopeCheckboxes([], 'add-viewer-scope-cb')}</div></div></div>`;
-    showModal(`<h3>Add User</h3>
-        <div class="field"><label>Role</label><select class="input" id="adduser-role" onchange="toggleAddUserFields()">
-            <option value="employee">Employee</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></div>
-        <div id="emp-fields">
-            <div class="field"><label>Full Name</label><input class="input" id="adduser-name" placeholder="e.g. John Smith"></div>
-            <div class="field"><label>Email <span style="font-size:.72rem;color:var(--main-text3)">(for notifications)</span></label><input class="input" id="adduser-email" type="email" placeholder="e.g. john@gmail.com"></div>
-            <div class="field"><label>Position</label><select class="input" id="adduser-pos">${posOpts}</select></div>
-            <div class="field"><label>Department</label><select class="input" id="adduser-dept">${deptOpts}</select></div>
-            <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="adduser-salary" type="number" placeholder="e.g. 15000.00"></div>
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <h3>Add User</h3>
+            <div class="field"><label>Role</label><select class="input" id="adduser-role" onchange="toggleAddUserFields()">
+                <option value="employee">Employee</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></div>
+            <div id="emp-fields">
+                <div class="field"><label>Full Name</label><input class="input" id="adduser-name" placeholder="e.g. John Smith"></div>
+                <div class="field"><label>Email <span style="font-size:.72rem;color:var(--main-text3)">(for notifications)</span></label><input class="input" id="adduser-email" type="email" placeholder="e.g. john@gmail.com"></div>
+                <div class="field"><label>Position</label><select class="input" id="adduser-pos">${posOpts}</select></div>
+                <div class="field"><label>Department</label><select class="input" id="adduser-dept">${deptOpts}</select></div>
+                <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="adduser-salary" type="number" placeholder="e.g. 15000.00"></div>
+            </div>
+            ${viewerHtml}
+            <div class="field"><label>Username</label><input class="input" id="adduser-user" placeholder="Login username"></div>
+            <div class="field"><label>Password</label><input class="input" id="adduser-pass" type="password" placeholder="Min. 6 characters"></div>
+            <p class="auth-error" id="adduser-error"></p>
         </div>
-        ${viewerHtml}
-        <div class="field"><label>Username</label><input class="input" id="adduser-user" placeholder="Login username"></div>
-        <div class="field"><label>Password</label><input class="input" id="adduser-pass" type="password" placeholder="Min. 6 characters"></div>
-        <p class="auth-error" id="adduser-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddUser()">Create</button></div>`);
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAddUser()">Create</button></div>
+    </div>`);
     setTimeout(() => document.getElementById('adduser-name')?.focus(), 100);
 };
 
@@ -897,28 +921,32 @@ const showEditUser = userId => {
     const curSal = member ? latestSalary(member) : 0;
     const existing = (DB.viewerScopes || {})[user.id] || [];
 
-    const html = `<h3>Edit — ${esc(user.username)}</h3>
-    <div id="edit-member-fields">
-        <div class="field"><label>Full Name</label><input class="input" id="edituser-name" value="${member?esc(member.name):''}"></div>
-        <div class="field"><label>Email <span style="font-size:.72rem;color:var(--main-text3)">(for notifications)</span></label><input class="input" id="edituser-email" type="email" value="${member&&member.email?esc(member.email):''}" placeholder="e.g. john@gmail.com"></div>
-        <div class="field"><label>Position</label><select class="input" id="edituser-pos">${posOpts}</select></div>
-        <div class="field"><label>Department</label><select class="input" id="edituser-dept">${deptOpts}</select></div>
-        <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="edituser-salary" type="number" value="${curSal>0?curSal:''}" placeholder="e.g. 15000.00"></div>
-    </div>
-    <div id="edit-viewer-scope-fields"${user.role!=='viewer'?' style="display:none"':''}>
-        <div class="field"><label>Work Category Access</label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${scopeCheckboxes(existing)}</div></div>
-    </div>
-    <div class="field"><label>Username</label><input class="input" id="edituser-user" value="${esc(user.username)}"></div>
-    <div class="field"><label>New Password (blank = keep)</label><input class="input" id="edituser-pass" type="password" placeholder="Leave blank"></div>
-    <div class="field"><label>Role</label><select class="input" id="edituser-role" onchange="toggleEditUserFields()">
-        <option value="admin"${user.role==='admin'?' selected':''}>Admin</option>
-        <option value="viewer"${user.role==='viewer'?' selected':''}>Viewer</option>
-        <option value="employee"${user.role==='employee'?' selected':''}>Employee</option>
-    </select></div>
-    <p class="auth-error" id="edituser-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditUser(${userId})">Save</button></div>`;
-    showModal(html);
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <h3>Edit — ${esc(user.username)}</h3>
+            <div id="edit-member-fields">
+                <div class="field"><label>Full Name</label><input class="input" id="edituser-name" value="${member?esc(member.name):''}"></div>
+                <div class="field"><label>Email <span style="font-size:.72rem;color:var(--main-text3)">(for notifications)</span></label><input class="input" id="edituser-email" type="email" value="${member&&member.email?esc(member.email):''}" placeholder="e.g. john@gmail.com"></div>
+                <div class="field"><label>Position</label><select class="input" id="edituser-pos">${posOpts}</select></div>
+                <div class="field"><label>Department</label><select class="input" id="edituser-dept">${deptOpts}</select></div>
+                <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="edituser-salary" type="number" value="${curSal>0?curSal:''}" placeholder="e.g. 15000.00"></div>
+            </div>
+            <div id="edit-viewer-scope-fields"${user.role!=='viewer'?' style="display:none"':''}>
+                <div class="field"><label>Work Category Access</label>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${scopeCheckboxes(existing)}</div></div>
+            </div>
+            <div class="field"><label>Username</label><input class="input" id="edituser-user" value="${esc(user.username)}"></div>
+            <div class="field"><label>New Password (blank = keep)</label><input class="input" id="edituser-pass" type="password" placeholder="Leave blank"></div>
+            <div class="field"><label>Role</label><select class="input" id="edituser-role" onchange="toggleEditUserFields()">
+                <option value="admin"${user.role==='admin'?' selected':''}>Admin</option>
+                <option value="viewer"${user.role==='viewer'?' selected':''}>Viewer</option>
+                <option value="employee"${user.role==='employee'?' selected':''}>Employee</option>
+            </select></div>
+            <p class="auth-error" id="edituser-error"></p>
+        </div>
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doEditUser(${userId})">Save</button></div>
+    </div>`);
 };
 
 const toggleEditUserFields = () => {
@@ -1537,17 +1565,22 @@ const empDoScopeImport = (scopeId) => {
 // ---------- PIC item CRUD ----------
 const empShowAddItem = scopeId => {
     const scope = DB.scopes.find(s => s.id === scopeId);
-    showModal(`<h3>Add Item to ${esc(scope?.name||'')}</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="field"><label>ID/Name</label><input class="input" id="emp-inp-item-name" placeholder="e.g. PLC-001 Panel"></div>
-            <div class="field"><label>Customer</label><input class="input" id="emp-inp-customer" placeholder="e.g. Petronas"></div>
-            <div class="field"><label>Start Date</label><input class="input" id="emp-inp-item-start" type="date"></div>
-            <div class="field"><label>End Date</label><input class="input" id="emp-inp-item-end" type="date"></div>
-            <div class="field"><label>Install Date</label><input class="input" id="emp-inp-item-install" type="date"></div>
-            <div class="field"><label>Status</label><select class="input" id="emp-inp-item-status"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0">
+            <h3>Add Item to ${esc(scope?.name||'')}</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="field"><label>ID/Name</label><input class="input" id="emp-inp-item-name" placeholder="e.g. PLC-001 Panel"></div>
+                <div class="field"><label>Customer</label><input class="input" id="emp-inp-customer" placeholder="e.g. Petronas"></div>
+                <div class="field"><label>Start Date</label><input class="input" id="emp-inp-item-start" type="date"></div>
+                <div class="field"><label>End Date</label><input class="input" id="emp-inp-item-end" type="date"></div>
+                <div class="field"><label>Install Date</label><input class="input" id="emp-inp-item-install" type="date"></div>
+                <div class="field"><label>Status</label><select class="input" id="emp-inp-item-status"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>
+            </div>
+            <p class="auth-error" id="emp-item-error"></p>
         </div>
-        <p class="auth-error" id="emp-item-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="empDoAddItem(${scopeId})">Create</button></div>`);
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="empDoAddItem(${scopeId})">Create</button></div>
+    </div>`);
     setTimeout(() => document.getElementById('emp-inp-item-name')?.focus(), 100);
 };
 
@@ -1571,18 +1604,23 @@ const empDoAddItem = (scopeId) => {
 const empShowEditItem = pid => {
     const proj = DB.projects.find(p => p.id === pid);
     if (!proj) return;
-    showModal(`<h3>Edit Item</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="field"><label>ID/Name</label><input class="input" id="emp-inp-item-edit" value="${esc(proj.name)}"></div>
-            <div class="field"><label>Customer</label><input class="input" id="emp-inp-customer-edit" value="${esc(proj.customer||'')}"></div>
-            <div class="field"><label>Start Date</label><input class="input" id="emp-inp-item-start-edit" type="date" value="${proj.startDate||''}"></div>
-            <div class="field"><label>End Date</label><input class="input" id="emp-inp-item-end-edit" type="date" value="${proj.endDate||''}"></div>
-            <div class="field"><label>Install Date</label><input class="input" id="emp-inp-item-install-edit" type="date" value="${proj.installDate||''}"></div>
-            <div class="field"><label>Status</label><select class="input" id="emp-inp-item-status-edit"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>
-            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase">Countdown</span><span style="font-size:.9rem">${empCdBadge(getProjectCountdown(proj))}</span></div>
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0">
+            <h3>Edit Item</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="field"><label>ID/Name</label><input class="input" id="emp-inp-item-edit" value="${esc(proj.name)}"></div>
+                <div class="field"><label>Customer</label><input class="input" id="emp-inp-customer-edit" value="${esc(proj.customer||'')}"></div>
+                <div class="field"><label>Start Date</label><input class="input" id="emp-inp-item-start-edit" type="date" value="${proj.startDate||''}"></div>
+                <div class="field"><label>End Date</label><input class="input" id="emp-inp-item-end-edit" type="date" value="${proj.endDate||''}"></div>
+                <div class="field"><label>Install Date</label><input class="input" id="emp-inp-item-install-edit" type="date" value="${proj.installDate||''}"></div>
+                <div class="field"><label>Status</label><select class="input" id="emp-inp-item-status-edit"><option value="pending">Pending</option><option value="in progress">In Progress</option><option value="completed">Completed</option></select></div>
+                <div style="display:flex;align-items:center;gap:8px"><span style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase">Countdown</span><span style="font-size:.9rem">${empCdBadge(getProjectCountdown(proj))}</span></div>
+            </div>
+            <p class="auth-error" id="emp-item-error"></p>
         </div>
-        <p class="auth-error" id="emp-item-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="empDoEditItem(${pid})">Save</button></div>`);
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="empDoEditItem(${pid})">Save</button></div>
+    </div>`);
     setTimeout(() => {
         const el = document.getElementById('emp-inp-item-edit');
         el.focus(); el.select();
@@ -1919,7 +1957,7 @@ const empBuildTimeEntryModal = (title, entry, extraProjectId) => {
 
 const showAddTimeEntry = () => {
     try {
-        showModal(empBuildTimeEntryModal('Add Time Entry', null, null));
+        showModal('<div style="max-height:85vh;overflow-y:auto;padding-right:4px">' + empBuildTimeEntryModal('Add Time Entry', null, null) + '</div>');
         setTimeout(() => {
             const member = DB.members.find(m => m.id === currentUser.memberId);
             _empModalMember = member;
@@ -1948,7 +1986,7 @@ const showEditTimeEntry = entryId => {
     const entry = DB.attendance.find(a => a.id === entryId);
     if (!entry) return;
     const extraProjectId = entry.projectId || null;
-    showModal(empBuildTimeEntryModal('Edit Time Entry', entry, extraProjectId));
+    showModal('<div style="max-height:85vh;overflow-y:auto;padding-right:4px">' + empBuildTimeEntryModal('Edit Time Entry', entry, extraProjectId) + '</div>');
     setTimeout(() => {
         const member = DB.members.find(m => m.id === currentUser.memberId);
         _empModalMember = member;
@@ -3146,70 +3184,105 @@ const changeEmpRptTimePageSize = size => {
 let empFileCurrentPage = 1, empFilePageSize = 10, empFileFilteredData = [];
 let empSelectedFiles = [];
 let _empEditFileReplaceSelected = null;
+let _pendingTaskPage = 1, _pendingTaskPageSize = 5;
 
 const renderEmployeeFiles = () => {
     empFileCurrentPage = 1; empFilePageSize = 10;
     empNoticeCurrentPage = 1; empNoticePageSize = 5;
 
-    const driveOpts = (DB.driveSettings||[]).map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+    const driveOpts = (DB.driveSettings||[]).map(d => '<option value="' + d.id + '">' + esc(d.name) + '</option>').join('');
 
+    // ========== Announces ==========
     const notices = DB.fileNotices || [];
     let reminderBar = '';
     if (notices.length > 0) {
         const preview = notices.length === 1
             ? esc(notices[0].title)
-            : esc(notices[0].title) + (notices.length > 1 ? ` +${notices.length - 1} more` : '');
+            : esc(notices[0].title) + (notices.length > 1 ? ' +' + (notices.length - 1) + ' more' : '');
 
-        reminderBar = `
-        <div id="emp-file-reminder-bar" style="margin-bottom:16px;border-radius:var(--radius);overflow:hidden;border:1px solid rgba(245,158,11,.25)">
-            <div onclick="toggleFileReminderBar()" style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:rgba(245,158,11,.1);cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(245,158,11,.16)'" onmouseout="this.style.background='rgba(245,158,11,.1)'">
-                <span id="reminder-bar-arrow" style="font-size:.7rem;color:var(--main-text3);transition:transform .2s">&#9660;</span>
-                <span style="font-size:.95rem">&#128227;</span>
-                <span style="font-size:.84rem;font-weight:600;color:var(--main-text)">Announces</span>
-                <span style="font-size:.7rem;color:#fff;background:#ef4444;padding:1px 7px;border-radius:10px;font-weight:600">${notices.length}</span>
-                <span style="font-size:.8rem;color:var(--main-text3);margin-left:8px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${preview}</span>
-            </div>
-            <div id="reminder-bar-content" style="display:none;background:var(--main-surface)">
-                ${renderNoticeCards(notices)}
-            </div>
-        </div>`;
+        reminderBar = '<div id="emp-file-reminder-bar" style="margin-bottom:16px;border-radius:var(--radius);overflow:hidden;border:1px solid rgba(245,158,11,.25)">'
+            + '<div onclick="toggleFileReminderBar()" style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:rgba(245,158,11,.1);cursor:pointer;transition:background .15s">'
+            + '<span id="reminder-bar-arrow" style="font-size:.7rem;color:var(--main-text3);transition:transform .2s">&#9660;</span>'
+            + '<span style="font-size:.95rem">&#128227;</span>'
+            + '<span style="font-size:.84rem;font-weight:600;color:var(--main-text)">Announces</span>'
+            + '<span style="font-size:.7rem;color:#fff;background:#ef4444;padding:1px 7px;border-radius:10px;font-weight:600">' + notices.length + '</span>'
+            + '<span style="font-size:.8rem;color:var(--main-text3);margin-left:8px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + preview + '</span>'
+            + '</div>'
+            + '<div id="reminder-bar-content" style="display:none;background:var(--main-surface)">'
+            + renderNoticeCards(notices)
+            + '</div></div>';
     }
 
-    document.getElementById('emp-files').innerHTML = `
-    <div class="app-header"><h2>Files</h2><div class="header-sub">View and download files from Google Drive</div></div>
-    <div class="app-body">
-      ${reminderBar}
-      <div class="pt-anim-filter filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-          <input class="input" type="text" placeholder="Search files..." id="emp-file-search" oninput="applyEmpFileFilter()" style="max-width:250px">
-          <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Drive Folder</label>
-            <select class="input" id="emp-file-drive-filter" onchange="applyEmpFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
-              <option value="">All Folders</option>
-              ${driveOpts}
-            </select>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label>
-            <input class="input" type="date" id="emp-file-date-from" onchange="applyEmpFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
-          </div>
-          <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label>
-            <input class="input" type="date" id="emp-file-date-to" onchange="applyEmpFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
-          </div>
-          <div style="display:flex;gap:8px;margin-left:auto">
-            <button class="btn btn-ghost btn-sm" onclick="resetEmpFileFilter()">Reset</button>
-            <button class="btn btn-green" onclick="showEmpUploadFile()">+ Upload File</button>
-          </div>
-        </div>
-      </div>
-      <div id="emp-file-table-area" class="pt-anim-table"></div>
-    </div>`;
+    // ========== Pending Tasks ==========
+    let pendingTasksBar = '';
+    var fileTasks = DB.fileTasks || [];
+    var myPendingTasks = fileTasks.filter(function(t) {
+        if (!t.isActive) return false;
+        var mySub = (t.submissions || []).find(function(s) { return s.memberId === currentUser.memberId; });
+        return !mySub;
+    });
 
-    setTimeout(() => applyEmpFileFilter(), 100);
+    if (myPendingTasks.length > 0) {
+        var now = new Date();
+        var overdueTasks = myPendingTasks.filter(function(t) { return new Date(t.deadline.replace('Z','')) < now; });
+        var totalTasks = myPendingTasks.length;
+        var overdueCount = overdueTasks.length;
+        var headerColor = overdueCount > 0 ? 'rgba(239,68,68,.3)' : 'rgba(245,158,11,.25)';
+        var headerBg = overdueCount > 0 ? 'rgba(239,68,68,.08)' : 'rgba(245,158,11,.1)';
+        var badgeColor = overdueCount > 0 ? '#ef4444' : '#f59e0b';
+        var headerIcon = overdueCount > 0 ? '&#128338;' : '&#128203;';
+        var headerText = overdueCount > 0
+            ? '<span style="color:var(--danger)">' + overdueCount + ' overdue</span> · ' + totalTasks + ' pending'
+            : totalTasks + ' pending';
+
+        pendingTasksBar = '<div id="emp-pending-tasks-bar" style="margin-bottom:16px;border-radius:var(--radius);overflow:hidden;border:1px solid ' + headerColor + '">'
+            + '<div onclick="togglePendingTasksBar()" style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:' + headerBg + ';cursor:pointer;transition:background .15s">'
+            + '<span id="pending-tasks-arrow" style="font-size:.7rem;color:var(--main-text3);transition:transform .2s">&#9660;</span>'
+            + '<span style="font-size:.95rem">' + headerIcon + '</span>'
+            + '<span style="font-size:.84rem;font-weight:600;color:var(--main-text)">Pending Submission</span>'
+            + '<span style="font-size:.7rem;color:#fff;background:' + badgeColor + ';padding:1px 7px;border-radius:10px;font-weight:600">' + totalTasks + '</span>'
+            + '<span style="font-size:.8rem;color:var(--main-text3);margin-left:8px">' + headerText + '</span>'
+            + '</div>'
+            + '<div id="pending-tasks-content" style="display:none;background:var(--main-surface)">'
+            + renderPendingTaskCards()
+            + '</div></div>';
+    }
+
+    // ========== Main HTML ==========
+    document.getElementById('emp-files').innerHTML = ''
+        + '<div class="app-header"><h2>Files</h2><div class="header-sub">View and download files from Google Drive</div></div>'
+        + '<div class="app-body">'
+        + reminderBar
+        + pendingTasksBar
+        + '<div class="pt-anim-filter filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">'
+        + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>'
+        + '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">'
+        + '<input class="input" type="text" placeholder="Search files..." id="emp-file-search" oninput="applyEmpFileFilter()" style="max-width:250px">'
+        + '<div style="display:flex;align-items:center;gap:6px">'
+        + '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Drive Folder</label>'
+        + '<select class="input" id="emp-file-drive-filter" onchange="applyEmpFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">'
+        + '<option value="">All Folders</option>'
+        + driveOpts
+        + '</select></div>'
+        + '<div style="display:flex;align-items:center;gap:6px">'
+        + '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label>'
+        + '<input class="input" type="date" id="emp-file-date-from" onchange="applyEmpFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">'
+        + '</div>'
+        + '<div style="display:flex;align-items:center;gap:6px">'
+        + '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label>'
+        + '<input class="input" type="date" id="emp-file-date-to" onchange="applyEmpFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">'
+        + '</div>'
+        + '<div style="display:flex;gap:8px;margin-left:auto">'
+        + '<button class="btn btn-ghost btn-sm" onclick="resetEmpFileFilter()">Reset</button>'
+        + '<button class="btn btn-green" onclick="showEmpUploadFile()">+ Upload File</button>'
+        + '</div></div></div>'
+        + '<div id="emp-file-table-area" class="pt-anim-table"></div>'
+        + '</div>';
+
+    setTimeout(function() { applyEmpFileFilter(); }, 100);
 };
 
+// ========== Notice Cards (Announces pagination) ==========
 const renderNoticeCards = (notices) => {
     const totalPages = Math.ceil(notices.length / empNoticePageSize) || 1;
     if (empNoticeCurrentPage > totalPages) empNoticeCurrentPage = totalPages;
@@ -3223,7 +3296,7 @@ const renderNoticeCards = (notices) => {
             ${n.message ? `<div style="font-size:.8rem;color:var(--main-text3);margin-top:3px;line-height:1.5">${esc(n.message)}</div>` : ''}
             <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
                 ${n.targetType === 'multiple' ? '<span style="font-size:.7rem;color:var(--main-text3)">Personal</span>' : ''}
-                <span style="font-size:.7rem;color:var(--main-text3)">${formatDateDMY(n.createdAt ? n.createdAt.slice(0,10) : null)}</span>
+                <span style="font-size:.7rem;color:var(--main-text3)">${formatDateTimeDMY(n.createdAt)}</span>
             </div>
         </div>`).join('');
 
@@ -3259,6 +3332,115 @@ const toggleFileReminderBar = () => {
     if (arrow) arrow.style.transform = isOpen ? '' : 'rotate(180deg)';
 };
 
+// ========== Pending Task Cards (pagination) ==========
+const renderPendingTaskCards = () => {
+    var fileTasks = DB.fileTasks || [];
+    var myPendingTasks = fileTasks.filter(function(t) {
+        if (!t.isActive) return false;
+        var mySub = (t.submissions || []).find(function(s) { return s.memberId === currentUser.memberId; });
+        return !mySub;
+    });
+
+    if (myPendingTasks.length === 0) return '<div style="padding:20px;text-align:center;color:var(--main-text3)">No pending tasks</div>';
+
+    var now = new Date();
+    var overdueTasks = myPendingTasks.filter(function(t) { return new Date(t.deadline.replace('Z','')) < now; });
+    var upcomingTasks = myPendingTasks.filter(function(t) { return new Date(t.deadline.replace('Z','')) >= now; });
+    var allSorted = overdueTasks.concat(upcomingTasks);
+    var totalTasks = allSorted.length;
+    var totalPages = Math.ceil(totalTasks / _pendingTaskPageSize) || 1;
+    if (_pendingTaskPage > totalPages) _pendingTaskPage = totalPages;
+    if (_pendingTaskPage < 1) _pendingTaskPage = 1;
+    var start = (_pendingTaskPage - 1) * _pendingTaskPageSize;
+    var pageItems = allSorted.slice(start, start + _pendingTaskPageSize);
+
+    var notifTimeMap = {};
+    var taskNotifs = (DB.notifications || []).filter(function(n) { return n.type === 'file_task' || n.type === 'file_task_reminder'; });
+    for (var ni = 0; ni < taskNotifs.length; ni++) {
+        var n = taskNotifs[ni];
+        var tid = n.relatedId;  // camelCase
+        if (!tid) continue;
+        var existing = notifTimeMap[tid];
+        var nTime = n.createdAt || null;  // camelCase
+        if (!existing || (nTime && nTime > existing)) {
+            notifTimeMap[tid] = nTime;
+        }
+    }
+
+    var taskCards = '';
+    for (var i = 0; i < pageItems.length; i++) {
+        var t = pageItems[i];
+        var dl = new Date(t.deadline.replace('Z',''));
+        var isOver = dl < now;
+        var notifTime = notifTimeMap[t.id] || null;
+        var notifHtml = notifTime ? '<div style="font-size:.72rem;color:var(--main-text3);margin-top:2px">Received: ' + formatDateTimeDMY(notifTime) + '</div>' : '';
+        var deadlineStr = formatDateDMY(t.deadline ? t.deadline.replace('Z','').slice(0,10) : null) + ' ' + (t.deadline ? t.deadline.replace('Z','').slice(11,16) : '');
+
+        if (isOver) {
+            var daysOver = Math.ceil((now - dl) / 86400000);
+            taskCards += '<div style="padding:12px 16px;border-bottom:1px solid var(--main-border);border-left:3px solid var(--danger)">'
+                + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+                + '<span style="color:var(--danger);font-size:.78rem;font-weight:600"> ' + daysOver + ' day' + (daysOver > 1 ? 's' : '') + ' overdue</span>'
+                + '<span style="font-size:.76rem;color:var(--danger)">(' + deadlineStr + ')</span>'
+                + '</div>'
+                + '<div style="font-weight:600;font-size:.88rem;color:var(--main-text)">' + esc(t.title) + '</div>'
+                + (t.description ? '<div style="font-size:.82rem;color:var(--main-text3);margin-top:3px">' + esc(t.description) + '</div>' : '')
+                + notifHtml
+                + '<button class="btn btn-green btn-sm" style="margin-top:8px" onclick="showEmpSubmitTask(' + t.id + ')">Submit Now</button>'
+                + '</div>';
+        } else {
+            var daysLeft = Math.ceil((dl - now) / 86400000);
+            var deadlineColor = daysLeft <= 1 ? 'var(--danger)' : daysLeft <= 3 ? 'var(--warning)' : daysLeft <= 7 ? 'var(--accent)' : 'var(--main-text3)';
+            taskCards += '<div style="padding:12px 16px;border-bottom:1px solid var(--main-border);border-left:3px solid var(--accent)">'
+                + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+                + '<span style="color:var(--accent);font-size:.78rem;font-weight:600">' + daysLeft + ' day' + (daysLeft > 1 ? 's' : '') + ' left</span>'
+                + '<span style="font-size:.76rem;color:' + deadlineColor + '">(' + deadlineStr + ')</span>'
+                + '</div>'
+                + '<div style="font-weight:600;font-size:.88rem;color:var(--main-text)">' + esc(t.title) + '</div>'
+                + (t.description ? '<div style="font-size:.82rem;color:var(--main-text3);margin-top:3px">' + esc(t.description) + '</div>' : '')
+                + notifHtml
+                + '<button class="btn btn-accent btn-sm" style="margin-top:8px" onclick="showEmpSubmitTask(' + t.id + ')">Submit</button>'
+                + '</div>';
+        }
+    }
+
+    var pagHtml = buildPagination(totalTasks, _pendingTaskPage, _pendingTaskPageSize,
+        'goPendingTaskPage', 'changePendingTaskPageSize',
+        { label: 'tasks', sizes: [5, 10, 25] });
+
+    return taskCards + pagHtml;
+};
+
+const goPendingTaskPage = page => {
+    var fileTasks = DB.fileTasks || [];
+    var myPendingTasks = fileTasks.filter(function(t) {
+        if (!t.isActive) return false;
+        var mySub = (t.submissions || []).find(function(s) { return s.memberId === currentUser.memberId; });
+        return !mySub;
+    });
+    var totalPages = Math.ceil(myPendingTasks.length / _pendingTaskPageSize) || 1;
+    _pendingTaskPage = Math.max(1, Math.min(page, totalPages));
+    var el = document.getElementById('pending-tasks-content');
+    if (el) el.innerHTML = renderPendingTaskCards();
+};
+
+const changePendingTaskPageSize = size => {
+    _pendingTaskPageSize = parseInt(size);
+    _pendingTaskPage = 1;
+    var el = document.getElementById('pending-tasks-content');
+    if (el) el.innerHTML = renderPendingTaskCards();
+};
+
+const togglePendingTasksBar = () => {
+    const content = document.getElementById('pending-tasks-content');
+    const arrow = document.getElementById('pending-tasks-arrow');
+    if (!content) return;
+    const isOpen = content.style.display !== 'none';
+    content.style.display = isOpen ? 'none' : 'block';
+    if (arrow) arrow.style.transform = isOpen ? '' : 'rotate(180deg)';
+};
+
+// ========== File Filter & Table ==========
 const resetEmpFileFilter = () => {
     document.getElementById('emp-file-search').value = '';
     document.getElementById('emp-file-drive-filter').value = '';
@@ -3341,7 +3523,7 @@ const renderEmpFileTable = () => {
     const pagHtml = buildPagination(filtered.length, empFileCurrentPage, empFilePageSize,
         'goEmpFilePage', 'changeEmpFilePageSize',
         { label: 'files', sizes: [10, 25, 50] });
-        
+
     document.getElementById('emp-file-table-area').innerHTML = `
         <div class="table-wrap"><table>
             <thead><tr><th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:150px">Actions</th></tr></thead>
@@ -3374,34 +3556,40 @@ const showEmpUploadFile = () => {
     empSelectedFiles = [];
 
     showModal(`
-    <h3>Upload File</h3>
-    <div class="field">
-        <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Display name, optional, applied to all)</span></label>
-        <input class="input" id="upload-title" placeholder="e.g. Project Report">
-    </div>
-    <div class="field">
-        <label>Select File <span style="font-size:.72rem;color:var(--main-text3)">(Max 20MB each · Multiple allowed)</span></label>
-        <div id="upload-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:30px;text-align:center;cursor:pointer;transition:border-color .2s">
-            <div id="upload-file-info" style="color:var(--main-text3)">Click or drag files here</div>
-            <input type="file" id="upload-file-input" style="display:none" multiple onchange="handleEmpFilesSelect(this)">
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0">
+            <h3>Upload File</h3>
+            <div class="field">
+                <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Display name, optional, applied to all)</span></label>
+                <input class="input" id="upload-title" placeholder="e.g. Project Report">
+            </div>
+            <div class="field">
+                <label>Select File <span style="font-size:.72rem;color:var(--main-text3)">(Max 20MB each · Multiple allowed)</span></label>
+                <div id="upload-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:30px;text-align:center;cursor:pointer;transition:border-color .2s">
+                    <div id="upload-file-info" style="color:var(--main-text3)">Click or drag files here</div>
+                    <input type="file" id="upload-file-input" style="display:none" multiple onchange="handleEmpFilesSelect(this)">
+                </div>
+            </div>
         </div>
-    </div>
-    <div id="upload-file-list" style="margin-top:8px;margin-bottom:12px"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field"><label>Drive Folder</label><select class="input" id="upload-drive">${driveOpts}</select></div>
-        <div class="field"><label>Remark <span style="font-size:.72rem;color:var(--main-text3)">(Applied to all)</span></label><input class="input" id="upload-remark" placeholder="Optional remark"></div>
-    </div>
-    <div id="upload-progress" style="display:none;margin-top:12px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <span id="upload-file-counter" style="font-size:.82rem;color:var(--main-text3)"></span>
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <div id="upload-file-list" style="margin-top:8px;margin-bottom:12px"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="field"><label>Drive Folder</label><select class="input" id="upload-drive">${driveOpts}</select></div>
+                <div class="field"><label>Remark <span style="font-size:.72rem;color:var(--main-text3)">(Applied to all)</span></label><input class="input" id="upload-remark" placeholder="Optional remark"></div>
+            </div>
+            <div id="upload-progress" style="display:none;margin-top:12px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                    <span id="upload-file-counter" style="font-size:.82rem;color:var(--main-text3)"></span>
+                </div>
+                <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
+                    <div id="upload-progress-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s ease;border-radius:4px"></div>
+                </div>
+                <div id="upload-progress-text" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Uploading...</div>
+            </div>
+            <p class="auth-error" id="upload-error"></p>
         </div>
-        <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
-            <div id="upload-progress-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s ease;border-radius:4px"></div>
-        </div>
-        <div id="upload-progress-text" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Uploading...</div>
-    </div>
-    <p class="auth-error" id="upload-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="empSelectedFiles=[];hideModal()">Cancel</button><button class="btn btn-accent" id="upload-btn" onclick="doEmpUploadFiles()">Upload</button></div>`);
+        <div style="flex-shrink:0;margin-top:12px" class="btns"><button class="btn btn-ghost" onclick="empSelectedFiles=[];hideModal()">Cancel</button><button class="btn btn-accent" id="upload-btn" onclick="doEmpUploadFiles()">Upload</button></div>
+    </div>`);
 
     setTimeout(() => {
         const dz = document.getElementById('upload-drop-zone');
@@ -3427,14 +3615,12 @@ const handleEmpFilesSelect = input => {
             errEl.textContent = `${f.name}: type not allowed`;
             continue;
         }
-        // 避免重复（同名+同大小）
         const duplicate = empSelectedFiles.some(e => e.name === f.name && e.size === f.size);
         if (!duplicate) {
             empSelectedFiles.push(f);
         }
     }
 
-    // 清空 input 让同一文件可以再选
     input.value = '';
     renderEmpSelectedFileList();
 };
@@ -3518,23 +3704,19 @@ const doEmpUploadFiles = async () => {
     }
     bar.style.width = '100%';
 
-    // Build result message
     if (failedFiles.length === 0) {
-        // All success
         txt.innerHTML = '<div style="font-weight:600;margin-bottom:4px">All uploaded successfully!</div>' +
             successFiles.map(n => `<div style="font-size:.82rem;padding:2px 0;color:#16a34a">✓ ${esc(n)}</div>`).join('');
         empSelectedFiles = [];
         await loadDB();
         setTimeout(() => { hideModal(); applyEmpFileFilter(); }, 1500);
     } else if (completed === 0) {
-        // All failed
         txt.innerHTML = '';
         errEl.innerHTML = `<div style="margin-bottom:6px;font-weight:600">All ${total} file${total>1?'s':''} failed:</div>` +
             failedFiles.map(f => `<div style="font-size:.82rem;padding:2px 0">✕ <strong>${esc(f.name)}</strong>: ${esc(f.reason)}</div>`).join('');
         btn.disabled = false; btn.textContent = 'Retry';
         btn.onclick = () => { errEl.textContent = ''; doEmpUploadFiles(); };
     } else {
-        // Mixed results
         let resultHtml = '';
         if (successFiles.length > 0) {
             resultHtml += `<div style="font-weight:600;margin-bottom:4px;color:#16a34a">✓ ${successFiles.length} uploaded:</div>` +
@@ -3565,43 +3747,49 @@ const showEmpEditFileModal = id => {
     _empEditFileReplaceSelected = null;
 
     showModal(`
-    <h3>Edit File</h3>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-        <div class="field"><label>Title</label><input class="input" id="emp-edit-file-title" value="${esc(f.title || '')}" placeholder="Display name"></div>
-        <div class="field"><label>Remark</label><input class="input" id="emp-edit-file-remark" value="${esc(f.remark || '')}" placeholder="Optional remark"></div>
-    </div>
-    <div class="field" style="margin-bottom:12px">
-        <label>Drive Folder</label>
-        <select class="input" id="emp-edit-file-drive">${driveOpts}</select>
-    </div>
-    <div style="background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px">
-        <div style="font-size:.82rem;color:var(--main-text3);margin-bottom:2px">Current File</div>
-        <div style="display:flex;align-items:center;gap:8px">
-            ${getFileTypeIcon(f.name)} <strong style="color:var(--main-text)">${esc(f.name)}</strong>
-            <span style="font-size:.82rem;color:var(--main-text3)">${formatFileSize(f.size)}</span>
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0">
+            <h3>Edit File</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                <div class="field"><label>Title</label><input class="input" id="emp-edit-file-title" value="${esc(f.title || '')}" placeholder="Display name"></div>
+                <div class="field"><label>Remark</label><input class="input" id="emp-edit-file-remark" value="${esc(f.remark || '')}" placeholder="Optional remark"></div>
+            </div>
+            <div class="field" style="margin-bottom:12px">
+                <label>Drive Folder</label>
+                <select class="input" id="emp-edit-file-drive">${driveOpts}</select>
+            </div>
+            <div style="background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px">
+                <div style="font-size:.82rem;color:var(--main-text3);margin-bottom:2px">Current File</div>
+                <div style="display:flex;align-items:center;gap:8px">
+                    ${getFileTypeIcon(f.name)} <strong style="color:var(--main-text)">${esc(f.name)}</strong>
+                    <span style="font-size:.82rem;color:var(--main-text3)">${formatFileSize(f.size)}</span>
+                </div>
+            </div>
+            <div class="field">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="checkbox" id="emp-edit-file-replace-toggle" onchange="document.getElementById('emp-edit-file-replace-zone').style.display=this.checked?'block':'none'"> Replace file
+                </label>
+            </div>
         </div>
-    </div>
-    <div class="field">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" id="emp-edit-file-replace-toggle" onchange="document.getElementById('emp-edit-file-replace-zone').style.display=this.checked?'block':'none'"> Replace file
-        </label>
-    </div>
-    <div id="emp-edit-file-replace-zone" style="display:none;margin-top:8px;margin-bottom:16px">
-        <div id="emp-edit-file-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:border-color .2s">
-            <div id="emp-edit-file-info" style="color:var(--main-text3)">Click or drag new file here</div>
-            <input type="file" id="emp-edit-file-input" style="display:none" onchange="handleEmpEditFileSelect(this)">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <div id="emp-edit-file-replace-zone" style="display:none;margin-top:8px;margin-bottom:16px">
+                <div id="emp-edit-file-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:border-color .2s">
+                    <div id="emp-edit-file-info" style="color:var(--main-text3)">Click or drag new file here</div>
+                    <input type="file" id="emp-edit-file-input" style="display:none" onchange="handleEmpEditFileSelect(this)">
+                </div>
+            </div>
+            <div id="emp-edit-file-progress" style="display:none;margin-bottom:12px">
+                <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
+                    <div id="emp-edit-file-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s;border-radius:4px"></div>
+                </div>
+                <div id="emp-edit-file-txt" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Saving...</div>
+            </div>
+            <p class="auth-error" id="emp-edit-file-error"></p>
         </div>
-    </div>
-    <div id="emp-edit-file-progress" style="display:none;margin-bottom:12px">
-        <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
-            <div id="emp-edit-file-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s;border-radius:4px"></div>
+        <div style="flex-shrink:0;margin-top:12px" class="btns">
+            <button class="btn btn-ghost" onclick="_empEditFileReplaceSelected=null;hideModal()">Cancel</button>
+            <button class="btn btn-accent" id="emp-edit-file-btn" onclick="doEmpEditFile(${id})">Save</button>
         </div>
-        <div id="emp-edit-file-txt" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Saving...</div>
-    </div>
-    <p class="auth-error" id="emp-edit-file-error"></p>
-    <div class="btns">
-        <button class="btn btn-ghost" onclick="_empEditFileReplaceSelected=null;hideModal()">Cancel</button>
-        <button class="btn btn-accent" id="emp-edit-file-btn" onclick="doEmpEditFile(${id})">Save</button>
     </div>`);
 
     setTimeout(() => {
@@ -3752,6 +3940,151 @@ const doDeleteEmpFile = id => {
         .then(() => { hideModal(); return loadDB(); })
         .then(() => { applyEmpFileFilter(); showToast('File deleted successfully'); })
         .catch(e => { alert('Delete failed: ' + e.message); });
+};
+
+// ---------- Employee Submit Task ----------
+const showEmpSubmitTask = taskId => {
+    const drives = DB.driveSettings || [];
+    if (!drives.length) {
+        showModal(`<h3>No Drive Configured</h3><p style="color:var(--main-text2)">Cannot submit files.</p>
+            <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>`);
+        return;
+    }
+    const defaultDrive = drives.find(d => d.isDefault) || drives[0];
+    const driveOpts = drives.map(d => `<option value="${d.id}" ${d.id===defaultDrive.id?'selected':''}>${esc(d.name)}</option>`).join('');
+
+    const task = (DB.fileTasks || []).find(t => t.id === taskId);
+    if (!task) return;
+
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <h3>Submit: ${esc(task.title)}</h3>
+            ${task.description ? `<p style="color:var(--main-text2);margin-bottom:12px">${esc(task.description)}</p>` : ''}
+            <div style="font-size:.85rem;color:var(--main-text3);margin-bottom:16px">
+                Deadline: ${formatDateDMY(task.deadline?.slice(0,10))} ${task.deadline?.slice(11,16)}
+            </div>
+            <div class="field">
+                <label>Select File</label>
+                <div id="submit-task-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:border-color .2s">
+                    <div id="submit-task-file-info" style="color:var(--main-text3)">Click or drag file here</div>
+                    <input type="file" id="submit-task-file-input" style="display:none" onchange="handleTaskFileSelect(this)">
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="field"><label>Drive Folder</label><select class="input" id="submit-task-drive">${driveOpts}</select></div>
+                <div class="field"><label>Remark <span style="font-size:.72rem;color:var(--main-text3)">(optional)</span></label><input class="input" id="submit-task-remark" placeholder="Optional remark"></div>
+            </div>
+            <div id="submit-task-progress" style="display:none;margin-top:12px">
+                <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
+                    <div id="submit-task-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s;border-radius:4px"></div>
+                </div>
+                <div id="submit-task-txt" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Uploading...</div>
+            </div>
+            <p class="auth-error" id="submit-task-error"></p>
+        </div>
+        <div style="flex-shrink:0;margin-top:12px" class="btns">
+            <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
+            <button class="btn btn-green" id="submit-task-btn" onclick="doSubmitTaskFile(${taskId})">Submit</button>
+        </div>
+    </div>`);
+
+    setTimeout(() => {
+        const dz = document.getElementById('submit-task-drop-zone');
+        const fi = document.getElementById('submit-task-file-input');
+        if (dz && fi) {
+            dz.onclick = () => fi.click();
+            dz.ondragover = e => { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; };
+            dz.ondragleave = () => { dz.style.borderColor = 'var(--main-border)'; };
+            dz.ondrop = e => { e.preventDefault(); dz.style.borderColor = 'var(--main-border)'; if(e.dataTransfer.files.length){fi.files=e.dataTransfer.files;handleTaskFileSelect(fi);} };
+        }
+    }, 100);
+};
+
+let _taskSubmitFile = null;
+
+const handleTaskFileSelect = input => {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+        document.getElementById('submit-task-error').textContent = 'File too large. Max 20MB.';
+        input.value = '';
+        _taskSubmitFile = null;
+        return;
+    }
+    if (!isFileSafe(file)) {
+        document.getElementById('submit-task-error').textContent = 'File type not allowed.';
+        input.value = '';
+        _taskSubmitFile = null;
+        return;
+    }
+    document.getElementById('submit-task-error').textContent = '';
+    _taskSubmitFile = file;
+    document.getElementById('submit-task-file-info').innerHTML =
+        `<div style="font-size:1rem;font-weight:600;color:var(--main-text)">${getFileTypeIcon(file.name)} ${esc(file.name)}</div>
+         <div style="font-size:.82rem;color:var(--main-text3);margin-top:4px">${formatFileSize(file.size)}</div>`;
+};
+
+const doSubmitTaskFile = async taskId => {
+    const errEl = document.getElementById('submit-task-error');
+    if (!_taskSubmitFile) { errEl.textContent = 'Select a file'; return; }
+
+    const task = (DB.fileTasks || []).find(t => t.id === taskId);
+
+    const driveId = parseInt(document.getElementById('submit-task-drive').value);
+    const drive = (DB.driveSettings || []).find(d => d.id === driveId);
+    if (!drive) { errEl.textContent = 'Select a drive folder'; return; }
+
+    const remark = (document.getElementById('submit-task-remark')?.value || '').trim();
+
+    const btn = document.getElementById('submit-task-btn');
+    const progress = document.getElementById('submit-task-progress');
+    const bar = document.getElementById('submit-task-bar');
+    const txt = document.getElementById('submit-task-txt');
+
+    btn.disabled = true; btn.textContent = 'Submitting...';
+    progress.style.display = 'block'; bar.style.width = '20%'; txt.textContent = 'Reading file...';
+    errEl.textContent = '';
+
+    try {
+        const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(_taskSubmitFile);
+        });
+
+        bar.style.width = '40%'; txt.textContent = 'Uploading to Drive...';
+        const safeName = safeFileName(_taskSubmitFile.name);
+        const result = await api('/upload-to-drive', {
+            method: 'POST',
+            body: { fileBase64: base64, fileName: safeName, mimeType: _taskSubmitFile.type || 'application/octet-stream', folderId: drive.folderId }
+        });
+        if (result.error) throw new Error(result.error);
+
+        bar.style.width = '70%'; txt.textContent = 'Recording submission...';
+        await api('/file-tasks/' + taskId + '/submit', {
+            method: 'POST',
+            body: {
+                fileName: safeName,
+                fileUrl: result.fileUrl,
+                driveFileId: result.fileId,
+                fileSize: _taskSubmitFile.size,
+                fileType: _taskSubmitFile.type,
+                driveSettingId: driveId,
+                remark: remark
+            }
+        });
+
+        bar.style.width = '100%'; txt.textContent = 'Submitted successfully!';
+        _taskSubmitFile = null;
+        await loadDB();
+        setTimeout(() => { hideModal(); renderEmployeeFiles(); }, 1200);
+    } catch (e) {
+        errEl.textContent = 'Failed: ' + e.message;
+        btn.disabled = false; btn.textContent = 'Submit';
+        progress.style.display = 'none';
+    }
 };
 
 /* ==========================================================
@@ -4317,22 +4650,26 @@ const showAdminAddAttendance = () => {
     const scopeList = [...DB.scopes].sort((a, b) => a.name.localeCompare(b.name));
 
     showModal(`
-    <h3>Add Attendance</h3>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field"><label>Employee</label><div id="ss-att-member"></div></div>
-        <div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="${todayStr()}"></div>
-        <div class="field"><label>Category</label><div id="ss-att-scope"></div></div>
-        <div class="field"><label>ID/Name</label><div id="ss-att-item"></div></div>
-        <div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- None --</option></select></div>
-        <div class="field" style="display:none"><label>Detail</label><select class="input" id="att-detail">${detailOpts(null)}</select></div>
-        <div class="field"><label>Work Plan</label><div id="ss-att-workplan"></div></div>
-        <div class="field"><label>Work Done</label><div id="ss-att-workdone"></div></div>
-        <div class="field"><label>Start Time</label><input class="input" id="att-start" type="time" value="09:00"></div>
-        <div class="field"><label>End Time</label><input class="input" id="att-end" type="time" value="18:00"></div>
-    </div>
-    <div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="att-desc" rows="2" placeholder="For Other Selected" style="resize:vertical"></textarea></div>
-    <p class="auth-error" id="att-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAdminAddAttendance()">Save</button></div>`);
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <h3>Add Attendance</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="field"><label>Employee</label><div id="ss-att-member"></div></div>
+                <div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="${todayStr()}"></div>
+                <div class="field"><label>Category</label><div id="ss-att-scope"></div></div>
+                <div class="field"><label>ID/Name</label><div id="ss-att-item"></div></div>
+                <div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- None --</option></select></div>
+                <div class="field" style="display:none"><label>Detail</label><select class="input" id="att-detail">${detailOpts(null)}</select></div>
+                <div class="field"><label>Work Plan</label><div id="ss-att-workplan"></div></div>
+                <div class="field"><label>Work Done</label><div id="ss-att-workdone"></div></div>
+                <div class="field"><label>Start Time</label><input class="input" id="att-start" type="time" value="09:00"></div>
+                <div class="field"><label>End Time</label><input class="input" id="att-end" type="time" value="18:00"></div>
+            </div>
+            <div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="att-desc" rows="2" placeholder="For Other Selected" style="resize:vertical"></textarea></div>
+            <p class="auth-error" id="att-error"></p>
+        </div>
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAdminAddAttendance()">Save</button></div>
+    </div>`);
 
     setTimeout(() => {
         const memberOpts = getNonViewerMembers().map(m => ({ value: m.id, label: m.name }));
@@ -4399,21 +4736,25 @@ const showAdminEditAttendance = id => {
     const eTime = entry.clockOut ? entry.clockOut.split('T')[1].substring(0,5) : '';
 
     showModal(`
-    <h3>Edit Attendance</h3>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="${entry.date}"></div><br>
-        <div class="field"><label>Category</label><div id="ss-att-scope"></div></div>
-        <div class="field"><label>ID/Name</label><div id="ss-att-item"></div></div>
-        <div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- None --</option></select></div>
-        <div class="field" style="display:none"><label>Detail</label><select class="input" id="att-detail">${detailOpts(entry.detailId)}</select></div>
-        <div class="field"><label>Work Plan</label><div id="ss-att-workplan"></div></div>
-        <div class="field"><label>Work Done</label><div id="ss-att-workdone"></div></div>
-        <div class="field"><label>Start Time</label><input class="input" id="att-start" type="time" value="${sTime}"></div>
-        <div class="field"><label>End Time</label><input class="input" id="att-end" type="time" value="${eTime}"></div>
-    </div>
-    <div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="att-desc" rows="2" style="resize:vertical">${esc(entry.description||'')}</textarea></div>
-    <p class="auth-error" id="att-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAdminEditAttendance(${id})">Save</button></div>`);
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <h3>Edit Attendance</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div class="field"><label>Date</label><input class="input" id="att-date" type="date" value="${entry.date}"></div><br>
+                <div class="field"><label>Category</label><div id="ss-att-scope"></div></div>
+                <div class="field"><label>ID/Name</label><div id="ss-att-item"></div></div>
+                <div class="field" style="display:none"><label>Sub Scope</label><select class="input" id="att-subscope"><option value="">-- None --</option></select></div>
+                <div class="field" style="display:none"><label>Detail</label><select class="input" id="att-detail">${detailOpts(entry.detailId)}</select></div>
+                <div class="field"><label>Work Plan</label><div id="ss-att-workplan"></div></div>
+                <div class="field"><label>Work Done</label><div id="ss-att-workdone"></div></div>
+                <div class="field"><label>Start Time</label><input class="input" id="att-start" type="time" value="${sTime}"></div>
+                <div class="field"><label>End Time</label><input class="input" id="att-end" type="time" value="${eTime}"></div>
+            </div>
+            <div class="field" style="margin-top:4px"><label>Remark</label><textarea class="input" id="att-desc" rows="2" style="resize:vertical">${esc(entry.description||'')}</textarea></div>
+            <p class="auth-error" id="att-error"></p>
+        </div>
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="doAdminEditAttendance(${id})">Save</button></div>
+    </div>`);
 
     setTimeout(() => {
         const scopeOpts = scopeList.map(s => ({ value: s.id, label: s.name }));
@@ -5489,38 +5830,43 @@ const renderAdminFiles = () => {
     document.getElementById('admin-files').innerHTML = `
     <div class="app-header"><h2>Files</h2><div class="header-sub">Upload and manage files on Google Drive</div></div>
     <div class="app-body">
-      <div class="pt-anim-filter filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span></div>
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-          <input class="input" type="text" placeholder="Search files..." id="file-search" oninput="applyFileFilter()" style="max-width:250px">
-          <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Drive Folder</label>
-            <select class="input" id="file-drive-filter" onchange="applyFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
-              <option value="">All Folders</option>
-              ${driveOpts}
-            </select>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label>
-            <input class="input" type="date" id="file-date-from" onchange="applyFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
-          </div>
-          <div style="display:flex;align-items:center;gap:6px">
-            <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label>
-            <input class="input" type="date" id="file-date-to" onchange="applyFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
-          </div>
-          <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" onclick="resetFileFilter()">Reset</button>
-            ${currentUser.role !== 'viewer' ? '<button class="btn btn-green" onclick="showUploadFile()">+ Upload File</button>' : ''}
-            ${currentUser.role === 'admin' ? '<button class="btn btn-accent btn-sm" onclick="showFileNoticesModal()">📋 Announces</button>' : ''}
-            ${currentUser.role === 'admin' ? '<button class="btn btn-blue btn-sm" onclick="showDriveSettings()">⚙ Drive Settings</button>' : ''}
-          </div>
+        <div class="pt-anim-filter filter-sticky" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <span style="font-size:1rem;font-family:var(--font-d);font-weight:600;color:var(--main-text)">Filter</span>
+            <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
+                ${currentUser.role === 'admin' ? '<button class="btn btn-blue btn-sm" onclick="showDriveSettings()">⚙ Drive Settings</button>' : ''}
+            </div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <input class="input" type="text" placeholder="Search files..." id="file-search" oninput="applyFileFilter()" style="max-width:250px">
+            <div style="display:flex;align-items:center;gap:6px">
+                <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">Drive Folder</label>
+                <select class="input" id="file-drive-filter" onchange="applyFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
+                <option value="">All Folders</option>
+                ${driveOpts}
+                </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+                <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label>
+                <input class="input" type="date" id="file-date-from" onchange="applyFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+                <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">To</label>
+                <input class="input" type="date" id="file-date-to" onchange="applyFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
+            </div>
+            <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
+                <button class="btn btn-ghost btn-sm" onclick="resetFileFilter()">Reset</button>
+                ${currentUser.role !== 'viewer' ? '<button class="btn btn-green" onclick="showUploadFile()">+ Upload File</button>' : ''}
+                ${currentUser.role === 'admin' ? '<button class="btn btn-accent btn-sm" onclick="showFileNoticesModal()">📋 Announces</button>' : ''}
+                ${currentUser.role === 'admin' ? '<button class="btn btn-purple btn-sm" onclick="showFileTasksModal()" style="background:#8b5cf6;color:#fff;border:none">📋 File Request</button>' : ''}
+            </div>
+            </div>
         </div>
-      </div>
-      <div class="pt-anim-head"><div class="stats-grid" id="file-stats" style="margin:0"></div></div>
-      <div class="pt-anim-table">
-        <div class="section-head"><h2>All Files</h2></div>
-        <div id="files-table-area"></div>
-      </div>
+        <div class="pt-anim-head"><div class="stats-grid" id="file-stats" style="margin:0"></div></div>
+        <div class="pt-anim-table">
+            <div class="section-head"><h2>All Files</h2></div>
+            <div id="files-table-area"></div>
+        </div>
     </div>`;
 
     setTimeout(() => { _adminFileInitialLoad = true; applyFileFilter(); _adminFileInitialLoad = false; }, 250);
@@ -6029,34 +6375,40 @@ const showUploadFile = () => {
     _selectedFiles = [];
 
     showModal(`
-    <h3>Upload File</h3>
-    <div class="field">
-        <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Display name, optional, applied to all)</span></label>
-        <input class="input" id="upload-title" placeholder="e.g. Project Report">
-    </div>
-    <div class="field">
-        <label>Select File <span style="font-size:.72rem;color:var(--main-text3)">(Max 20MB each · Multiple allowed)</span></label>
-        <div id="upload-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:30px;text-align:center;cursor:pointer;transition:border-color .2s">
-            <div id="upload-file-info" style="color:var(--main-text3)">Click or drag files here</div>
-            <input type="file" id="upload-file-input" style="display:none" multiple onchange="handleFilesSelect(this)">
-        </div>
-    </div>
-    <div id="upload-file-list" style="margin-top:8px;margin-bottom:12px"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field"><label>Save to Drive Folder</label><select class="input" id="upload-drive">${driveOpts}</select></div>
-        <div class="field"><label>Remark <span style="font-size:.72rem;color:var(--main-text3)">(Applied to all)</span></label><input class="input" id="upload-remark" placeholder="Optional remark"></div>
-    </div>
-    <div id="upload-progress" style="display:none;margin-top:12px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <span id="upload-file-counter" style="font-size:.82rem;color:var(--main-text3)"></span>
-        </div>
-        <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
-            <div id="upload-progress-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s ease;border-radius:4px"></div>
-        </div>
-        <div id="upload-progress-text" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Uploading...</div>
-    </div>
-    <p class="auth-error" id="upload-error"></p>
-    <div class="btns"><button class="btn btn-ghost" onclick="_selectedFiles=[];hideModal()">Cancel</button><button class="btn btn-accent" id="upload-btn" onclick="doUploadFiles()">Upload</button></div>`);
+        <div style="max-height:85vh;display:flex;flex-direction:column">
+            <div style="flex-shrink:0">
+                <h3>Upload File</h3>
+                <div class="field">
+                    <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Display name, optional, applied to all)</span></label>
+                    <input class="input" id="upload-title" placeholder="e.g. Project Report">
+                </div>
+                <div class="field">
+                    <label>Select File <span style="font-size:.72rem;color:var(--main-text3)">(Max 20MB each · Multiple allowed)</span></label>
+                    <div id="upload-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:30px;text-align:center;cursor:pointer;transition:border-color .2s">
+                        <div id="upload-file-info" style="color:var(--main-text3)">Click or drag files here</div>
+                        <input type="file" id="upload-file-input" style="display:none" multiple onchange="handleFilesSelect(this)">
+                    </div>
+                </div>
+            </div>
+            <div style="flex:1;min-height:0;overflow-y:auto">
+                <div id="upload-file-list" style="margin-top:8px;margin-bottom:12px"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                    <div class="field"><label>Save to Drive Folder</label><select class="input" id="upload-drive">${driveOpts}</select></div>
+                    <div class="field"><label>Remark <span style="font-size:.72rem;color:var(--main-text3)">(Applied to all)</span></label><input class="input" id="upload-remark" placeholder="Optional remark"></div>
+                </div>
+                <div id="upload-progress" style="display:none;margin-top:12px">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                        <span id="upload-file-counter" style="font-size:.82rem;color:var(--main-text3)"></span>
+                    </div>
+                    <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
+                        <div id="upload-progress-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s ease;border-radius:4px"></div>
+                    </div>
+                    <div id="upload-progress-text" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Uploading...</div>
+                </div>
+                <p class="auth-error" id="upload-error"></p>
+            </div>
+            <div style="flex-shrink:0;margin-top:12px" class="btns"><button class="btn btn-ghost" onclick="_selectedFiles=[];hideModal()">Cancel</button><button class="btn btn-accent" id="upload-btn" onclick="doUploadFiles()">Upload</button></div>
+        </div>`);
 
     setTimeout(() => {
         const dz = document.getElementById('upload-drop-zone');
@@ -6216,43 +6568,49 @@ const showEditFileModal = id => {
     _editFileReplaceSelected = null;
 
     showModal(`
-    <h3>Edit File</h3>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-        <div class="field"><label>Title</label><input class="input" id="edit-file-title" value="${esc(f.title || '')}" placeholder="Display name"></div>
-        <div class="field"><label>Remark</label><input class="input" id="edit-file-remark" value="${esc(f.remark || '')}" placeholder="Optional remark"></div>
-    </div>
-    <div class="field" style="margin-bottom:12px">
-        <label>Drive Folder</label>
-        <select class="input" id="edit-file-drive">${driveOpts}</select>
-    </div>
-    <div style="background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px">
-        <div style="font-size:.82rem;color:var(--main-text3);margin-bottom:2px">Current File</div>
-        <div style="display:flex;align-items:center;gap:8px">
-            ${getFileTypeIcon(f.name)} <strong style="color:var(--main-text)">${esc(f.name)}</strong>
-            <span style="font-size:.82rem;color:var(--main-text3)">${formatFileSize(f.size)}</span>
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0">
+            <h3>Edit File</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                <div class="field"><label>Title</label><input class="input" id="edit-file-title" value="${esc(f.title || '')}" placeholder="Display name"></div>
+                <div class="field"><label>Remark</label><input class="input" id="edit-file-remark" value="${esc(f.remark || '')}" placeholder="Optional remark"></div>
+            </div>
+            <div class="field" style="margin-bottom:12px">
+                <label>Drive Folder</label>
+                <select class="input" id="edit-file-drive">${driveOpts}</select>
+            </div>
+            <div style="background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px">
+                <div style="font-size:.82rem;color:var(--main-text3);margin-bottom:2px">Current File</div>
+                <div style="display:flex;align-items:center;gap:8px">
+                    ${getFileTypeIcon(f.name)} <strong style="color:var(--main-text)">${esc(f.name)}</strong>
+                    <span style="font-size:.82rem;color:var(--main-text3)">${formatFileSize(f.size)}</span>
+                </div>
+            </div>
+            <div class="field">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                    <input type="checkbox" id="edit-file-replace-toggle" onchange="document.getElementById('edit-file-replace-zone').style.display=this.checked?'block':'none'"> Replace file
+                </label>
+            </div>
         </div>
-    </div>
-    <div class="field">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" id="edit-file-replace-toggle" onchange="document.getElementById('edit-file-replace-zone').style.display=this.checked?'block':'none'"> Replace file
-        </label>
-    </div>
-    <div id="edit-file-replace-zone" style="display:none;margin-top:8px;margin-bottom:16px">
-        <div id="edit-file-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:border-color .2s">
-            <div id="edit-file-info" style="color:var(--main-text3)">Click or drag new file here</div>
-            <input type="file" id="edit-file-input" style="display:none" onchange="handleEditFileSelect(this)">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <div id="edit-file-replace-zone" style="display:none;margin-top:8px;margin-bottom:16px">
+                <div id="edit-file-drop-zone" style="border:2px dashed var(--main-border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer;transition:border-color .2s">
+                    <div id="edit-file-info" style="color:var(--main-text3)">Click or drag new file here</div>
+                    <input type="file" id="edit-file-input" style="display:none" onchange="handleEditFileSelect(this)">
+                </div>
+            </div>
+            <div id="edit-file-progress" style="display:none;margin-bottom:12px">
+                <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
+                    <div id="edit-file-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s;border-radius:4px"></div>
+                </div>
+                <div id="edit-file-txt" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Saving...</div>
+            </div>
+            <p class="auth-error" id="edit-file-error"></p>
         </div>
-    </div>
-    <div id="edit-file-progress" style="display:none;margin-bottom:12px">
-        <div style="background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
-            <div id="edit-file-bar" style="height:100%;background:var(--accent);width:0%;transition:width .3s;border-radius:4px"></div>
+        <div style="flex-shrink:0;margin-top:12px" class="btns">
+            <button class="btn btn-ghost" onclick="_editFileReplaceSelected=null;hideModal()">Cancel</button>
+            <button class="btn btn-accent" id="edit-file-btn" onclick="doEditFile(${id})">Save</button>
         </div>
-        <div id="edit-file-txt" style="font-size:.78rem;color:var(--main-text3);margin-top:4px;text-align:center">Saving...</div>
-    </div>
-    <p class="auth-error" id="edit-file-error"></p>
-    <div class="btns">
-        <button class="btn btn-ghost" onclick="_editFileReplaceSelected=null;hideModal()">Cancel</button>
-        <button class="btn btn-accent" id="edit-file-btn" onclick="doEditFile(${id})">Save</button>
     </div>`);
 
     setTimeout(() => {
@@ -6413,35 +6771,38 @@ const showDriveSettings = () => {
     const drives = DB.driveSettings || [];
     const config = DB.appConfig || {};
 
-    // 优先用临时值，否则用 DB 值
     const scriptUrl = _pendingDriveConfig ? _pendingDriveConfig.scriptUrl : (config.drive_script_url || '');
     const token = _pendingDriveConfig ? _pendingDriveConfig.token : (config.drive_token || '');
     _pendingDriveConfig = null;
 
-    // 不重置 _drivePage，让子页面返回时保留分页位置
-
     const driveOpts = (DB.driveSettings||[]).map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
 
     showModal(`
-    <h3>Drive Settings</h3>
-    <div class="field" style="margin-bottom:12px">
-        <label>Apps Script URL</label>
-        <input class="input" id="cfg-script-url" value="${esc(scriptUrl)}" placeholder="https://script.google.com/macros/s/.../exec">
-    </div>
-    <div class="field" style="margin-bottom:8px">
-        <label>Secret Token</label>
-        <input class="input" id="cfg-token" value="${esc(token)}" placeholder="Your secret token">
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
-        <button class="btn btn-accent btn-sm" onclick="saveDriveConfig()">Save Config</button>
-        <span id="cfg-save-status" style="font-size:.8rem;color:var(--main-text3)"></span>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <h4 style="margin:0">Drive Folders</h4>
-        <button class="btn btn-green btn-sm" onclick="showAddDriveSetting()">+ Add Folder</button>
-    </div>
-    <div id="drive-table-area"></div>
-    <div class="btns" style="margin-top:16px"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>`);
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0">
+            <h3>Drive Settings</h3>
+            <div class="field" style="margin-bottom:12px">
+                <label>Apps Script URL</label>
+                <input class="input" id="cfg-script-url" value="${esc(scriptUrl)}" placeholder="https://script.google.com/macros/s/.../exec">
+            </div>
+            <div class="field" style="margin-bottom:8px">
+                <label>Secret Token</label>
+                <input class="input" id="cfg-token" value="${esc(token)}" placeholder="Your secret token">
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
+                <button class="btn btn-accent btn-sm" onclick="saveDriveConfig()">Save Config</button>
+                <span id="cfg-save-status" style="font-size:.8rem;color:var(--main-text3)"></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <h4 style="margin:0">Drive Folders</h4>
+                <button class="btn btn-green btn-sm" onclick="showAddDriveSetting()">+ Add Folder</button>
+            </div>
+        </div>
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <div id="drive-table-area"></div>
+        </div>
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>
+    </div>`);
 
     renderDriveTable();
 };
@@ -6798,6 +7159,409 @@ const doDeleteFileNotice = async id => {
     await loadDB();
     hideModal();
     setTimeout(() => showFileNotices(), 200);
+};
+
+// ==========================================================
+//   FILE TASKS MODAL (Admin)
+// ==========================================================
+
+let _editingFileTaskId = null;
+let _fileTasksPage = 1, _fileTasksPageSize = 5, _fileTasksSearch = '';
+
+const INTERVAL_OPTS = [
+    { value: 1, label: 'Every 1 min' },
+    { value: 60, label: 'Every 1 hour' },
+    { value: 360, label: 'Every 6 hours' },
+    { value: 720, label: 'Every 12 hours' },
+    { value: 1440, label: 'Every 24 hours' }
+];
+
+const showFileTasksModal = async () => {
+    _editingFileTaskId = null;
+    await loadDB();
+    renderFileTasksContent();
+};
+
+const renderFileTasksContent = async () => {
+    _fileTasksPage = 1;
+    _fileTasksSearch = '';
+    await loadDB();
+
+    const tasks = DB.fileTasks || [];
+    const activeCount = tasks.filter(t => t.isActive).length;
+
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div>
+                <h3 style="margin:0">📋 File Request (Tasks)</h3>
+                <div id="file-tasks-count" style="font-size:.82rem;color:var(--main-text3);margin-top:4px">${tasks.length} total · ${activeCount} active</div>
+            </div>
+            <button class="btn btn-green btn-sm" onclick="showAddFileTask()">+ Add Request</button>
+        </div>
+        <div style="flex-shrink:0;margin-bottom:12px">
+            <input class="input" id="file-tasks-search" type="text" placeholder="Search tasks..." oninput="_fileTasksSearch=this.value;_fileTasksPage=1;renderFileTasksList()" style="max-width:300px">
+        </div>
+        <div style="flex:1;min-height:0;overflow-y:auto" id="file-tasks-list-area"></div>
+        <div style="flex-shrink:0;margin-top:8px" id="file-tasks-pag-area"></div>
+        <div style="flex-shrink:0;margin-top:12px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Close</button></div>
+    </div>`);
+
+    renderFileTasksList();
+};
+
+const renderFileTasksList = () => {
+    const tasks = DB.fileTasks || [];
+    const now = new Date();
+    const activeCount = tasks.filter(t => t.isActive).length;
+
+    // Search filter
+    const search = _fileTasksSearch.toLowerCase();
+    const filtered = search ? tasks.filter(t => {
+        const deadlineStr = t.deadline ? formatDateDMY(t.deadline.replace('Z','').slice(0,10)) + ' ' + t.deadline.replace('Z','').slice(11,16) : '';
+        const intervalLabel = (INTERVAL_OPTS.find(o => o.value === t.checkIntervalMinutes)?.label || t.checkIntervalMinutes + ' min');
+        const statusText = (t.submittedCount >= t.targetCount && t.targetCount > 0) ? 'completed'
+            : (new Date(t.deadline.replace('Z','')) < now) ? 'overdue'
+            : (t.submittedCount > 0) ? 'in progress'
+            : 'active';
+        const targetText = t.targetType === 'all' ? 'all employees' : (t.targetMemberIds || []).length + ' employees';
+        const notifyText = t.notifyType === 'both' ? 'in-app + email' : t.notifyType === 'email' ? 'email only' : 'in-app only';
+        const progressText = (t.submittedCount || 0) + '/' + (t.targetCount || 0) + ' submitted';
+        const haystack = [t.title, t.description, deadlineStr, intervalLabel, statusText, targetText, notifyText, progressText]
+            .map(v => (v || '').toLowerCase()).join(' ');
+        return haystack.indexOf(search) !== -1;
+    }) : tasks;
+
+    // Pagination
+    const totalFiltered = filtered.length;
+    const totalPages = Math.ceil(totalFiltered / _fileTasksPageSize) || 1;
+    if (_fileTasksPage > totalPages) _fileTasksPage = totalPages;
+    if (_fileTasksPage < 1) _fileTasksPage = 1;
+    const startIdx = (_fileTasksPage - 1) * _fileTasksPageSize;
+    const pageTasks = filtered.slice(startIdx, startIdx + _fileTasksPageSize);
+
+    // Update count
+    const countEl = document.getElementById('file-tasks-count');
+    if (countEl) countEl.textContent = tasks.length + ' total · ' + activeCount + ' active' + (search ? ' · ' + totalFiltered + ' matched' : '');
+
+    let tasksHtml = '';
+    if (filtered.length === 0) {
+        tasksHtml = '<div style="text-align:center;color:var(--main-text3);padding:40px 0;font-size:.88rem">'
+            + (search ? 'No tasks match your search.' : 'No file tasks yet.<br><span style="font-size:.82rem">Click "+ Add Task" to create one.</span>')
+            + '</div>';
+    } else {
+        tasksHtml = pageTasks.map(t => {
+            const deadline = new Date(t.deadline.replace('Z',''));
+            const isOverdue = deadline < now && t.isActive;
+            const progressPct = t.targetCount > 0 ? Math.round((t.submittedCount / t.targetCount) * 100) : 0;
+            const deadlineColor = isOverdue ? 'var(--danger)' : 'var(--main-text)';
+            const statusBadge = (t.submittedCount >= t.targetCount && t.targetCount > 0)
+                    ? '<span style="color:#fff;background:#6366f1;padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:600">COMPLETED</span>'
+                    : isOverdue
+                        ? '<span style="color:#fff;background:var(--danger);padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:600">OVERDUE</span>'
+                        : (t.submittedCount > 0)
+                            ? '<span style="color:#fff;background:#f59e0b;padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:600">IN PROGRESS</span>'
+                            : '<span style="color:#fff;background:#16a34a;padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:600">ACTIVE</span>';
+
+            const intervalLabel = INTERVAL_OPTS.find(o => o.value === t.checkIntervalMinutes)?.label || `${t.checkIntervalMinutes} min`;
+
+            return `<div style="background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);padding:14px 18px;margin-bottom:8px">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                    ${statusBadge}
+                    <strong style="font-size:.92rem;color:var(--main-text);flex:1">${esc(t.title)}</strong>
+                    <span style="font-size:.78rem;color:var(--main-text3)">${intervalLabel}</span>
+                </div>
+                ${t.description ? `<div style="font-size:.82rem;color:var(--main-text3);margin-bottom:8px">${esc(t.description)}</div>` : ''}
+                <div style="display:flex;align-items:center;gap:16px;margin-bottom:8px;font-size:.82rem">
+                    <span style="color:${deadlineColor}"> Deadline: ${formatDateDMY(t.deadline?.replace('Z','').slice(0,10))} ${t.deadline?.replace('Z','').slice(11,16)}</span>
+                    <span>Target: ${t.targetType === 'all' ? 'All Employees' : `${t.targetMemberIds.length} employees`}</span>
+                    <span>Notify: ${t.notifyType === 'both' ? 'In-app + Email' : t.notifyType === 'email' ? 'Email only' : 'In-app only'}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+                    <div style="flex:1;background:var(--main-border);border-radius:4px;height:6px;overflow:hidden">
+                        <div style="height:100%;width:${progressPct}%;background:${progressPct===100?'#16a34a':isOverdue?'var(--danger)':'var(--accent)'};border-radius:4px;transition:width .3s"></div>
+                    </div>
+                    <span style="font-size:.82rem;color:var(--main-text2);white-space:nowrap">${t.submittedCount}/${t.targetCount} submitted</span>
+                </div>
+                <div style="display:flex;gap:6px;justify-content:flex-end">
+                    <button class="btn btn-ghost btn-sm" onclick="showTaskSubmissions(${t.id})"> Submissions</button>
+                    <button class="btn btn-ghost btn-sm" onclick="editFileTask(${t.id})"> Edit</button>
+                    <button class="btn-icon danger" onclick="deleteFileTask(${t.id})" title="Delete">&#10005;</button>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    const listEl = document.getElementById('file-tasks-list-area');
+    if (listEl) listEl.innerHTML = tasksHtml;
+
+    const pagHtml = buildPagination(totalFiltered, _fileTasksPage, _fileTasksPageSize,
+        'goFileTasksPage', 'changeFileTasksPageSize',
+        { label: 'tasks', sizes: [5, 10, 25] });
+    const pagEl = document.getElementById('file-tasks-pag-area');
+    if (pagEl) pagEl.innerHTML = pagHtml;
+};
+
+const goFileTasksPage = page => {
+    const tasks = DB.fileTasks || [];
+    const search = _fileTasksSearch.toLowerCase();
+    const filtered = search ? tasks.filter(t => {
+        const haystack = [t.title, t.description, t.deadline].map(v => (v || '').toLowerCase()).join(' ');
+        return haystack.indexOf(search) !== -1;
+    }) : tasks;
+    const totalPages = Math.ceil(filtered.length / _fileTasksPageSize) || 1;
+    _fileTasksPage = Math.max(1, Math.min(page, totalPages));
+    renderFileTasksList();
+};
+
+const changeFileTasksPageSize = size => {
+    _fileTasksPageSize = parseInt(size);
+    _fileTasksPage = 1;
+    renderFileTasksList();
+};
+
+const toggleSendNow = () => {
+    const notifyType = document.getElementById('ft-notify')?.value;
+    const field = document.getElementById('ft-send-now-field');
+    if (field) {
+        field.style.display = notifyType === 'inapp' ? 'none' : '';
+    }
+};
+
+const showAddFileTask = () => {
+    _editingFileTaskId = null;
+    const members = DB.members || [];
+    const memberCheckboxes = members.map(m =>
+        `<div style="width:100%">
+            <label class="ft-member-label" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;font-size:.85rem;transition:background .15s;width:100%;box-sizing:border-box" onmouseover="this.style.background='var(--main-border)'" onmouseout="this.style.background='transparent'" data-name="${esc(m.name.toLowerCase())}">
+                <input type="checkbox" class="ft-cb" value="${m.id}" style="flex-shrink:0"> ${esc(m.name)}
+            </label>
+        </div>`
+    ).join('');
+
+    const intervalOpts = INTERVAL_OPTS.map(o =>
+        `<option value="${o.value}" ${o.value===1440?'selected':''}>${o.label}</option>`
+    ).join('');
+
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0">
+            <h3>Add File Request</h3>
+        </div>
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+                <div class="field" style="grid-column:1/-1"><label>Title <span style="color:var(--danger)">*</span></label>
+                    <input class="input" id="ft-title" placeholder="e.g. Submit Monthly Safety Report"></div>
+                <div class="field" style="grid-column:1/-1"><label>Description</label>
+                    <textarea class="input" id="ft-desc" rows="2" placeholder="Optional description"></textarea></div>
+                <div class="field"><label>Deadline <span style="color:var(--danger)">*</span></label>
+                    <input class="input" id="ft-deadline" type="datetime-local"></div>
+                <div class="field"><label>Check Interval</label>
+                    <select class="input" id="ft-interval">${intervalOpts}</select></div>
+                <div class="field"><label>Notification</label>
+                    <select class="input" id="ft-notify" onchange="toggleSendNow()">
+                        <option value="both">In-app + Email</option>
+                        <option value="inapp">In-app only</option>
+                        <option value="email">Email only</option>
+                    </select></div>
+                <div class="field"><label><input type="checkbox" id="ft-active" checked> Active</label></div>
+                <div class="field" style="grid-column:1/-1" id="ft-send-now-field"><label><input type="checkbox" id="ft-send-now" checked> Send notification immediately (Uncheck to send only after deadline)</label></div>
+            </div>
+            <div style="margin-top:8px">
+                <label>Assign To</label>
+                <div style="display:flex;gap:16px;margin-bottom:8px;flex-wrap:wrap">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem">
+                        <input type="radio" name="ft-target" value="all" checked onchange="document.getElementById('ft-members').style.display='none'"> All Employees
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem">
+                        <input type="radio" name="ft-target" value="specific" onchange="document.getElementById('ft-members').style.display='block'"> Select Employees
+                    </label>
+                </div>
+                <div id="ft-members" style="display:none">
+                    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+                        <input class="input" id="ft-member-search" placeholder="Search employee..." oninput="filterFtMembers()" style="flex:1;min-width:150px;font-size:.82rem;padding:8px 12px">
+                        <button class="btn btn-ghost btn-sm" onclick="ftSelectVisible()">Select Visible</button>
+                        <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('.ft-cb').forEach(c=>c.checked=false)">Deselect All</button>
+                    </div>
+                    <div style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius);width:100%;box-sizing:border-box">
+                        ${memberCheckboxes}
+                    </div>
+                </div>
+            </div>
+            <p class="auth-error" id="ft-error"></p>
+        </div>
+        <div style="flex-shrink:0;margin-top:12px" class="btns">
+            <button class="btn btn-ghost" onclick="renderFileTasksContent()">Cancel</button>
+            <button class="btn btn-green" onclick="saveFileTask()">Create</button>
+        </div>
+    </div>`);
+};
+
+const filterFtMembers = () => {
+    const q = (document.getElementById('ft-member-search')?.value || '').toLowerCase();
+    document.querySelectorAll('.ft-member-label').forEach(l => {
+        l.style.display = (!q || (l.dataset.name||'').includes(q)) ? 'flex' : 'none';
+    });
+};
+
+const ftSelectVisible = () => {
+    document.querySelectorAll('.ft-member-label').forEach(l => {
+        if (l.style.display !== 'none') l.querySelector('.ft-cb').checked = true;
+    });
+};
+
+const saveFileTask = async () => {
+    const errEl = document.getElementById('ft-error');
+    const title = document.getElementById('ft-title').value.trim();
+    const description = document.getElementById('ft-desc').value.trim();
+    const deadline = document.getElementById('ft-deadline').value;
+    const targetType = document.querySelector('input[name="ft-target"]:checked').value;
+    const targetMemberIds = targetType === 'specific'
+        ? Array.from(document.querySelectorAll('.ft-cb:checked')).map(c => parseInt(c.value))
+        : [];
+    const notifyType = document.getElementById('ft-notify').value;
+    const checkIntervalMinutes = parseInt(document.getElementById('ft-interval').value);
+    const isActive = document.getElementById('ft-active').checked;
+
+    if (!title) { errEl.textContent = 'Title required'; return; }
+    if (!deadline) { errEl.textContent = 'Deadline required'; return; }
+    if (targetType === 'specific' && targetMemberIds.length === 0) { errEl.textContent = 'Select at least one employee'; return; }
+
+    errEl.textContent = '';
+    const sendNow = document.getElementById('ft-send-now')?.checked || false;
+    const body = { title, description, deadline, targetType, targetMemberIds, notifyType, checkIntervalMinutes, isActive, sendNow };
+
+    if (_editingFileTaskId) {
+        await api('/file-tasks/' + _editingFileTaskId, { method: 'PUT', body });
+    } else {
+        await api('/file-tasks', { method: 'POST', body });
+    }
+    _editingFileTaskId = null;
+    await loadDB();
+    renderFileTasksContent();
+};
+
+const editFileTask = id => {
+    const t = (DB.fileTasks || []).find(x => x.id === id);
+    if (!t) return;
+    _editingFileTaskId = id;
+
+    const members = DB.members || [];
+    const memberCheckboxes = members.map(m =>
+        `<div style="width:100%">
+            <label class="ft-member-label" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;font-size:.85rem;transition:background .15s;width:100%;box-sizing:border-box" onmouseover="this.style.background='var(--main-border)'" onmouseout="this.style.background='transparent'" data-name="${esc(m.name.toLowerCase())}">
+                <input type="checkbox" class="ft-cb" value="${m.id}" ${(t.targetMemberIds||[]).includes(m.id)?'checked':''} style="flex-shrink:0"> ${esc(m.name)}
+            </label>
+        </div>`
+    ).join('');
+
+    const intervalOpts = INTERVAL_OPTS.map(o =>
+        `<option value="${o.value}" ${o.value===t.checkIntervalMinutes?'selected':''}>${o.label}</option>`
+    ).join('');
+
+    const dl = t.deadline ? t.deadline.slice(0, 16) : '';
+
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex-shrink:0">
+            <h3>Edit File Request</h3>
+        </div>
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+                <div class="field" style="grid-column:1/-1"><label>Title <span style="color:var(--danger)">*</span></label>
+                    <input class="input" id="ft-title" value="${esc(t.title)}"></div>
+                <div class="field" style="grid-column:1/-1"><label>Description</label>
+                    <textarea class="input" id="ft-desc" rows="2">${esc(t.description||'')}</textarea></div>
+                <div class="field"><label>Deadline <span style="color:var(--danger)">*</span></label>
+                    <input class="input" id="ft-deadline" type="datetime-local" value="${dl}"></div>
+                <div class="field"><label>Check Interval</label>
+                    <select class="input" id="ft-interval">${intervalOpts}</select></div>
+                <div class="field"><label>Notification</label>
+                    <select class="input" id="ft-notify" onchange="toggleSendNow()">
+                        <option value="both" ${t.notifyType==='both'?'selected':''}>In-app + Email</option>
+                        <option value="inapp" ${t.notifyType==='inapp'?'selected':''}>In-app only</option>
+                        <option value="email" ${t.notifyType==='email'?'selected':''}>Email only</option>
+                    </select></div>
+                <div class="field"><label><input type="checkbox" id="ft-active" ${t.isActive?'checked':''}> Active</label></div>
+                <div class="field" style="grid-column:1/-1" id="ft-send-now-field"><label><input type="checkbox" id="ft-send-now"> Send notification now</label></div>
+            </div>
+            <div style="margin-top:8px">
+                <label>Assign To</label>
+                <div style="display:flex;gap:16px;margin-bottom:8px;flex-wrap:wrap">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem">
+                        <input type="radio" name="ft-target" value="all" ${t.targetType==='all'?'checked':''} onchange="document.getElementById('ft-members').style.display='none'"> All Employees
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem">
+                        <input type="radio" name="ft-target" value="specific" ${t.targetType==='specific'?'checked':''} onchange="document.getElementById('ft-members').style.display='block'"> Select Employees
+                    </label>
+                </div>
+                <div id="ft-members" style="display:${t.targetType==='specific'?'block':'none'}">
+                    <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+                        <input class="input" id="ft-member-search" placeholder="Search employee..." oninput="filterFtMembers()" style="flex:1;min-width:150px;font-size:.82rem;padding:8px 12px">
+                        <button class="btn btn-ghost btn-sm" onclick="ftSelectVisible()">Select Visible</button>
+                        <button class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('.ft-cb').forEach(c=>c.checked=false)">Deselect All</button>
+                    </div>
+                    <div style="max-height:180px;overflow-y:auto;border:1px solid var(--main-border);border-radius:var(--radius);width:100%;box-sizing:border-box">
+                        ${memberCheckboxes}
+                    </div>
+                </div>
+            </div>
+            <p class="auth-error" id="ft-error"></p>
+        </div>
+        <div style="flex-shrink:0;margin-top:12px" class="btns">
+            <button class="btn btn-ghost" onclick="renderFileTasksContent()">Cancel</button>
+            <button class="btn btn-accent" onclick="saveFileTask()">Save</button>
+        </div>
+    </div>`);
+
+    // ✅ 初始化时检查一次
+    setTimeout(() => toggleSendNow(), 0);
+};
+
+const deleteFileTask = async id => {
+    if (!confirm('Delete this file task?')) return;
+    await api('/file-tasks/' + id, { method: 'DELETE' });
+    await loadDB();
+    renderFileTasksContent();
+};
+
+const showTaskSubmissions = async id => {
+    const task = (DB.fileTasks || []).find(t => t.id === id);
+    if (!task) return;
+
+    let pending;
+    try {
+        pending = await api('/file-tasks/' + id + '/pending');
+    } catch (e) {
+        pending = [];
+    }
+
+    const rows = pending.map(m => {
+        const statusHtml = m.submitted
+            ? '<span style="color:#16a34a;font-weight:600">✓ Submitted</span>'
+            : '<span style="color:var(--danger);font-weight:600">✕ Pending</span>';
+        return `<tr>
+            <td>${esc(m.name)}</td>
+            <td style="font-size:.82rem">${esc(m.email || '—')}</td>
+            <td>${statusHtml}</td>
+        </tr>`;
+    }).join('');
+
+    const submittedCount = pending.filter(m => m.submitted).length;
+    const totalCount = pending.length;
+
+    showModal(`
+    <h3>Submissions: ${esc(task.title)}</h3>
+    <div style="font-size:.85rem;color:var(--main-text3);margin-bottom:12px">
+        ${submittedCount} of ${totalCount} submitted · Deadline: ${formatDateDMY(task.deadline?.slice(0,10))} ${task.deadline?.slice(11,16)}
+    </div>
+    <div class="table-wrap"><table>
+        <thead><tr><th>Employee</th><th>Email</th><th style="width:120px">Status</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" style="text-align:center;color:var(--main-text3);padding:20px">No employees</td></tr>'}</tbody>
+    </table></div>
+    <div class="btns" style="margin-top:16px">
+        <button class="btn btn-ghost" onclick="renderFileTasksContent()">Back</button>
+    </div>`);
 };
 
 
@@ -8365,23 +9129,28 @@ const ptShowAddUser = () => {
     const posOpts = DB.positions.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
     const deptOpts = DB.departments.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
 
-    showModal(`<h3>Add User</h3>
-        <div class="field"><label>Role</label><select class="input" id="pt-adduser-role" onchange="ptToggleAddUserFields()"><option value="employee">Employee</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></div>
-        <div id="pt-emp-fields">
-            <div class="field"><label>Full Name</label><input class="input" id="pt-adduser-name" placeholder="e.g. John Smith"></div>
-            <div class="field"><label>Position</label><select class="input" id="pt-adduser-pos"><option value="">None</option>${posOpts}</select></div>
-            <div class="field"><label>Department</label><select class="input" id="pt-adduser-dept"><option value="">None</option>${deptOpts}</select></div>
-            <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="pt-adduser-salary" type="number" placeholder="e.g. 15000.00"></div>
-        </div>
-        <div id="pt-viewer-scope-fields" style="display:none">
-            <div class="field"><label>Work Category Access</label>
-                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${_buildScopeCheckboxes('pt-add-viewer-scope-cb')}</div>
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <h3>Add User</h3>
+            <div class="field"><label>Role</label><select class="input" id="pt-adduser-role" onchange="ptToggleAddUserFields()"><option value="employee">Employee</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></div>
+            <div id="pt-emp-fields">
+                <div class="field"><label>Full Name</label><input class="input" id="pt-adduser-name" placeholder="e.g. John Smith"></div>
+                <div class="field"><label>Position</label><select class="input" id="pt-adduser-pos"><option value="">None</option>${posOpts}</select></div>
+                <div class="field"><label>Department</label><select class="input" id="pt-adduser-dept"><option value="">None</option>${deptOpts}</select></div>
+                <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="pt-adduser-salary" type="number" placeholder="e.g. 15000.00"></div>
             </div>
+            <div id="pt-viewer-scope-fields" style="display:none">
+                <div class="field"><label>Work Category Access</label>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${_buildScopeCheckboxes('pt-add-viewer-scope-cb')}</div>
+                </div>
+            </div>
+            <div class="field"><label>Username</label><input class="input" id="pt-adduser-user" placeholder="Login username"></div>
+            <div class="field"><label>Password</label><input class="input" id="pt-adduser-pass" type="password" placeholder="Min. 6 characters"></div>
+            <p class="auth-error" id="pt-adduser-error"></p>
         </div>
-        <div class="field"><label>Username</label><input class="input" id="pt-adduser-user" placeholder="Login username"></div>
-        <div class="field"><label>Password</label><input class="input" id="pt-adduser-pass" type="password" placeholder="Min. 6 characters"></div>
-        <p class="auth-error" id="pt-adduser-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="ptDoAddUser()">Create</button></div>`);
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="ptDoAddUser()">Create</button></div>
+    </div>`);
     setTimeout(() => { const el = document.getElementById('pt-adduser-name'); if (el) el.focus(); }, 100);
 };
 
@@ -8449,27 +9218,32 @@ const ptShowEditUser = (userId) => {
     const curSal = member ? latestSalary(member) : 0;
     const existing = (DB.viewerScopes || {})[user.id] || [];
 
-    showModal(`<h3>Edit \u2014 ${esc(user.username)}</h3>
-        <div id="pt-edit-member-fields" ${user.role === 'admin' ? 'style="display:none"' : ''}>
-            <div class="field"><label>Full Name</label><input class="input" id="pt-edituser-name" value="${member ? esc(member.name) : ''}"></div>
-            <div class="field"><label>Position</label><select class="input" id="pt-edituser-pos"><option value="">None</option>${posOpts}</select></div>
-            <div class="field"><label>Department</label><select class="input" id="pt-edituser-dept"><option value="">None</option>${deptOpts}</select></div>
-            <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="pt-edituser-salary" type="number" value="${curSal > 0 ? curSal : ''}" placeholder="e.g. 15000.00"></div>
-        </div>
-        <div id="pt-edit-viewer-scope-fields" ${user.role !== 'viewer' ? 'style="display:none"' : ''}>
-            <div class="field"><label>Work Category Access</label>
-                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${_buildScopeCheckboxes('pt-viewer-scope-cb', existing)}</div>
+    showModal(`
+    <div style="max-height:85vh;display:flex;flex-direction:column">
+        <div style="flex:1;min-height:0;overflow-y:auto">
+            <h3>Edit — ${esc(user.username)}</h3>
+            <div id="pt-edit-member-fields" ${user.role === 'admin' ? 'style="display:none"' : ''}>
+                <div class="field"><label>Full Name</label><input class="input" id="pt-edituser-name" value="${member ? esc(member.name) : ''}"></div>
+                <div class="field"><label>Position</label><select class="input" id="pt-edituser-pos"><option value="">None</option>${posOpts}</select></div>
+                <div class="field"><label>Department</label><select class="input" id="pt-edituser-dept"><option value="">None</option>${deptOpts}</select></div>
+                <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="pt-edituser-salary" type="number" value="${curSal > 0 ? curSal : ''}" placeholder="e.g. 15000.00"></div>
             </div>
+            <div id="pt-edit-viewer-scope-fields" ${user.role !== 'viewer' ? 'style="display:none"' : ''}>
+                <div class="field"><label>Work Category Access</label>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${_buildScopeCheckboxes('pt-viewer-scope-cb', existing)}</div>
+                </div>
+            </div>
+            <div class="field"><label>Username</label><input class="input" id="pt-edituser-user" value="${esc(user.username)}"></div>
+            <div class="field"><label>New Password (blank = keep)</label><input class="input" id="pt-edituser-pass" type="password" placeholder="Leave blank"></div>
+            <div class="field"><label>Role</label><select class="input" id="pt-edituser-role" onchange="ptToggleEditUserFields()">
+                <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
+                <option value="viewer" ${user.role === 'viewer' ? 'selected' : ''}>Viewer</option>
+                <option value="employee" ${user.role === 'employee' ? 'selected' : ''}>Employee</option>
+            </select></div>
+            <p class="auth-error" id="pt-edituser-error"></p>
         </div>
-        <div class="field"><label>Username</label><input class="input" id="pt-edituser-user" value="${esc(user.username)}"></div>
-        <div class="field"><label>New Password (blank = keep)</label><input class="input" id="pt-edituser-pass" type="password" placeholder="Leave blank"></div>
-        <div class="field"><label>Role</label><select class="input" id="pt-edituser-role" onchange="ptToggleEditUserFields()">
-            <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
-            <option value="viewer" ${user.role === 'viewer' ? 'selected' : ''}>Viewer</option>
-            <option value="employee" ${user.role === 'employee' ? 'selected' : ''}>Employee</option>
-        </select></div>
-        <p class="auth-error" id="pt-edituser-error"></p>
-        <div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="ptDoEditUser(${user.id})">Save</button></div>`);
+        <div style="flex-shrink:0;margin-top:16px" class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button><button class="btn btn-accent" onclick="ptDoEditUser(${user.id})">Save</button></div>
+    </div>`);
 };
 
 const ptToggleEditUserFields = () => {

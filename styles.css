@@ -337,6 +337,8 @@ h1,h2,h3{font-family:var(--font-d);font-weight:600;letter-spacing:-.01em}
 .btn-green:hover{background:linear-gradient(135deg,#15803d,#16a34a);letter-spacing:.04em}
 .btn-blue{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:white;border:1px solid #60a5fa}
 .btn-blue:hover{background:linear-gradient(135deg,#2563eb,#3b82f6);letter-spacing:.04em}
+.btn-purple{background:linear-gradient(135deg,#6d28d9,#7c3aed);color:white;border:1px solid #a78bfa}
+.btn-purple:hover{background:linear-gradient(135deg,#7c3aed,#8b5cf6);letter-spacing:.04em}
 .btn-sm{padding:6px 14px;font-size:.8rem}
 .btn-lg{padding:14px 32px;font-size:1rem}
 .btn-icon{width:34px;height:34px;padding:0;display:inline-flex;align-items:center;justify-content:center;
@@ -920,4 +922,33 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
 @keyframes slideInRight {
     from { opacity: 0; transform: translateX(20px); }
     to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Desktop: thin subtle scrollbar */
+@media (min-width: 601px) {
+    .modal ::-webkit-scrollbar {
+        width: 5px;
+    }
+    .modal ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .modal ::-webkit-scrollbar-thumb {
+        background: var(--main-border);
+        border-radius: 10px;
+    }
+    .modal ::-webkit-scrollbar-thumb:hover {
+        background: var(--main-text3);
+    }
+}
+
+/* Mobile: hide scrollbar, keep scrollable */
+@media (max-width: 600px) {
+    .modal ::-webkit-scrollbar {
+        width: 0;
+        display: none;
+    }
+    .modal {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
 }

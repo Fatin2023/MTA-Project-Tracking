@@ -6,6 +6,9 @@ function showModal(html) {
     document.getElementById('modal-box').innerHTML = html;
     document.getElementById('modal-overlay').classList.add('active');
 
+    var fb = document.getElementById('notice-float-btn');
+    if (fb) fb.style.display = 'none';
+
     setTimeout(function() {
         document.querySelectorAll('.modal, .modal .field').forEach(function(el) {
             el.style.animation = 'none';
@@ -17,6 +20,9 @@ function showModal(html) {
 
 function hideModal() {
     document.getElementById('modal-overlay').classList.remove('active');
+
+    var fb = document.getElementById('notice-float-btn');
+    if (fb) fb.style.display = '';
 }
 
 document.addEventListener('click', function(e) {
