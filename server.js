@@ -1870,7 +1870,7 @@ app.post('/api/file-tasks', requireEdit, async (req, res) => {
         const taskId = result.rows[0].id;
 
         // Send immediate notification (wrapped so it NEVER breaks task creation)
-        if (sendNow) {
+        if (sendNow && isActive !== false) {
             try {
                 let targetMembers;
                 if (targetType === 'all') {
@@ -1965,7 +1965,7 @@ app.put('/api/file-tasks/:id', requireEdit, async (req, res) => {
         const taskId = parseInt(req.params.id);
 
         // Send notification now (edit)
-        if (sendNow) {
+        if (sendNow && isActive !== false) {
             try {
                 const taskTitle = title.trim();
                 let targetMembers;
