@@ -7418,7 +7418,8 @@ const saveFileTask = async () => {
     const errEl = document.getElementById('ft-error');
     const title = document.getElementById('ft-title').value.trim();
     const description = document.getElementById('ft-desc').value.trim();
-    const deadline = document.getElementById('ft-deadline').value;
+    const deadlineInput = document.getElementById('ft-deadline').value;
+    const deadline = deadlineInput ? new Date(deadlineInput).toISOString() : null;
     const targetType = document.querySelector('input[name="ft-target"]:checked').value;
     const targetMemberIds = targetType === 'specific'
         ? Array.from(document.querySelectorAll('.ft-cb:checked')).map(c => parseInt(c.value))
