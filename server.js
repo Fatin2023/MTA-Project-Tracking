@@ -1988,61 +1988,53 @@ app.put('/api/file-tasks/:id', requireEdit, async (req, res) => {
                     ? description.trim() + ' | Deadline: ' + deadlineStr
                     : 'Deadline: ' + deadlineStr;
 
-                for (const member of targetMembers.rows) {
-                    // Avoid duplicate: check if already notified recently for this task
-                    const exists = await pool.query(
-                        `SELECT id FROM notifications
-                         WHERE member_id = $1 AND related_type = 'file_task' AND related_id = $2
-                         AND created_at > NOW() - INTERVAL '5 minutes'`,
-                        [member.id, taskId]
-                    );
-                    if (exists.rows.length > 0) {
-                        console.log('[FileTask] Skip duplicate notify for: ' + member.name);
-                        continue;
-                    }
+                const promises = [];
 
+                for (const member of targetMembers.rows) {
                     if (notifyType === 'inapp' || notifyType === 'both') {
-                        await pool.query(
-                            'INSERT INTO notifications (member_id, title, message, type, related_type, related_id) VALUES ($1,$2,$3,$4,$5,$6)',
-                            [member.id, taskTitle, notifMsg, 'file_task', 'file_task', taskId]
+                        promises.push(
+                            pool.query(
+                                'INSERT INTO notifications (member_id, title, message, type, related_type, related_id) VALUES ($1,$2,$3,$4,$5,$6)',
+                                [member.id, taskTitle, notifMsg, 'file_task', 'file_task', taskId]
+                            ).then(() => console.log('[FileTask] Edit in-app sent to: ' + member.name))
                         );
                     }
 
                     if ((notifyType === 'email' || notifyType === 'both') && member.email) {
-                        try {
-                            const cfgResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_script_url'");
-                            const tokenResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_token'");
-                            const scriptUrl = cfgResult.rows[0]?.value;
-                            const token = tokenResult.rows[0]?.value || '';
+                        promises.push(
+                            (async () => {
+                                const cfgResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_script_url'");
+                                const tokenResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_token'");
+                                const scriptUrl = cfgResult.rows[0]?.value;
+                                const token = tokenResult.rows[0]?.value || '';
 
-                            if (scriptUrl && token) {
-                                await fetch(scriptUrl, {
-                                    method: 'POST',
-                                    body: JSON.stringify({
-                                        token: token,
-                                        action: 'sendEmail',
-                                        to: [member.email],
-                                        subject: '[Multitrade] ' + taskTitle,
-                                        htmlBody: '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">'
-                                            + '<div style="background:#f59e0b;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">'
-                                            + '<h2 style="margin:0;font-size:1.1rem">' + taskTitle + '</h2></div>'
-                                            + '<div style="background:#fff;border:1px solid #e5e7eb;padding:24px;border-radius:0 0 8px 8px">'
-                                            + (description ? '<p style="color:#374151;line-height:1.6">' + description.trim() + '</p>' : '')
-                                            + '<p style="color:#6b7280">Deadline: ' + deadlineStr + '</p>'
-                                            + '<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0">'
-                                            + '<p style="color:#9ca3af;font-size:.82rem">Multitrade Management System</p></div></div>'
-                                    }),
-                                    headers: { 'Content-Type': 'application/json' }
-                                });
-                            }
-                        } catch (emailErr) {
-                            console.error('[FileTask] Edit email failed for ' + member.email + ':', emailErr.message);
-                        }
+                                if (scriptUrl && token) {
+                                    await fetch(scriptUrl, {
+                                        method: 'POST',
+                                        body: JSON.stringify({
+                                            token: token,
+                                            action: 'sendEmail',
+                                            to: [member.email],
+                                            subject: '[Multitrade] ' + taskTitle,
+                                            htmlBody: '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">'
+                                                + '<div style="background:#f59e0b;color:#fff;padding:16px 24px;border-radius:8px 8px 0 0">'
+                                                + '<h2 style="margin:0;font-size:1.1rem">' + taskTitle + '</h2></div>'
+                                                + '<div style="background:#fff;border:1px solid #e5e7eb;padding:24px;border-radius:0 0 8px 8px">'
+                                                + (description ? '<p style="color:#374151;line-height:1.6">' + description.trim() + '</p>' : '')
+                                                + '<p style="color:#6b7280">Deadline: ' + deadlineStr + '</p>'
+                                                + '<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0">'
+                                                + '<p style="color:#9ca3af;font-size:.82rem">Multitrade Management System</p></div></div>'
+                                        }),
+                                        headers: { 'Content-Type': 'application/json' }
+                                    });
+                                    console.log('[FileTask] Edit email sent to: ' + member.email);
+                                }
+                            })().catch(err => console.error('[FileTask] Edit email failed for ' + member.email + ':', err.message))
+                        );
                     }
-
-                    console.log('[FileTask] Edit notify sent to: ' + member.name);
                 }
-                
+
+                await Promise.all(promises);
                 await pool.query('UPDATE file_tasks SET last_checked_at = NOW() WHERE id = $1', [taskId]);
 
             } catch (notifyErr) {
@@ -2666,8 +2658,13 @@ const checkOverdueTasks = async () => {
         for (const task of tasks.rows) {
             const lastChecked = task.last_checked_at ? new Date(task.last_checked_at) : null;
             const intervalMs = (task.check_interval_minutes || 30) * 60 * 1000;
+            const deadlineTime = new Date(task.deadline);
 
-            if (lastChecked && (now - lastChecked) < intervalMs) {
+            // ✅ 第一次 overdue：last_checked 在 deadline 之前（或没有）→ 立刻发
+            // ✅ 之后：严格按 interval 冷却
+            const isFirstOverdue = !lastChecked || lastChecked < deadlineTime;
+
+            if (!isFirstOverdue && (now - lastChecked) < intervalMs) {
                 console.log('[Scheduler] Overdue — cooldown for "' + task.title + '", skipping');
                 continue;
             }
@@ -2692,7 +2689,6 @@ const checkOverdueTasks = async () => {
             const pendingMembers = targetMembers.rows.filter(m => !submittedIds.has(m.id));
             if (pendingMembers.length === 0) continue;
 
-            // ✅ check email one time，take to outside cycle
             let scriptUrl = null, token = null;
             if (task.notify_type === 'email' || task.notify_type === 'both') {
                 const cfgResult = await pool.query("SELECT value FROM app_config WHERE key = 'drive_script_url'");
@@ -2707,11 +2703,9 @@ const checkOverdueTasks = async () => {
             const notifTitle = 'Overdue: ' + task.title;
             const notifMsg = 'The submission was due on ' + deadlineStr + '. Please submit ASAP.';
 
-            // ✅ collect all，and execute
             const promises = [];
 
             for (const member of pendingMembers) {
-                // In-app 通知
                 if (task.notify_type === 'inapp' || task.notify_type === 'both') {
                     promises.push(
                         pool.query(
@@ -2721,7 +2715,6 @@ const checkOverdueTasks = async () => {
                     );
                 }
 
-                // Email
                 if ((task.notify_type === 'email' || task.notify_type === 'both') && member.email && scriptUrl && token) {
                     promises.push(
                         fetch(scriptUrl, {
@@ -2747,9 +2740,7 @@ const checkOverdueTasks = async () => {
                 }
             }
 
-            // ✅ send all
             await Promise.all(promises);
-
             await pool.query('UPDATE file_tasks SET last_checked_at = $1 WHERE id = $2', [now, task.id]);
         }
     } catch (err) {

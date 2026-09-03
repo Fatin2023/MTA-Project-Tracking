@@ -49,6 +49,20 @@ const formatDateDMY = (dateStr) => {
     return parts.length !== 3 ? dateStr : `${parts[2]}/${parts[1]}/${parts[0]}`;
 };
 
+const toLocalDisplay = (utcStr) => {
+    if (!utcStr) return '—';
+    const d = new Date(utcStr);
+    const dateStr = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    const timeStr = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    return formatDateDMY(dateStr) + ' ' + timeStr;
+};
+
+const toLocalInput = (utcStr) => {
+    if (!utcStr) return '';
+    const d = new Date(utcStr);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + 'T' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+};
+
 const formatTime = (isoStr) =>
     isoStr ? new Date(isoStr).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' }) : '\u2014';
 

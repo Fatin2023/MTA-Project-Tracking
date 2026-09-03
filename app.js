@@ -7255,7 +7255,7 @@ const renderFileTasksList = () => {
             + '</div>';
     } else {
         tasksHtml = pageTasks.map(t => {
-            const deadline = new Date(t.deadline.replace('Z',''));
+            const deadline = new Date(t.deadline);
             const isOverdue = deadline < now && t.isActive;
             const progressPct = t.targetCount > 0 ? Math.round((t.submittedCount / t.targetCount) * 100) : 0;
             const deadlineColor = isOverdue ? 'var(--danger)' : 'var(--main-text)';
@@ -7277,7 +7277,7 @@ const renderFileTasksList = () => {
                 </div>
                 ${t.description ? `<div style="font-size:.82rem;color:var(--main-text3);margin-bottom:8px">${esc(t.description)}</div>` : ''}
                 <div style="display:flex;align-items:center;gap:16px;margin-bottom:8px;font-size:.82rem">
-                    <span style="color:${deadlineColor}"> Deadline: ${formatDateDMY(t.deadline?.replace('Z','').slice(0,10))} ${t.deadline?.replace('Z','').slice(11,16)}</span>
+                    <span style="color:${deadlineColor}"> Deadline: ${toLocalDisplay(t.deadline)}</span>
                     <span>Target: ${t.targetType === 'all' ? 'All Employees' : `${t.targetMemberIds.length} employees`}</span>
                     <span>Notify: ${t.notifyType === 'both' ? 'In-app + Email' : t.notifyType === 'email' ? 'Email only' : 'In-app only'}</span>
                 </div>
@@ -7463,8 +7463,8 @@ const editFileTask = id => {
         `<option value="${o.value}" ${o.value===t.checkIntervalMinutes?'selected':''}>${o.label}</option>`
     ).join('');
 
-    const dl = t.deadline ? t.deadline.slice(0, 16) : '';
-
+    const dl = toLocalInput(t.deadline);
+    
     showModal(`
     <div style="max-height:85vh;display:flex;flex-direction:column">
         <div style="flex-shrink:0">
@@ -7557,7 +7557,7 @@ const showTaskSubmissions = async id => {
     showModal(`
     <h3>Submissions: ${esc(task.title)}</h3>
     <div style="font-size:.85rem;color:var(--main-text3);margin-bottom:12px">
-        ${submittedCount} of ${totalCount} submitted · Deadline: ${formatDateDMY(task.deadline?.slice(0,10))} ${task.deadline?.slice(11,16)}
+        ${submittedCount} of ${totalCount} submitted · Deadline: ${toLocalDisplay(task.deadline)}
     </div>
     <div class="table-wrap"><table>
         <thead><tr><th>Employee</th><th>Email</th><th style="width:120px">Status</th></tr></thead>
