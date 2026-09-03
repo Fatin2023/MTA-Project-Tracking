@@ -1779,61 +1779,65 @@ app.get('/api/test-email', requireAuth, async (req, res) => {
 // ========================================
 app.get('/api/file-tasks', requireAuth, async (req, res) => {
     try {
-        const tasks = await pool.query('SELECT * FROM file_tasks ORDER BY created_at DESC');
-        const result = [];
+        // ✅ 第 1 次查询：拿所有 task + submission count
+        const tasks = await pool.query(`
+            SELECT ft.*,
+                COALESCE(sub.cnt, 0) as submitted_count
+            FROM file_tasks ft
+            LEFT JOIN (
+                SELECT task_id, COUNT(*) as cnt
+                FROM file_task_submissions
+                GROUP BY task_id
+            ) sub ON sub.task_id = ft.id
+            ORDER BY ft.created_at DESC
+        `);
 
-        for (const t of tasks.rows) {
-            // Count total targets
-            let targetCount = 0;
-            if (t.target_type === 'all') {
-                const mc = await pool.query(`SELECT COUNT(*) FROM members m
-                    JOIN users u ON u.member_id = m.id WHERE u.role = 'employee'`);
-                targetCount = parseInt(mc.rows[0].count);
-            } else {
-                targetCount = (t.target_member_ids || []).length;
-            }
+        // ✅ 第 2 次查询：employee 总数（所有 task 共用）
+        const empResult = await pool.query(
+            `SELECT COUNT(*) FROM members m JOIN users u ON u.member_id = m.id WHERE u.role = 'employee'`
+        );
+        const allEmployeeCount = parseInt(empResult.rows[0].count);
 
-            // Count submissions
-            const sc = await pool.query(
-                'SELECT COUNT(*) FROM file_task_submissions WHERE task_id = $1', [t.id]
-            );
-            const submittedCount = parseInt(sc.rows[0].count);
+        // ✅ 第 3 次查询：所有 submission 详情一次拉完
+        const allSubs = await pool.query(`
+            SELECT fts.*, m.name as member_name
+            FROM file_task_submissions fts
+            LEFT JOIN members m ON fts.member_id = m.id
+            ORDER BY fts.submitted_at DESC
+        `);
 
-            // Get submission details
-            const subs = await pool.query(`
-                SELECT fts.*, m.name as member_name
-                FROM file_task_submissions fts
-                LEFT JOIN members m ON fts.member_id = m.id
-                WHERE fts.task_id = $1
-                ORDER BY fts.submitted_at DESC
-            `, [t.id]);
+        // 按 task_id 分组
+        const subsMap = {};
+        allSubs.rows.forEach(s => {
+            if (!subsMap[s.task_id]) subsMap[s.task_id] = [];
+            subsMap[s.task_id].push(s);
+        });
 
-            result.push({
-                id: t.id,
-                title: t.title,
-                description: t.description || '',
-                deadline: t.deadline,
-                targetType: t.target_type,
-                targetMemberIds: t.target_member_ids || [],
-                notifyType: t.notify_type,
-                checkIntervalMinutes: t.check_interval_minutes,
-                lastCheckedAt: t.last_checked_at,
-                isActive: t.is_active,
-                createdBy: t.created_by,
-                createdAt: t.created_at,
-                targetCount,
-                submittedCount,
-                submissions: subs.rows.map(s => ({
-                    id: s.id,
-                    memberId: s.member_id,
-                    memberName: s.member_name,
-                    fileName: s.submitted_file_name,
-                    fileUrl: s.submitted_file_url,
-                    driveFileId: s.submitted_drive_file_id,
-                    submittedAt: s.submitted_at
-                }))
-            });
-        }
+        const result = tasks.rows.map(t => ({
+            id: t.id,
+            title: t.title,
+            description: t.description || '',
+            deadline: t.deadline,
+            targetType: t.target_type,
+            targetMemberIds: t.target_member_ids || [],
+            notifyType: t.notify_type,
+            checkIntervalMinutes: t.check_interval_minutes,
+            lastCheckedAt: t.last_checked_at,
+            isActive: t.is_active,
+            createdBy: t.created_by,
+            createdAt: t.created_at,
+            targetCount: t.target_type === 'all' ? allEmployeeCount : (t.target_member_ids || []).length,
+            submittedCount: parseInt(t.submitted_count),
+            submissions: (subsMap[t.id] || []).map(s => ({
+                id: s.id,
+                memberId: s.member_id,
+                memberName: s.member_name,
+                fileName: s.submitted_file_name,
+                fileUrl: s.submitted_file_url,
+                driveFileId: s.submitted_drive_file_id,
+                submittedAt: s.submitted_at
+            }))
+        }));
 
         res.json(result);
     } catch (err) {
@@ -2882,3 +2886,4 @@ app.listen(PORT, async () => {
 //   });
 //   Logger.log('Done! Permission granted.');
 // }
+//

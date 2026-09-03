@@ -7181,9 +7181,8 @@ const INTERVAL_OPTS = [
     { value: 1440, label: 'Every 24 hours' }
 ];
 
-const showFileTasksModal = async () => {
+const showFileTasksModal = () => {
     _editingFileTaskId = null;
-    await loadDB();
     renderFileTasksContent();
 };
 
