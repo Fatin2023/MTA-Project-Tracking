@@ -7181,15 +7181,15 @@ const INTERVAL_OPTS = [
     { value: 1440, label: 'Every 24 hours' }
 ];
 
-const showFileTasksModal = () => {
+const showFileTasksModal = async () => {
     _editingFileTaskId = null;
+    DB.fileTasks = await api('/file-tasks');
     renderFileTasksContent();
 };
 
-const renderFileTasksContent = async () => {
+const renderFileTasksContent = () => {
     _fileTasksPage = 1;
     _fileTasksSearch = '';
-    await loadDB();
 
     const tasks = DB.fileTasks || [];
     const activeCount = tasks.filter(t => t.isActive).length;
