@@ -7224,8 +7224,9 @@ const renderFileTasksList = () => {
     const filtered = search ? tasks.filter(t => {
         const deadlineStr = t.deadline ? formatDateDMY(t.deadline.replace('Z','').slice(0,10)) + ' ' + t.deadline.replace('Z','').slice(11,16) : '';
         const intervalLabel = (INTERVAL_OPTS.find(o => o.value === t.checkIntervalMinutes)?.label || t.checkIntervalMinutes + ' min');
-        const statusText = (t.submittedCount >= t.targetCount && t.targetCount > 0) ? 'completed'
-            : (new Date(t.deadline.replace('Z','')) < now) ? 'overdue'
+        const statusText = !t.isActive ? 'inactive'
+            : (t.submittedCount >= t.targetCount && t.targetCount > 0) ? 'completed'
+            : (new Date(t.deadline) < now) ? 'overdue'
             : (t.submittedCount > 0) ? 'in progress'
             : 'active';
         const targetText = t.targetType === 'all' ? 'all employees' : (t.targetMemberIds || []).length + ' employees';
@@ -7259,7 +7260,9 @@ const renderFileTasksList = () => {
             const isOverdue = deadline < now && t.isActive;
             const progressPct = t.targetCount > 0 ? Math.round((t.submittedCount / t.targetCount) * 100) : 0;
             const deadlineColor = isOverdue ? 'var(--danger)' : 'var(--main-text)';
-            const statusBadge = (t.submittedCount >= t.targetCount && t.targetCount > 0)
+            const statusBadge = !t.isActive
+                ? '<span style="color:var(--main-text3);background:var(--main-border);padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:600">INACTIVE</span>'
+                : (t.submittedCount >= t.targetCount && t.targetCount > 0)
                     ? '<span style="color:#fff;background:#6366f1;padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:600">COMPLETED</span>'
                     : isOverdue
                         ? '<span style="color:#fff;background:var(--danger);padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:600">OVERDUE</span>'
