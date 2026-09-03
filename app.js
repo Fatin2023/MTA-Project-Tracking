@@ -7369,7 +7369,7 @@ const showAddFileTask = () => {
                         <option value="email">Email only</option>
                     </select></div>
                 <div class="field"><label><input type="checkbox" id="ft-active" checked> Active</label></div>
-                <div class="field" style="grid-column:1/-1" id="ft-send-now-field"><label><input type="checkbox" id="ft-send-now" checked> Send notification immediately (Uncheck to send only after deadline)</label></div>
+                <div class="field" style="grid-column:1/-1" id="ft-send-now-field"><label><input type="checkbox" id="ft-send-now" checked> Send notification immediately (Uncheck to send after the deadline)</label></div>
             </div>
             <div style="margin-top:8px">
                 <label>Assign To</label>
