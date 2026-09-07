@@ -83,6 +83,7 @@ function handleLogin(e) {
             localStorage.setItem('multitrade_session', JSON.stringify(currentUser));
 
             if (window.clearSessionExpiredTimer) window.clearSessionExpiredTimer();
+            if (window.clearSessionOverlayHandler) window.clearSessionOverlayHandler();
             if (window.restartAutoLogout) window.restartAutoLogout();
 
             const isViewer = currentUser.role === 'viewer';
@@ -116,7 +117,7 @@ function handleLogin(e) {
                     adminNav('projects');
                 } else {
                     document.getElementById('employee-layout').classList.add('active');
-                    _noticesDismissed = false;  // ← 只在登录时弹一次
+                    _noticesDismissed = false;
                     empNav('attendance');
                     renderNoticeBanners();
                 }

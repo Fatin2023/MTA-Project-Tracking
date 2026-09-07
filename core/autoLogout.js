@@ -35,16 +35,30 @@
         sessionExpiredTimer = null;
     }
 
+    // ---------- 清除 overlay handler ----------
+    function removeOverlayHandler() {
+        const overlay = document.getElementById('modal-overlay');
+        if (overlay && window._sessionOverlayHandler) {
+            overlay.removeEventListener('click', window._sessionOverlayHandler);
+            window._sessionOverlayHandler = null;
+        }
+    }
+
     // ---------- 对外接口 ----------
     window.clearSessionExpiredTimer = function() {
         clearTimeout(sessionExpiredTimer);
         sessionExpiredTimer = null;
     };
 
+    window.clearSessionOverlayHandler = function() {
+        removeOverlayHandler();
+    };
+
     window.restartAutoLogout = function() {
-        clearAllTimers();       // 清掉所有残留定时器
-        startListening();       // 保证事件监听在（幂等，不会重复绑）
-        resetTimer();           // 启动倒计时
+        clearAllTimers();
+        removeOverlayHandler();     // ✅ 重启时先清旧 handler
+        startListening();
+        resetTimer();
     };
 
     // ---------- 自动登出执行 ----------
@@ -54,6 +68,7 @@
 
         stopListening();
         clearAllTimers();
+        removeOverlayHandler();     // ✅ 登出时清旧 handler
         currentUser = null;
 
         ['multitrade_session', 'multitrade_module',
@@ -76,7 +91,10 @@
         // ---------- 显示会话过期弹窗 ----------
         const goToLogin = () => {
             clearAllTimers();
+            removeOverlayHandler();     // ✅ 跳转前清 handler
+
             hideModal();
+
             document.querySelectorAll('.app-layout').forEach(el => {
                 el.classList.remove('active');
                 el.style.visibility = '';
@@ -101,14 +119,12 @@
 
         document.getElementById('session-expired-btn').onclick = goToLogin;
 
+        // ✅ 命名引用，确保能 removeEventListener
         const overlay = document.getElementById('modal-overlay');
-        const overlayClickHandler = (e) => {
-            if (e.target === overlay) {
-                overlay.removeEventListener('click', overlayClickHandler);
-                goToLogin();
-            }
+        window._sessionOverlayHandler = (e) => {
+            if (e.target === overlay) goToLogin();
         };
-        overlay.addEventListener('click', overlayClickHandler);
+        overlay.addEventListener('click', window._sessionOverlayHandler);
 
         // 后备：5 秒后若用户未操作则自动跳转
         sessionExpiredTimer = setTimeout(() => {
