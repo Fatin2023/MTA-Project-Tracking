@@ -6132,11 +6132,14 @@ const clearNoticeSelection = () => {
     updateNoticeBulkBar();
 };
 
+let _bulkDeleteNoticeIds = [];
+
 const bulkDeleteNotices = () => {
     const checked = document.querySelectorAll('.notice-cb:checked');
     const ids = Array.from(checked).map(cb => parseInt(cb.value));
     if (ids.length === 0) return;
 
+    _bulkDeleteNoticeIds = ids;
     const notices = ids.map(id => (DB.fileNotices||[]).find(n => n.id === id)).filter(Boolean);
 
     showModal(`<h3>Delete Announces</h3>
@@ -6159,20 +6162,18 @@ const bulkDeleteNotices = () => {
 };
 
 const doBulkDeleteNotices = async () => {
-    const checked = document.querySelectorAll('.notice-cb:checked');
-    const ids = Array.from(checked).map(cb => parseInt(cb.value));
-
     const btn = document.getElementById('bulk-delete-notice-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Deleting...'; }
 
     let success = 0;
-    for (const id of ids) {
+    for (const id of _bulkDeleteNoticeIds) {
         try {
             await api('/file-notices/' + id, { method: 'DELETE' });
             success++;
         } catch (e) {}
     }
 
+    _bulkDeleteNoticeIds = [];
     await loadDB();
     renderNoticesModalContent();
 };
@@ -7578,11 +7579,14 @@ const clearTaskSelection = () => {
     updateTaskBulkBar();
 };
 
+let _bulkDeleteTaskIds = [];
+
 const bulkDeleteTasks = () => {
     const checked = document.querySelectorAll('.task-cb:checked');
     const ids = Array.from(checked).map(cb => parseInt(cb.value));
     if (ids.length === 0) return;
 
+    _bulkDeleteTaskIds = ids;
     const tasks = ids.map(id => (DB.fileTasks||[]).find(t => t.id === id)).filter(Boolean);
 
     showModal(`<h3>Delete Tasks</h3>
@@ -7599,27 +7603,26 @@ const bulkDeleteTasks = () => {
             </div>`).join('')}
         </div>
         <div class="btns">
-            <button class="btn btn-ghost" onclick="renderFileTasksContent()">Cancel</button>
+            <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
             <button class="btn btn-danger" id="bulk-delete-task-btn" onclick="doBulkDeleteTasks()">Delete ${tasks.length} Task${tasks.length>1?'s':''}</button>
         </div>`);
 };
 
 const doBulkDeleteTasks = async () => {
-    const checked = document.querySelectorAll('.task-cb:checked');
-    const ids = Array.from(checked).map(cb => parseInt(cb.value));
-
     const btn = document.getElementById('bulk-delete-task-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Deleting...'; }
 
     let success = 0;
-    for (const id of ids) {
+    for (const id of _bulkDeleteTaskIds) {
         try {
             await api('/file-tasks/' + id, { method: 'DELETE' });
             success++;
         } catch (e) {}
     }
 
+    _bulkDeleteTaskIds = [];
     await loadDB();
+    hideModal();
     renderFileTasksContent();
 };
 
