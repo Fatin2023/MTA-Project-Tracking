@@ -3492,21 +3492,22 @@ const renderEmpFileTable = () => {
     (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name; });
 
     const myMemberId = currentUser.memberId || null;
+    const hasOwnFiles = page.some(f => myMemberId && f.uploadedBy === myMemberId);
 
     const rows = filtered.length === 0
-        ? '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No files found</td></tr>'
+        ? `<tr><td colspan="${hasOwnFiles ? 11 : 10}" style="text-align:center;color:var(--main-text3);padding:30px">No files found</td></tr>`
         : page.map((f, idx) => {
             const driveName = f.driveSettingId ? (driveNameMap[f.driveSettingId] || '—') : '—';
-            const canEdit = myMemberId && f.uploadedBy === myMemberId;
-            const canDelete = myMemberId && f.uploadedBy === myMemberId;
+            const isOwn = myMemberId && f.uploadedBy === myMemberId;
             const displayTitle = f.title ? esc(f.title) : '<span style="color:var(--main-text3)">—</span>';
             const actions = `<div class="actions-cell">
                 <button class="btn-icon" title="Preview" onclick="empPreviewFile(${f.id})">&#128065;</button>
                 <button class="btn-icon" title="Open in Drive" onclick="window.open('${esc(f.url)}','_blank')">&#8599;</button>
-                ${canEdit ? `<button class="btn-icon" title="Edit" onclick="showEmpEditFileModal(${f.id})">&#9998;</button>` : ''}
-                ${canDelete ? `<button class="btn-icon danger" title="Delete" onclick="empConfirmDeleteFile(${f.id})">&#10005;</button>` : ''}
+                ${isOwn ? `<button class="btn-icon" title="Edit" onclick="showEmpEditFileModal(${f.id})">&#9998;</button>` : ''}
+                ${isOwn ? `<button class="btn-icon danger" title="Delete" onclick="empConfirmDeleteFile(${f.id})">&#10005;</button>` : ''}
             </div>`;
             return `<tr>
+                ${hasOwnFiles ? `<td>${isOwn ? `<input type="checkbox" class="emp-file-cb" value="${f.id}" onchange="updateEmpBulkDeleteBar()">` : ''}</td>` : ''}
                 <td style="font-family:var(--font-m);color:var(--main-text3)">${start+idx+1}</td>
                 <td title="${esc(f.title||'')}">${displayTitle}</td>
                 <td>${getFileTypeIcon(f.name)} <strong>${esc(f.name)}</strong></td>
@@ -3525,14 +3526,108 @@ const renderEmpFileTable = () => {
         { label: 'files', sizes: [10, 25, 50] });
 
     document.getElementById('emp-file-table-area').innerHTML = `
+        ${hasOwnFiles ? `<div id="emp-bulk-delete-bar" style="display:none;margin-bottom:10px;padding:10px 16px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:var(--radius);align-items:center;gap:12px">
+            <span id="emp-bulk-delete-count" style="font-size:.85rem;color:var(--main-text)">0 selected</span>
+            <button class="btn btn-danger btn-sm" onclick="bulkDeleteEmpFiles()">Delete Selected</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearEmpFileSelection()">Clear Selection</button>
+        </div>` : ''}
         <div class="table-wrap"><table>
-            <thead><tr><th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:150px">Actions</th></tr></thead>
+            <thead><tr>
+                ${hasOwnFiles ? '<th style="width:40px"><input type="checkbox" onchange="toggleAllEmpFiles(this.checked)"></th>' : ''}
+                <th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:150px">Actions</th>
+            </tr></thead>
             <tbody>${rows}</tbody>
         </table></div>${pagHtml}`;
 };
 
 const goEmpFilePage = p => { const tp=Math.ceil(empFileFilteredData.length/empFilePageSize)||1; empFileCurrentPage=Math.max(1,Math.min(p,tp)); renderEmpFileTable(); };
 const changeEmpFilePageSize = s => { empFilePageSize=parseInt(s); empFileCurrentPage=1; renderEmpFileTable(); };
+
+// ✅ Bulk delete for employee files (own files only)
+const toggleAllEmpFiles = (checked) => {
+    document.querySelectorAll('.emp-file-cb').forEach(cb => cb.checked = checked);
+    updateEmpBulkDeleteBar();
+};
+
+const updateEmpBulkDeleteBar = () => {
+    const count = document.querySelectorAll('.emp-file-cb:checked').length;
+    const bar = document.getElementById('emp-bulk-delete-bar');
+    const countEl = document.getElementById('emp-bulk-delete-count');
+    if (bar) bar.style.display = count > 0 ? 'flex' : 'none';
+    if (countEl) countEl.textContent = count + ' selected';
+};
+
+const clearEmpFileSelection = () => {
+    document.querySelectorAll('.emp-file-cb').forEach(cb => cb.checked = false);
+    const headerCb = document.querySelector('#emp-file-table-area thead input[type="checkbox"]');
+    if (headerCb) headerCb.checked = false;
+    updateEmpBulkDeleteBar();
+};
+
+const bulkDeleteEmpFiles = () => {
+    const checked = document.querySelectorAll('.emp-file-cb:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+    if (ids.length === 0) return;
+
+    const myMemberId = currentUser.memberId;
+    const files = ids.map(id => (DB.files||[]).find(f => f.id === id)).filter(Boolean);
+    const ownFiles = files.filter(f => f.uploadedBy === myMemberId);
+
+    if (ownFiles.length === 0) return;
+
+    showModal(`<h3>Delete My Files</h3>
+        <p style="color:var(--main-text2);line-height:1.6;margin-bottom:12px">
+            Are you sure you want to delete ${ownFiles.length} file${ownFiles.length>1?'s':''}? This will also remove them from Google Drive.
+        </p>
+        <div style="max-height:250px;overflow-y:auto;margin-bottom:20px">
+            ${ownFiles.map(f => `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--main-bg);border:1px solid var(--main-border);border-left:3px solid var(--danger);border-radius:var(--radius);margin-bottom:6px">
+                ${getFileTypeIcon(f.name)}
+                <div style="flex:1;min-width:0">
+                    <div style="font-weight:600;font-size:.88rem;color:var(--main-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(f.name)}</div>
+                    ${f.title ? `<div style="font-size:.78rem;color:var(--main-text3)">${esc(f.title)}</div>` : ''}
+                </div>
+                <span style="font-size:.78rem;color:var(--main-text3)">${formatFileSize(f.size)}</span>
+            </div>`).join('')}
+        </div>
+        <div class="btns">
+            <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
+            <button class="btn btn-danger" id="bulk-delete-emp-btn" onclick="doBulkDeleteEmpFiles()">Delete ${ownFiles.length} File${ownFiles.length>1?'s':''}</button>
+        </div>`);
+};
+
+const doBulkDeleteEmpFiles = async () => {
+    const checked = document.querySelectorAll('.emp-file-cb:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+    const myMemberId = currentUser.memberId;
+    const ownFiles = ids.map(id => (DB.files||[]).find(f => f.id === id)).filter(f => f && f.uploadedBy === myMemberId);
+
+    const btn = document.getElementById('bulk-delete-emp-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting...'; }
+
+    let success = 0, failed = 0;
+    for (const file of ownFiles) {
+        try {
+            const drive = (DB.driveSettings||[]).find(d => d.id === file.driveSettingId);
+            if (drive && file.driveFileId) {
+                await api('/delete-drive-file', { method: 'POST', body: { fileId: file.driveFileId } }).catch(() => {});
+            }
+            await api('/files/' + file.id, { method: 'DELETE' });
+            success++;
+        } catch (e) {
+            failed++;
+        }
+    }
+
+    await loadDB();
+    applyEmpFileFilter();
+    hideModal();
+
+    if (failed > 0) {
+        showToast(`${success} deleted, ${failed} failed`, 'error');
+    } else {
+        showToast(`${success} file${success>1?'s':''} deleted`);
+    }
+};
 
 // ---------- Employee Multiple Upload ----------
 const showEmpUploadFile = () => {
@@ -5998,6 +6093,7 @@ const renderPaginatedNoticeList = (list) => {
             ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#16a34a"></span>'
             : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--main-text3)"></span>';
         return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--main-bg);border-radius:var(--radius);border:1px solid var(--main-border);margin-bottom:6px">
+            <input type="checkbox" class="notice-cb" value="${n.id}" onchange="updateNoticeBulkBar()">
             ${statusDot}
             <div style="flex:1;min-width:0">
                 <div style="font-weight:600;font-size:.88rem;color:var(--main-text)">${esc(n.title)}</div>
@@ -6011,11 +6107,74 @@ const renderPaginatedNoticeList = (list) => {
         </div>`;
     }).join('');
 
+    const bulkBar = `<div id="notice-bulk-bar" style="display:none;margin-bottom:10px;padding:10px 16px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:var(--radius);align-items:center;gap:12px">
+        <span id="notice-bulk-count" style="font-size:.85rem;color:var(--main-text)">0 selected</span>
+        <button class="btn btn-danger btn-sm" onclick="bulkDeleteNotices()">Delete Selected</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearNoticeSelection()">Clear</button>
+    </div>`;
+
     const pagHtml = buildPagination(list.length, _modalNoticePage, _modalNoticePageSize,
         'goModalNoticePage', 'changeModalNoticePageSize',
         { label: 'notices', sizes: [3, 5, 10, 25] });
 
-    return cards + pagHtml;
+    return bulkBar + cards + pagHtml;
+};
+const updateNoticeBulkBar = () => {
+    const count = document.querySelectorAll('.notice-cb:checked').length;
+    const bar = document.getElementById('notice-bulk-bar');
+    const countEl = document.getElementById('notice-bulk-count');
+    if (bar) bar.style.display = count > 0 ? 'flex' : 'none';
+    if (countEl) countEl.textContent = count + ' selected';
+};
+
+const clearNoticeSelection = () => {
+    document.querySelectorAll('.notice-cb').forEach(cb => cb.checked = false);
+    updateNoticeBulkBar();
+};
+
+const bulkDeleteNotices = () => {
+    const checked = document.querySelectorAll('.notice-cb:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+    if (ids.length === 0) return;
+
+    const notices = ids.map(id => (DB.fileNotices||[]).find(n => n.id === id)).filter(Boolean);
+
+    showModal(`<h3>Delete Announces</h3>
+        <p style="color:var(--main-text2);line-height:1.6;margin-bottom:12px">
+            Are you sure you want to delete ${notices.length} announce${notices.length>1?'s':''}?
+        </p>
+        <div style="max-height:250px;overflow-y:auto;margin-bottom:20px">
+            ${notices.map(n => `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--main-bg);border:1px solid var(--main-border);border-left:3px solid var(--danger);border-radius:var(--radius);margin-bottom:6px">
+                <div style="flex:1;min-width:0">
+                    <div style="font-weight:600;font-size:.88rem;color:var(--main-text)">${esc(n.title)}</div>
+                    ${n.message ? `<div style="font-size:.78rem;color:var(--main-text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(n.message)}</div>` : ''}
+                </div>
+                <span style="font-size:.78rem;color:var(--main-text3)">${n.targetType === 'all' ? 'All' : (n.targetMemberNames||[]).length + ' people'}</span>
+            </div>`).join('')}
+        </div>
+        <div class="btns">
+            <button class="btn btn-ghost" onclick="renderNoticesModalContent()">Cancel</button>
+            <button class="btn btn-danger" id="bulk-delete-notice-btn" onclick="doBulkDeleteNotices()">Delete ${notices.length} Announce${notices.length>1?'s':''}</button>
+        </div>`);
+};
+
+const doBulkDeleteNotices = async () => {
+    const checked = document.querySelectorAll('.notice-cb:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+
+    const btn = document.getElementById('bulk-delete-notice-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting...'; }
+
+    let success = 0;
+    for (const id of ids) {
+        try {
+            await api('/file-notices/' + id, { method: 'DELETE' });
+            success++;
+        } catch (e) {}
+    }
+
+    await loadDB();
+    renderNoticesModalContent();
 };
 
 const filterNoticeList = () => {
@@ -6315,8 +6474,10 @@ const renderFileTable = () => {
     const driveNameMap = {};
     (DB.driveSettings||[]).forEach(d => { driveNameMap[d.id] = d.name; });
 
+    const canBulk = currentUser.role !== 'viewer';
+
     const rows = filtered.length === 0
-        ? '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No files found</td></tr>'
+        ? `<tr><td colspan="${canBulk ? 11 : 10}" style="text-align:center;color:var(--main-text3);padding:30px">No files found</td></tr>`
         : page.map((f, idx) => {
             const canEdit = currentUser.role !== 'viewer';
             const canDelete = currentUser.role !== 'viewer';
@@ -6329,6 +6490,7 @@ const renderFileTable = () => {
                 ${canDelete ? `<button class="btn-icon danger" title="Delete" onclick="confirmDeleteFile(${f.id})">&#10005;</button>` : ''}
             </div>`;
             return `<tr>
+                ${canBulk ? `<td><input type="checkbox" class="file-cb" value="${f.id}" onchange="updateBulkDeleteBar()"></td>` : ''}
                 <td style="font-family:var(--font-m);color:var(--main-text3)">${start+idx+1}</td>
                 <td title="${esc(f.title||'')}">${displayTitle}</td>
                 <td>${getFileTypeIcon(f.name)} <strong>${esc(f.name)}</strong></td>
@@ -6345,16 +6507,103 @@ const renderFileTable = () => {
     const pagHtml = buildPagination(filtered.length, fileCurrentPage, filePageSize,
         'goFilePage', 'changeFilePageSize',
         { label: 'files', sizes: [10, 25, 50] });
-        
+
     document.getElementById('files-table-area').innerHTML = `
+        ${canBulk ? `<div id="bulk-delete-bar" style="display:none;margin-bottom:10px;padding:10px 16px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:var(--radius);align-items:center;gap:12px">
+            <span id="bulk-delete-count" style="font-size:.85rem;color:var(--main-text)">0 selected</span>
+            <button class="btn btn-danger btn-sm" onclick="bulkDeleteFiles()">Delete Selected</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearFileSelection()">Clear Selection</button>
+        </div>` : ''}
         <div class="table-wrap"><table>
-            <thead><tr><th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:150px">Actions</th></tr></thead>
+            <thead><tr>
+                ${canBulk ? '<th style="width:40px"><input type="checkbox" onchange="toggleAllFiles(this.checked)"></th>' : ''}
+                <th style="width:50px">No</th><th>Title</th><th>File Name</th><th style="width:80px">Type</th><th style="width:90px;text-align:right">Size</th><th>Drive Folder</th><th>Remark</th><th>Uploaded By</th><th>Date</th><th style="width:150px">Actions</th>
+            </tr></thead>
             <tbody>${rows}</tbody>
         </table></div>${pagHtml}`;
 };
 
 const goFilePage = p => { const tp=Math.ceil(fileFilteredData.length/filePageSize)||1; fileCurrentPage=Math.max(1,Math.min(p,tp)); renderFileTable(); };
 const changeFilePageSize = s => { filePageSize=parseInt(s); fileCurrentPage=1; renderFileTable(); };
+
+// ✅ 全选/取消全选
+const toggleAllFiles = (checked) => {
+    document.querySelectorAll('.file-cb').forEach(cb => cb.checked = checked);
+    updateBulkDeleteBar();
+};
+
+// ✅ 更新批量删除栏
+const updateBulkDeleteBar = () => {
+    const count = document.querySelectorAll('.file-cb:checked').length;
+    const bar = document.getElementById('bulk-delete-bar');
+    const countEl = document.getElementById('bulk-delete-count');
+    if (bar) bar.style.display = count > 0 ? 'flex' : 'none';
+    if (countEl) countEl.textContent = count + ' selected';
+};
+
+// ✅ 清除选择
+const clearFileSelection = () => {
+    document.querySelectorAll('.file-cb').forEach(cb => cb.checked = false);
+    const headerCb = document.querySelector('#files-table-area thead input[type="checkbox"]');
+    if (headerCb) headerCb.checked = false;
+    updateBulkDeleteBar();
+};
+
+// ✅ 批量删除
+const bulkDeleteFiles = () => {
+    const checked = document.querySelectorAll('.file-cb:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+    if (ids.length === 0) return;
+
+    const files = ids.map(id => (DB.files||[]).find(f => f.id === id)).filter(Boolean);
+
+    showModal(`<h3>Delete Files</h3>
+        <p style="color:var(--main-text2);line-height:1.6;margin-bottom:12px">
+            Are you sure you want to delete ${files.length} file${files.length>1?'s':''}? This will also remove them from Google Drive.
+        </p>
+        <div style="max-height:250px;overflow-y:auto;margin-bottom:20px">
+            ${files.map(f => `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--main-bg);border:1px solid var(--main-border);border-left:3px solid var(--danger);border-radius:var(--radius);margin-bottom:6px">
+                ${getFileTypeIcon(f.name)}
+                <div style="flex:1;min-width:0">
+                    <div style="font-weight:600;font-size:.88rem;color:var(--main-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(f.name)}</div>
+                    ${f.title ? `<div style="font-size:.78rem;color:var(--main-text3)">${esc(f.title)}</div>` : ''}
+                </div>
+                <span style="font-size:.78rem;color:var(--main-text3)">${formatFileSize(f.size)}</span>
+            </div>`).join('')}
+        </div>
+        <div class="btns">
+            <button class="btn btn-ghost" onclick="hideModal()">Cancel</button>
+            <button class="btn btn-danger" id="bulk-delete-confirm-btn" onclick="doBulkDeleteFiles()">Delete ${files.length} File${files.length>1?'s':''}</button>
+        </div>`);
+};
+
+const doBulkDeleteFiles = async () => {
+    const checked = document.querySelectorAll('.file-cb:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+
+    const btn = document.getElementById('bulk-delete-confirm-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting...'; }
+
+    let success = 0, failed = 0;
+    for (const id of ids) {
+        try {
+            await api('/files/' + id, { method: 'DELETE' });
+            success++;
+        } catch (e) {
+            failed++;
+        }
+    }
+
+    await loadDB();
+    applyFileFilter();
+    hideModal();
+
+    if (failed > 0) {
+        showToast(`${success} deleted, ${failed} failed`, 'error');
+    } else {
+        showToast(`${success} file${success>1?'s':''} deleted`);
+    }
+};
 
 // ---------- Admin Multiple Upload ----------
 const showUploadFile = () => {
@@ -7274,6 +7523,7 @@ const renderFileTasksList = () => {
 
             return `<div style="background:var(--main-bg);border:1px solid var(--main-border);border-radius:var(--radius);padding:14px 18px;margin-bottom:8px">
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                    <input type="checkbox" class="task-cb" value="${t.id}" onchange="updateTaskBulkBar()">
                     ${statusBadge}
                     <strong style="font-size:.92rem;color:var(--main-text);flex:1">${esc(t.title)}</strong>
                     <span style="font-size:.78rem;color:var(--main-text3)">${intervalLabel}</span>
@@ -7299,14 +7549,78 @@ const renderFileTasksList = () => {
         }).join('');
     }
 
+    const bulkBar = `<div id="task-bulk-bar" style="display:none;margin-bottom:10px;padding:10px 16px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:var(--radius);align-items:center;gap:12px">
+        <span id="task-bulk-count" style="font-size:.85rem;color:var(--main-text)">0 selected</span>
+        <button class="btn btn-danger btn-sm" onclick="bulkDeleteTasks()">Delete Selected</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearTaskSelection()">Clear</button>
+    </div>`;
+
     const listEl = document.getElementById('file-tasks-list-area');
-    if (listEl) listEl.innerHTML = tasksHtml;
+    if (listEl) listEl.innerHTML = bulkBar + tasksHtml;
 
     const pagHtml = buildPagination(totalFiltered, _fileTasksPage, _fileTasksPageSize,
         'goFileTasksPage', 'changeFileTasksPageSize',
         { label: 'tasks', sizes: [5, 10, 25] });
     const pagEl = document.getElementById('file-tasks-pag-area');
     if (pagEl) pagEl.innerHTML = pagHtml;
+};
+
+const updateTaskBulkBar = () => {
+    const count = document.querySelectorAll('.task-cb:checked').length;
+    const bar = document.getElementById('task-bulk-bar');
+    const countEl = document.getElementById('task-bulk-count');
+    if (bar) bar.style.display = count > 0 ? 'flex' : 'none';
+    if (countEl) countEl.textContent = count + ' selected';
+};
+
+const clearTaskSelection = () => {
+    document.querySelectorAll('.task-cb').forEach(cb => cb.checked = false);
+    updateTaskBulkBar();
+};
+
+const bulkDeleteTasks = () => {
+    const checked = document.querySelectorAll('.task-cb:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+    if (ids.length === 0) return;
+
+    const tasks = ids.map(id => (DB.fileTasks||[]).find(t => t.id === id)).filter(Boolean);
+
+    showModal(`<h3>Delete Tasks</h3>
+        <p style="color:var(--main-text2);line-height:1.6;margin-bottom:12px">
+            Are you sure you want to delete ${tasks.length} task${tasks.length>1?'s':''}? This will also delete all submissions.
+        </p>
+        <div style="max-height:250px;overflow-y:auto;margin-bottom:20px">
+            ${tasks.map(t => `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--main-bg);border:1px solid var(--main-border);border-left:3px solid var(--danger);border-radius:var(--radius);margin-bottom:6px">
+                <div style="flex:1;min-width:0">
+                    <div style="font-weight:600;font-size:.88rem;color:var(--main-text)">${esc(t.title)}</div>
+                    ${t.description ? `<div style="font-size:.78rem;color:var(--main-text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(t.description)}</div>` : ''}
+                </div>
+                <span style="font-size:.78rem;color:var(--main-text3)">${t.submittedCount||0}/${t.targetCount||0} submitted</span>
+            </div>`).join('')}
+        </div>
+        <div class="btns">
+            <button class="btn btn-ghost" onclick="renderFileTasksContent()">Cancel</button>
+            <button class="btn btn-danger" id="bulk-delete-task-btn" onclick="doBulkDeleteTasks()">Delete ${tasks.length} Task${tasks.length>1?'s':''}</button>
+        </div>`);
+};
+
+const doBulkDeleteTasks = async () => {
+    const checked = document.querySelectorAll('.task-cb:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+
+    const btn = document.getElementById('bulk-delete-task-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting...'; }
+
+    let success = 0;
+    for (const id of ids) {
+        try {
+            await api('/file-tasks/' + id, { method: 'DELETE' });
+            success++;
+        } catch (e) {}
+    }
+
+    await loadDB();
+    renderFileTasksContent();
 };
 
 const goFileTasksPage = page => {
