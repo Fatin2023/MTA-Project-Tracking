@@ -4210,6 +4210,8 @@ const renderEmpSettings = () => {
                     <span style="font-weight:500;color:var(--main-text)">${esc(currentUser.username || '—')}</span>
                     <span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Name</span>
                     <span style="font-weight:500;color:var(--main-text)">${esc(member.name)}</span>
+                    <span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Email</span>
+                    <span style="font-weight:500;color:var(--main-text)">${member.email ? esc(member.email) : '<span style="color:var(--main-text3)">—</span>'}</span>
                     <span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Position</span>
                     <span style="font-weight:500;color:var(--main-text)">${esc(posName)}</span>
                     <span style="font-size:.82rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em">Department</span>
