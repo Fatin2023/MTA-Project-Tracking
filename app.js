@@ -4371,6 +4371,7 @@ const buildFilterItemOpts = scopeId => {
 const buildAttEmpOpts = (scopeIds, itemIds) => {
     if ((!scopeIds || !scopeIds.length) && (!itemIds || !itemIds.length)) {
         return getNonViewerMembers()
+            .filter(m => m.role === 'employee')  // ✅ 只要 employee
             .sort((a, b) => a.name.localeCompare(b.name))
             .map(m => ({ value: m.id, label: m.name }));
     }
@@ -4387,8 +4388,9 @@ const buildAttEmpOpts = (scopeIds, itemIds) => {
         if (a.projectId && projectIds.includes(a.projectId)) memberIds.add(a.memberId);
     });
     const viewerIds = getViewerMemberIds();
+    const adminIds = new Set(DB.members.filter(m => m.role === 'admin').map(m => m.id));  // ✅
     return [...memberIds]
-        .filter(mid => !viewerIds.includes(mid))
+        .filter(mid => !viewerIds.includes(mid) && !adminIds.has(mid))  // ✅ 排除 admin
         .map(mid => DB.members.find(m => m.id === mid))
         .filter(Boolean)
         .sort((a, b) => a.name.localeCompare(b.name))
@@ -4582,6 +4584,10 @@ const applyAdminAttendanceFilter = () => {
     const viewerMemberIds = new Set(getViewerMemberIds());
     filtered = filtered.filter(a => !viewerMemberIds.has(a.memberId));
 
+    // ✅ 排除 admin
+    const adminMemberIds = new Set(DB.members.filter(m => m.role === 'admin').map(m => m.id));
+    filtered = filtered.filter(a => !adminMemberIds.has(a.memberId));
+
     const viewerScopeIds = getViewerVisibleScopeIds();
     if (viewerScopeIds !== null) {
         const vpIds = new Set(DB.projects.filter(p => p.categoryId && viewerScopeIds.includes(p.categoryId)).map(p => p.id));
@@ -4769,7 +4775,7 @@ const showAdminAddAttendance = () => {
     </div>`);
 
     setTimeout(() => {
-        const memberOpts = getNonViewerMembers().map(m => ({ value: m.id, label: m.name }));
+        const memberOpts = getNonViewerMembers().filter(m => m.role === 'employee').map(m => ({ value: m.id, label: m.name }));
         ssCreate('ss-att-member', memberOpts, '-- Select Employee --');
 
         const scopeOpts = scopeList.map(s => ({ value: s.id, label: s.name }));
@@ -5214,6 +5220,7 @@ var _adminRptInitialLoad = false;
 const buildAdminRptEmpOpts = (scopeIds, itemIds) => {
     if ((!scopeIds || !scopeIds.length) && (!itemIds || !itemIds.length)) {
         return getNonViewerMembers()
+            .filter(m => m.role === 'employee')  // ✅ 只要 employee
             .sort((a, b) => a.name.localeCompare(b.name))
             .map(m => ({ value: m.id, label: m.name }));
     }
@@ -5230,8 +5237,9 @@ const buildAdminRptEmpOpts = (scopeIds, itemIds) => {
         if (a.projectId && projectIds.includes(a.projectId)) memberIds.add(a.memberId);
     });
     const viewerIds = getViewerMemberIds();
+    const adminIds = new Set(DB.members.filter(m => m.role === 'admin').map(m => m.id));  // ✅
     return [...memberIds]
-        .filter(mid => !viewerIds.includes(mid))
+        .filter(mid => !viewerIds.includes(mid) && !adminIds.has(mid))  // ✅ 排除 admin
         .map(mid => DB.members.find(m => m.id === mid))
         .filter(Boolean)
         .sort((a, b) => a.name.localeCompare(b.name))
@@ -5355,6 +5363,8 @@ const resetReport = () => {
 };
 
 // ---------- Generate Report ----------
+let rptMissingPage = 1, rptMissingPageSize = 10, rptMissingData_cache = [];
+
 const generateReport = () => {
     const fromDate = document.getElementById('rpt-from')?.value;
     const toDate = document.getElementById('rpt-to')?.value;
@@ -5413,13 +5423,11 @@ const generateReport = () => {
         totalMs += ms;
         totalCost += cost;
 
-        // Overall standard: once per member+day
         if (!countedDays.has(dayKey)) {
             countedDays.add(dayKey);
             totalStandardMs += standardMs;
         }
 
-        // Item map
         const pid = r.projectId || 0;
         if (!itemMap.has(pid)) itemMap.set(pid, { cost: 0, ms: 0, otMs: 0, standardMs: 0, entries: 0, members: new Set(), days: new Set(), _countedDays: new Set() });
         const is = itemMap.get(pid);
@@ -5429,13 +5437,11 @@ const generateReport = () => {
             is.standardMs += standardMs;
         }
 
-        // Scope map
         const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
         const sid = proj?.categoryId || 0;
         if (!scopeMap.has(sid)) scopeMap.set(sid, { cost: 0 });
         scopeMap.get(sid).cost += cost;
 
-        // Emp map
         if (!empMap.has(r.memberId)) empMap.set(r.memberId, { cost: 0, ms: 0, otMs: 0, standardMs: 0, entries: 0, days: new Set() });
         const es = empMap.get(r.memberId);
         es.cost += cost; es.ms += ms; es.entries++; es.days.add(r.date);
@@ -5444,34 +5450,23 @@ const generateReport = () => {
             es.standardMs += standardMs;
         }
 
-        // Monthly map
         const month = r.date.substring(0, 7);
         if (!monthlyMap.has(month)) monthlyMap.set(month, { ms: 0, otMs: 0, cost: 0 });
         const mStats = monthlyMap.get(month);
         mStats.ms += ms; mStats.cost += cost;
 
-        // Group for daily OT
         if (!entryByDay.has(dayKey)) entryByDay.set(dayKey, { entries: [], standardMs });
         entryByDay.get(dayKey).entries.push(r);
 
-        // Time detail (OT placeholder)
         const member = DB.members.find(m => m.id === r.memberId);
         const dayNum = new Date(r.date).getDay();
         const scope = proj?.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
         const projectLabel = proj ? (scope ? `${scope.name} → ${proj.name}` : proj.name) : '\u2014';
         timeDetails.push({
-            date: r.date,
-            dayOfWeek: DAY_NAMES[dayNum],
-            memberId: r.memberId,
-            name: member ? member.name : 'Unknown',
-            dept: member ? getDeptName(member.departmentId) : '\u2014',
-            clockIn: r.clockIn,
-            clockOut: r.clockOut,
-            hours,
-            standardHours: stdHrs,
-            ot: 0,
-            entryId: r.id,
-            project: projectLabel
+            date: r.date, dayOfWeek: DAY_NAMES[dayNum], memberId: r.memberId,
+            name: member ? member.name : 'Unknown', dept: member ? getDeptName(member.departmentId) : '\u2014',
+            clockIn: r.clockIn, clockOut: r.clockOut, hours, standardHours: stdHrs, ot: 0,
+            entryId: r.id, project: projectLabel
         });
     });
 
@@ -5529,6 +5524,76 @@ const generateReport = () => {
             <div class="stat-card${ac}"><div class="stat-label">Active Categories</div><div class="stat-value">${scopeMap.size}</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Active ID/Name</div><div class="stat-value">${itemMap.size}</div></div>
         </div>`;
+
+    // ========== Missing Attendance Detection ==========
+        const holidayDates = new Set((DB.publicHolidays || []).map(h => h.date));
+    let checkMembers;
+    if (empIds.length) {
+        checkMembers = DB.members.filter(m => empIds.includes(m.id));
+    } else if (deptIds.length) {
+        checkMembers = DB.members.filter(m => deptIds.includes(m.departmentId));
+    } else {
+        checkMembers = [...DB.members];
+    }
+    checkMembers = checkMembers.filter(m => !viewerMemberIds.has(m.id) && m.role === 'employee');
+
+    // ✅ Debug: check department data structure
+    console.log('[Missing] departments:', DB.departments);
+    if (checkMembers.length > 0) {
+        const sampleDept = DB.departments.find(d => d.id === checkMembers[0].departmentId);
+        console.log('[Missing] sample dept:', sampleDept);
+    }
+
+    const saturdayWorkerIds = new Set();
+    checkMembers.forEach(m => {
+        const dept = DB.departments.find(d => d.id === m.departmentId);
+        if (dept && dept.workDaysPerWeek >= 6) saturdayWorkerIds.add(m.id);
+    });
+
+    console.log('[Missing] saturdayWorkerIds:', [...saturdayWorkerIds]);
+
+    const allAttInRange = new Map();
+    DB.attendance.filter(a => a.date >= fromDate && a.date <= toDate).forEach(a => {
+        allAttInRange.set(a.memberId + '_' + a.date, true);
+    });
+
+    const missedMap = new Map();
+    const cur = new Date(fromDate + 'T00:00:00');
+    const endD = new Date(toDate + 'T00:00:00');
+    while (cur <= endD) {
+        const y = cur.getFullYear();
+        const mo = String(cur.getMonth() + 1).padStart(2, '0');
+        const dy = String(cur.getDate()).padStart(2, '0');
+        const ds = `${y}-${mo}-${dy}`;
+        const dow = cur.getDay();
+
+        if (dow !== 0 && !holidayDates.has(ds)) {
+            for (const m of checkMembers) {
+                if (dow === 6 && !saturdayWorkerIds.has(m.id)) continue;
+                if (!allAttInRange.has(m.id + '_' + ds)) {
+                    if (!missedMap.has(m.id)) {
+                        missedMap.set(m.id, {
+                            memberId: m.id,
+                            name: m.name || 'Unknown',
+                            dept: getDeptName(m.departmentId) || '—',
+                            missedDays: []
+                        });
+                    }
+                    missedMap.get(m.id).missedDays.push(ds);
+                }
+            }
+        }
+        cur.setDate(cur.getDate() + 1);
+    }
+
+    rptMissingData_cache = [...missedMap.values()].sort((a, b) => b.missedDays.length - a.missedDays.length);
+    const totalMissedDays = rptMissingData_cache.reduce((s, r) => s + r.missedDays.length, 0);
+
+    const statsGrid = document.querySelector('#rpt-stats .stats-grid');
+    if (statsGrid) {
+        statsGrid.innerHTML += `
+            <div class="stat-card${ac}"><div class="stat-label">Missing Key-in</div><div class="stat-value" style="color:${rptMissingData_cache.length > 0 ? 'var(--danger)' : 'var(--ok)'}">${rptMissingData_cache.length} emp / ${totalMissedDays} days</div></div>`;
+    }
 
     // Charts
     const palette = ['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
@@ -5588,7 +5653,7 @@ const generateReport = () => {
             <div style="min-width:600px;height:280px"><canvas id="chart-emp-hours"></canvas></div>
         </div>`;
 
-    // Item Summary cache (no Util)
+    // Item Summary cache
     rptItemData_cache = sortedItems.map(([pid, stats]) => {
         const proj = pid ? DB.projects.find(p => p.id === pid) : null;
         const scope = proj?.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
@@ -5605,7 +5670,7 @@ const generateReport = () => {
         return { label, cdHtml, days: stats.days.size, members: stats.members.size, entries: stats.entries, hours: stats.ms, otMs: stats.otMs, cost: stats.cost };
     });
 
-    // Employee Summary cache (with Util — accurate per employee)
+    // Employee Summary cache
     rptEmpData_cache = empSorted.map(([mid, stats]) => {
         const member = DB.members.find(m => m.id === mid);
         const util = stats.standardMs > 0 ? (stats.ms / stats.standardMs * 100) : 0;
@@ -5613,13 +5678,8 @@ const generateReport = () => {
             name: member ? esc(member.name) : 'Unknown',
             pos: member ? esc(getPositionName(member.positionId)) : '\u2014',
             dept: member ? esc(getDeptName(member.departmentId)) : '\u2014',
-            entries: stats.entries,
-            days: stats.days.size,
-            ms: stats.ms,
-            otMs: stats.otMs,
-            util,
-            cost: stats.cost,
-            rate: fmtHourlyRate(member)
+            entries: stats.entries, days: stats.days.size, ms: stats.ms,
+            otMs: stats.otMs, util, cost: stats.cost, rate: fmtHourlyRate(member)
         };
     });
 
@@ -5628,12 +5688,15 @@ const generateReport = () => {
         <div id="rpt-item-table-area"></div>
         <div class="section-head" style="margin-top:24px"><h2>Employee Summary</h2></div>
         <div id="rpt-emp-table-area"></div>
+        <div class="section-head" style="margin-top:24px"><h2>Missing Attendance</h2></div>
+        <div id="rpt-missing-table-area"></div>
         <div class="section-head" style="margin-top:24px"><h2>Time Detail</h2></div>
         <div id="rpt-time-table-area"></div>`;
 
-    rptItemPage = 1; rptEmpPage = 1; rptTimePage = 1;
+    rptItemPage = 1; rptEmpPage = 1; rptMissingPage = 1; rptTimePage = 1;
     renderRptItemTable(rptItemData_cache);
     renderRptEmpTable(rptEmpData_cache);
+    renderRptMissingTable(rptMissingData_cache);
     renderRptTimeTable(rptTimeData_cache);
 
     // Chart.js
@@ -5665,6 +5728,55 @@ const generateReport = () => {
         options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
             scales: { x: { beginAtZero: true, ticks: { color: chartTextColor, callback: v => v + 'h' }, grid: { color: chartGridColor } }, y: { ticks: { color: chartTextColor, font: { size: 11 } }, grid: { display: false } } } }
     });
+};
+
+// ---------- Missing Attendance Table ----------
+const renderRptMissingTable = data => {
+    const totalPages = Math.ceil(data.length / rptMissingPageSize) || 1;
+    if (rptMissingPage > totalPages) rptMissingPage = totalPages;
+    if (rptMissingPage < 1) rptMissingPage = 1;
+    const start = (rptMissingPage - 1) * rptMissingPageSize;
+    const page = data.slice(start, start + rptMissingPageSize);
+
+    const rows = data.length === 0
+        ? '<tr><td colspan="4" style="text-align:center;color:var(--ok);padding:30px">All employees have keyed in attendance</td></tr>'
+        : page.map(r => {
+            const dateTags = r.missedDays.map(d => {
+                const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d + 'T00:00:00').getDay()];
+                const color = dow === 'Mon' ? '#ef4444' : dow === 'Fri' ? '#f59e0b' : dow === 'Sat' ? '#8b5cf6' : 'var(--main-text3)';
+                return '<span style="display:inline-block;background:var(--main-bg);border:1px solid var(--main-border);border-radius:4px;padding:2px 6px;margin:1px;font-size:.72rem;font-family:var(--font-m);white-space:nowrap">' + formatDateDMY(d) + ' <span style="color:' + color + '">' + dow + '</span></span>';
+            }).join('');
+            return '<tr>'
+                + '<td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.name || '') + '">' + (r.name || 'Unknown') + '</td>'
+                + '<td style="white-space:nowrap">' + (r.dept || '—') + '</td>'
+                + '<td style="text-align:center;font-family:var(--font-m);color:var(--danger);font-weight:600;white-space:nowrap">' + r.missedDays.length + '</td>'
+                + '<td><div style="overflow-x:auto;white-space:nowrap;padding:4px 0">' + dateTags + '</div></td>'
+                + '</tr>';
+        }).join('');
+
+    document.getElementById('rpt-missing-table-area').innerHTML = ''
+        + '<div class="table-wrap"><table style="table-layout:fixed;width:100%">'
+        + '<thead><tr>'
+        + '<th style="width:150px">Employee</th>'
+        + '<th style="width:120px">Department</th>'
+        + '<th style="text-align:center;width:80px">Missed</th>'
+        + '<th>Missed Dates</th>'
+        + '</tr></thead>'
+        + '<tbody>' + rows + '</tbody>'
+        + '</table></div>'
+        + buildRptPagination(data.length, rptMissingPage, rptMissingPageSize, 'goRptMissingPage', 'changeRptMissingPageSize');
+};
+
+const goRptMissingPage = page => {
+    const tp = Math.ceil(rptMissingData_cache.length / rptMissingPageSize) || 1;
+    rptMissingPage = Math.max(1, Math.min(page, tp));
+    renderRptMissingTable(rptMissingData_cache);
+};
+
+const changeRptMissingPageSize = size => {
+    rptMissingPageSize = parseInt(size);
+    rptMissingPage = 1;
+    renderRptMissingTable(rptMissingData_cache);
 };
 
 // ---------- Item Summary Table ----------
@@ -5809,6 +5921,7 @@ const goRptTimePage = page => {
 };
 const changeRptTimePageSize = size => { rptTimePageSize = parseInt(size); rptTimePage = 1; renderRptTimeTable(rptTimeData_cache); };
 
+// ---------- Export Excel ----------
 const exportReportExcel = () => {
     if (!rptItemData_cache.length && !rptEmpData_cache.length && !rptTimeData_cache.length) {
         alert('No data to export');
@@ -5826,7 +5939,7 @@ const exportReportExcel = () => {
     rows.push(['Report: ' + fromDate + ' to ' + toDate]);
     rows.push([]);
 
-    // Section 1: Category Summary (no Util%)
+    // Section 1: Category Summary
     rows.push(['CATEGORY SUMMARY']);
     rows.push(['Category \u2192 ID/Name', 'Countdown', 'Days', 'Members', 'Entries', 'Duration', 'OT', 'Cost']);
     if (rptItemData_cache.length) {
@@ -5838,7 +5951,7 @@ const exportReportExcel = () => {
     rows.push([]);
     rows.push([]);
 
-    // Section 2: Employee Summary (with Util%)
+    // Section 2: Employee Summary
     rows.push(['EMPLOYEE SUMMARY']);
     rows.push(['Employee', 'Position', 'Department', 'Entries', 'Days', 'Duration', 'OT', 'Util%', 'Cost', 'Rate']);
     if (rptEmpData_cache.length) {
@@ -5850,17 +5963,34 @@ const exportReportExcel = () => {
     rows.push([]);
     rows.push([]);
 
-    // Section 3: Time Detail
+    // Section 3: Missing Attendance
+    rows.push(['MISSING ATTENDANCE']);
+    rows.push(['Employee', 'Department', 'Total Missed', 'Date', 'Day']);
+    if (rptMissingData_cache.length) {
+        rptMissingData_cache.forEach(r => {
+            r.missedDays.forEach((d, i) => {
+                const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d + 'T00:00:00').getDay()];
+                rows.push([
+                    i === 0 ? (r.name || 'Unknown') : '',
+                    i === 0 ? (r.dept || '—') : '',
+                    i === 0 ? r.missedDays.length : '',
+                    d,
+                    dow
+                ]);
+            });
+        });
+    } else { rows.push(['All employees have keyed in', '', '', '', '']); }
+
+    rows.push([]);
+    rows.push([]);
+
+    // Section 4: Time Detail
     rows.push(['TIME DETAIL']);
     rows.push(['Date', 'Day', 'Employee', 'Department', 'Category \u2192 ID/Name', 'Clock In', 'Clock Out', 'Duration', 'Standard', 'OT']);
     if (rptTimeData_cache.length) {
         rptTimeData_cache.forEach(r => {
             rows.push([
-                r.date,
-                r.dayOfWeek,
-                r.name,
-                r.dept,
-                r.project,
+                r.date, r.dayOfWeek, r.name, r.dept, r.project,
                 r.clockIn ? formatTime(r.clockIn) : '\u2014',
                 r.clockOut ? formatTime(r.clockOut) : '\u2014',
                 formatDuration(r.hours * 3600000),
