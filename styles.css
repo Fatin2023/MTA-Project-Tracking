@@ -875,6 +875,7 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
 .stat-anim:nth-child(6){animation-delay:.30s}
 .stat-anim:nth-child(7){animation-delay:.35s}
 .stat-anim:nth-child(8){animation-delay:.40s}
+.stat-anim:nth-child(9){animation-delay:.45s}
 @keyframes statFadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
 
 .stat-anim .stat-value{animation:statCount .4s ease forwards}
