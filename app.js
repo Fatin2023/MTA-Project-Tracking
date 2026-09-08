@@ -2472,7 +2472,7 @@ const showToast = message => {
 let empRptItemPage = 1, empRptItemPageSize = 10, empRptItemData_cache = [];
 let empRptEmpPage = 1, empRptEmpPageSize = 10, empRptEmpData_cache = [];
 let empRptTimePage = 1, empRptTimePageSize = 10, empRptTimeData_cache = [];
-let empRptMissingPage = 1, empRptMissingPageSize = 10, empRptMissingData_cache = [];
+let empRptMissingPage = 1, empRptMissingPageSize = 5, empRptMissingData_cache = [];
 var _empRptInitialLoad = false;
 
 // ---------- helpers ----------
@@ -3085,32 +3085,27 @@ const renderEmpRptMissingTable = data => {
     const start = (empRptMissingPage - 1) * empRptMissingPageSize;
     const page = data.slice(start, start + empRptMissingPageSize);
 
-    const rows = data.length === 0
-        ? '<tr><td colspan="4" style="text-align:center;color:var(--ok);padding:30px">All employees have keyed in attendance</td></tr>'
+    const cards = data.length === 0
+        ? '<div style="text-align:center;color:var(--ok);padding:30px">All employees have keyed in attendance</div>'
         : page.map(r => {
             const dateTags = r.missedDays.map(d => {
                 const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d + 'T00:00:00').getDay()];
                 const color = dow === 'Mon' ? '#ef4444' : dow === 'Fri' ? '#f59e0b' : dow === 'Sat' ? '#8b5cf6' : 'var(--main-text3)';
-                return '<span style="display:inline-block;background:var(--main-bg);border:1px solid var(--main-border);border-radius:4px;padding:2px 6px;margin:1px;font-size:.72rem;font-family:var(--font-m);white-space:nowrap">' + formatDateDMY(d) + ' <span style="color:' + color + '">' + dow + '</span></span>';
+                return '<span style="display:inline-block;background:var(--main-bg);border:1px solid var(--main-border);border-radius:4px;padding:2px 6px;margin:2px;font-size:.72rem;font-family:var(--font-m)">' + formatDateDMY(d) + ' <span style="color:' + color + '">' + dow + '</span></span>';
             }).join('');
-            return '<tr>'
-                + '<td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.name || '') + '">' + (r.name || 'Unknown') + '</td>'
-                + '<td style="white-space:nowrap">' + (r.dept || '—') + '</td>'
-                + '<td style="text-align:center;font-family:var(--font-m);color:var(--danger);font-weight:600;white-space:nowrap">' + r.missedDays.length + '</td>'
-                + '<td><div style="overflow-x:auto;white-space:nowrap;padding:4px 0">' + dateTags + '</div></td>'
-                + '</tr>';
+            return '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px">'
+                + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
+                + '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+                + '<span style="font-weight:600;font-size:.92rem">' + (r.name || 'Unknown') + '</span>'
+                + '<span style="font-size:.78rem;color:var(--main-text3)">' + (r.dept || '—') + '</span>'
+                + '</div>'
+                + '<span style="font-family:var(--font-m);color:var(--danger);font-weight:600;font-size:.88rem">' + r.missedDays.length + ' missed</span>'
+                + '</div>'
+                + '<div>' + dateTags + '</div>'
+                + '</div>';
         }).join('');
 
-    document.getElementById('emp-rpt-missing-table-area').innerHTML = ''
-        + '<div class="table-wrap"><table style="table-layout:fixed;width:100%">'
-        + '<thead><tr>'
-        + '<th style="width:150px">Employee</th>'
-        + '<th style="width:120px">Department</th>'
-        + '<th style="text-align:center;width:80px">Missed</th>'
-        + '<th>Missed Dates</th>'
-        + '</tr></thead>'
-        + '<tbody>' + rows + '</tbody>'
-        + '</table></div>'
+    document.getElementById('emp-rpt-missing-table-area').innerHTML = cards
         + buildRptPagination(data.length, empRptMissingPage, empRptMissingPageSize, 'goEmpRptMissingPage', 'changeEmpRptMissingPageSize');
 };
 
@@ -5464,7 +5459,7 @@ const resetReport = () => {
 };
 
 // ---------- Generate Report ----------
-let rptMissingPage = 1, rptMissingPageSize = 10, rptMissingData_cache = [];
+let rptMissingPage = 1, rptMissingPageSize = 5, rptMissingData_cache = [];
 
 const generateReport = () => {
     const fromDate = document.getElementById('rpt-from')?.value;
@@ -5839,32 +5834,27 @@ const renderRptMissingTable = data => {
     const start = (rptMissingPage - 1) * rptMissingPageSize;
     const page = data.slice(start, start + rptMissingPageSize);
 
-    const rows = data.length === 0
-        ? '<tr><td colspan="4" style="text-align:center;color:var(--ok);padding:30px">All employees have keyed in attendance</td></tr>'
+    const cards = data.length === 0
+        ? '<div style="text-align:center;color:var(--ok);padding:30px">All employees have keyed in attendance</div>'
         : page.map(r => {
             const dateTags = r.missedDays.map(d => {
                 const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d + 'T00:00:00').getDay()];
                 const color = dow === 'Mon' ? '#ef4444' : dow === 'Fri' ? '#f59e0b' : dow === 'Sat' ? '#8b5cf6' : 'var(--main-text3)';
-                return '<span style="display:inline-block;background:var(--main-bg);border:1px solid var(--main-border);border-radius:4px;padding:2px 6px;margin:1px;font-size:.72rem;font-family:var(--font-m);white-space:nowrap">' + formatDateDMY(d) + ' <span style="color:' + color + '">' + dow + '</span></span>';
+                return '<span style="display:inline-block;background:var(--main-bg);border:1px solid var(--main-border);border-radius:4px;padding:2px 6px;margin:2px;font-size:.72rem;font-family:var(--font-m)">' + formatDateDMY(d) + ' <span style="color:' + color + '">' + dow + '</span></span>';
             }).join('');
-            return '<tr>'
-                + '<td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.name || '') + '">' + (r.name || 'Unknown') + '</td>'
-                + '<td style="white-space:nowrap">' + (r.dept || '—') + '</td>'
-                + '<td style="text-align:center;font-family:var(--font-m);color:var(--danger);font-weight:600;white-space:nowrap">' + r.missedDays.length + '</td>'
-                + '<td><div style="overflow-x:auto;white-space:nowrap;padding:4px 0">' + dateTags + '</div></td>'
-                + '</tr>';
+            return '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px">'
+                + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
+                + '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+                + '<span style="font-weight:600;font-size:.92rem">' + (r.name || 'Unknown') + '</span>'
+                + '<span style="font-size:.78rem;color:var(--main-text3)">' + (r.dept || '—') + '</span>'
+                + '</div>'
+                + '<span style="font-family:var(--font-m);color:var(--danger);font-weight:600;font-size:.88rem">' + r.missedDays.length + ' missed</span>'
+                + '</div>'
+                + '<div>' + dateTags + '</div>'
+                + '</div>';
         }).join('');
 
-    document.getElementById('rpt-missing-table-area').innerHTML = ''
-        + '<div class="table-wrap"><table style="table-layout:fixed;width:100%">'
-        + '<thead><tr>'
-        + '<th style="width:150px">Employee</th>'
-        + '<th style="width:120px">Department</th>'
-        + '<th style="text-align:center;width:80px">Missed</th>'
-        + '<th>Missed Dates</th>'
-        + '</tr></thead>'
-        + '<tbody>' + rows + '</tbody>'
-        + '</table></div>'
+    document.getElementById('rpt-missing-table-area').innerHTML = cards
         + buildRptPagination(data.length, rptMissingPage, rptMissingPageSize, 'goRptMissingPage', 'changeRptMissingPageSize');
 };
 

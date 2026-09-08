@@ -1887,7 +1887,7 @@ app.post('/api/file-tasks', requireEdit, async (req, res) => {
                     }
                 }
 
-                const deadlineStr = new Date(deadline).toLocaleString('en-GB', {
+                const deadlineStr = new Date(deadline).toLocaleDateString('en-GB', {
                     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
                 });
                 const notifTitle = title.trim();
@@ -1981,7 +1981,7 @@ app.put('/api/file-tasks/:id', requireEdit, async (req, res) => {
                     }
                 }
 
-                const deadlineStr = new Date(deadline).toLocaleString('en-GB', {
+                const deadlineStr = new Date(deadline).toLocaleDateString('en-GB', {
                     day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
                 });
                 const notifMsg = description
@@ -2697,7 +2697,7 @@ const checkOverdueTasks = async () => {
                 token = tokenResult.rows[0]?.value || '';
             }
 
-            const deadlineStr = new Date(task.deadline).toLocaleString('en-GB', {
+            const deadlineStr = new Date(task.deadline).toLocaleDateString('en-GB', {
                 day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
             });
             const notifTitle = 'Overdue: ' + task.title;
@@ -2799,7 +2799,7 @@ const checkUpcomingTasks = async () => {
                 token = tokenResult.rows[0]?.value || '';
             }
 
-            const deadlineStr = new Date(task.deadline).toLocaleString('en-GB', {
+            const deadlineStr = new Date(task.deadline).toLocaleDateString('en-GB', {
                 day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
             });
             const notifTitle = task.title;
