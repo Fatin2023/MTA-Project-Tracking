@@ -2472,6 +2472,7 @@ const showToast = message => {
 let empRptItemPage = 1, empRptItemPageSize = 10, empRptItemData_cache = [];
 let empRptEmpPage = 1, empRptEmpPageSize = 10, empRptEmpData_cache = [];
 let empRptTimePage = 1, empRptTimePageSize = 10, empRptTimeData_cache = [];
+let empRptMissingPage = 1, empRptMissingPageSize = 10, empRptMissingData_cache = [];
 var _empRptInitialLoad = false;
 
 // ---------- helpers ----------
@@ -2723,67 +2724,50 @@ const generateEmpReport = () => {
         totalMs += ms;
         totalCost += cost;
 
-        // Overall standard: once per member+day
         if (!countedDays.has(dayKey)) {
             countedDays.add(dayKey);
             totalStandardMs += standardMs;
         }
 
-        // Item map
         const pid = r.projectId || 0;
         if (!itemMap.has(pid)) itemMap.set(pid, { cost: 0, ms: 0, otMs: 0, standardMs: 0, entries: 0, members: new Set(), days: new Set(), _countedDays: new Set() });
         const is = itemMap.get(pid);
         is.cost += cost; is.ms += ms; is.entries++; is.members.add(r.memberId); is.days.add(r.date);
-        // Item standard: once per member+day per item
         if (!is._countedDays.has(dayKey)) {
             is._countedDays.add(dayKey);
             is.standardMs += standardMs;
         }
 
-        // Scope map
         const proj = r.projectId ? DB.projects.find(p => p.id === r.projectId) : null;
         const sid = proj?.categoryId || 0;
         if (!scopeMap.has(sid)) scopeMap.set(sid, { cost: 0 });
         scopeMap.get(sid).cost += cost;
 
-        // Emp map
         if (!empMap.has(r.memberId)) empMap.set(r.memberId, { cost: 0, ms: 0, otMs: 0, standardMs: 0, entries: 0, days: new Set() });
         const es = empMap.get(r.memberId);
         es.cost += cost; es.ms += ms; es.entries++; es.days.add(r.date);
-        // Emp standard: once per day per employee
         if (!empCountedDays.has(dayKey)) {
             empCountedDays.add(dayKey);
             es.standardMs += standardMs;
         }
 
-        // Monthly map
         const month = r.date.substring(0, 7);
         if (!monthlyMap.has(month)) monthlyMap.set(month, { ms: 0, otMs: 0, cost: 0 });
         const mStats = monthlyMap.get(month);
         mStats.ms += ms; mStats.cost += cost;
 
-        // Group for daily OT
         if (!entryByDay.has(dayKey)) entryByDay.set(dayKey, { entries: [], standardMs });
         entryByDay.get(dayKey).entries.push(r);
 
-        // Time detail
         const member = DB.members.find(m => m.id === r.memberId);
         const dayNum = new Date(r.date).getDay();
         const scope = proj?.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
         const projectLabel = proj ? (scope ? `${scope.name} → ${proj.name}` : proj.name) : '\u2014';
         timeDetails.push({
-            date: r.date,
-            dayOfWeek: DAY_NAMES[dayNum],
-            memberId: r.memberId,
-            name: member ? member.name : 'Unknown',
-            dept: member ? getDeptName(member.departmentId) : '\u2014',
-            clockIn: r.clockIn,
-            clockOut: r.clockOut,
-            hours,
-            standardHours: stdHrs,
-            ot: 0,
-            entryId: r.id,
-            project: projectLabel
+            date: r.date, dayOfWeek: DAY_NAMES[dayNum], memberId: r.memberId,
+            name: member ? member.name : 'Unknown', dept: member ? getDeptName(member.departmentId) : '\u2014',
+            clockIn: r.clockIn, clockOut: r.clockOut, hours, standardHours: stdHrs, ot: 0,
+            entryId: r.id, project: projectLabel
         });
     });
 
@@ -2841,6 +2825,64 @@ const generateEmpReport = () => {
             <div class="stat-card${ac}"><div class="stat-label">Active Categories</div><div class="stat-value">${scopeMap.size}</div></div>
             <div class="stat-card${ac}"><div class="stat-label">Active ID/Name</div><div class="stat-value">${itemMap.size}</div></div>
         </div>`;
+
+    // ========== Missing Attendance Detection ==========
+    const holidayDates = new Set((DB.publicHolidays || []).map(h => h.date));
+    let checkMembers = picMemberIds.map(mid => DB.members.find(m => m.id === mid)).filter(m => m && m.role === 'employee');
+    if (empIds.length) {
+        checkMembers = checkMembers.filter(m => empIds.includes(m.id));
+    }
+    if (deptIds.length) {
+        checkMembers = checkMembers.filter(m => deptIds.includes(m.departmentId));
+    }
+
+    const saturdayWorkerIds = new Set();
+    checkMembers.forEach(m => {
+        const dept = DB.departments.find(d => d.id === m.departmentId);
+        if (dept && dept.workDaysPerWeek >= 6) saturdayWorkerIds.add(m.id);
+    });
+
+    const allAttInRange = new Map();
+    DB.attendance.filter(a => a.date >= fromDate && a.date <= toDate).forEach(a => {
+        allAttInRange.set(a.memberId + '_' + a.date, true);
+    });
+
+    const missedMap = new Map();
+    const cur = new Date(fromDate + 'T00:00:00');
+    const endD = new Date(toDate + 'T00:00:00');
+    while (cur <= endD) {
+        const y = cur.getFullYear();
+        const mo = String(cur.getMonth() + 1).padStart(2, '0');
+        const dy = String(cur.getDate()).padStart(2, '0');
+        const ds = `${y}-${mo}-${dy}`;
+        const dow = cur.getDay();
+        if (dow !== 0 && !holidayDates.has(ds)) {
+            for (const m of checkMembers) {
+                if (dow === 6 && !saturdayWorkerIds.has(m.id)) continue;
+                if (!allAttInRange.has(m.id + '_' + ds)) {
+                    if (!missedMap.has(m.id)) {
+                        missedMap.set(m.id, {
+                            memberId: m.id,
+                            name: m.name || 'Unknown',
+                            dept: getDeptName(m.departmentId) || '—',
+                            missedDays: []
+                        });
+                    }
+                    missedMap.get(m.id).missedDays.push(ds);
+                }
+            }
+        }
+        cur.setDate(cur.getDate() + 1);
+    }
+
+    empRptMissingData_cache = [...missedMap.values()].sort((a, b) => b.missedDays.length - a.missedDays.length);
+    const totalMissedDays = empRptMissingData_cache.reduce((s, r) => s + r.missedDays.length, 0);
+
+    const statsGrid = document.querySelector('#emp-rpt-stats .stats-grid');
+    if (statsGrid) {
+        statsGrid.innerHTML += `
+            <div class="stat-card${ac}"><div class="stat-label">Missing Key-in</div><div class="stat-value" style="color:${empRptMissingData_cache.length > 0 ? 'var(--danger)' : 'var(--ok)'}">${empRptMissingData_cache.length} emp / ${totalMissedDays} days</div></div>`;
+    }
 
     // Chart data
     const palette = ['#3b82f6','#ef4444','#22c55e','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
@@ -2924,13 +2966,8 @@ const generateEmpReport = () => {
             name: member ? esc(member.name) : 'Unknown',
             pos: member ? esc(getPositionName(member.positionId)) : '\u2014',
             dept: member ? esc(getDeptName(member.departmentId)) : '\u2014',
-            entries: stats.entries,
-            days: stats.days.size,
-            ms: stats.ms,
-            otMs: stats.otMs,
-            util,
-            cost: stats.cost,
-            rate: fmtHourlyRate(member)
+            entries: stats.entries, days: stats.days.size, ms: stats.ms,
+            otMs: stats.otMs, util, cost: stats.cost, rate: fmtHourlyRate(member)
         };
     });
 
@@ -2939,12 +2976,15 @@ const generateEmpReport = () => {
         <div id="emp-rpt-item-table-area"></div>
         <div class="section-head" style="margin-top:24px"><h2>Employee Summary</h2></div>
         <div id="emp-rpt-emp-table-area"></div>
+        <div class="section-head" style="margin-top:24px"><h2>Missing Attendance</h2></div>
+        <div id="emp-rpt-missing-table-area"></div>
         <div class="section-head" style="margin-top:24px"><h2>Time Detail</h2></div>
         <div id="emp-rpt-time-table-area"></div>`;
 
-    empRptItemPage = 1; empRptEmpPage = 1; empRptTimePage = 1;
+    empRptItemPage = 1; empRptEmpPage = 1; empRptMissingPage = 1; empRptTimePage = 1;
     renderEmpRptItemTable(empRptItemData_cache);
     renderEmpRptEmpTable(empRptEmpData_cache);
+    renderEmpRptMissingTable(empRptMissingData_cache);
     renderEmpRptTimeTable(empRptTimeData_cache);
 
     // Render charts
@@ -2953,8 +2993,7 @@ const generateEmpReport = () => {
         type: 'bar',
         data: { labels: itemLabels, datasets: [{ label: 'Cost (RM)', data: itemData, backgroundColor: itemColors, borderRadius: 6, maxBarThickness: 50 }] },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true, ticks: { color: chartTextColor, callback: v => 'RM' + v }, grid: { color: chartGridColor } }, x: { ticks: { color: chartTextColor, maxRotation: 45, font: { size: 10 } }, grid: { display: false } } }
-        }
+            scales: { y: { beginAtZero: true, ticks: { color: chartTextColor, callback: v => 'RM' + v }, grid: { color: chartGridColor } }, x: { ticks: { color: chartTextColor, maxRotation: 45, font: { size: 10 } }, grid: { display: false } } } }
     });
 
     new Chart(document.getElementById('emp-chart-scope-cost'), {
@@ -2971,16 +3010,14 @@ const generateEmpReport = () => {
             { label: 'Cost (RM)', data: monthCostData, type: 'line', borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', pointRadius: 4, pointBackgroundColor: '#ef4444', tension: 0.3, yAxisID: 'y1', fill: true }
         ] },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: chartTextColor, usePointStyle: true, padding: 16 } } },
-            scales: { y: { beginAtZero: true, position: 'left', ticks: { color: chartTextColor, callback: v => v + 'h' }, grid: { color: chartGridColor } }, y1: { beginAtZero: true, position: 'right', ticks: { color: '#ef4444', callback: v => 'RM' + v }, grid: { drawOnChartArea: false } }, x: { ticks: { color: chartTextColor }, grid: { display: false } } }
-        }
+            scales: { y: { beginAtZero: true, position: 'left', ticks: { color: chartTextColor, callback: v => v + 'h' }, grid: { color: chartGridColor } }, y1: { beginAtZero: true, position: 'right', ticks: { color: '#ef4444', callback: v => 'RM' + v }, grid: { drawOnChartArea: false } }, x: { ticks: { color: chartTextColor }, grid: { display: false } } } }
     });
 
     new Chart(document.getElementById('emp-chart-emp-hours'), {
         type: 'bar',
         data: { labels: empLabels, datasets: [{ label: 'Hours', data: empData, backgroundColor: 'rgba(34,197,94,0.7)', borderRadius: 6, maxBarThickness: 30 }] },
         options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
-            scales: { x: { beginAtZero: true, ticks: { color: chartTextColor, callback: v => v + 'h' }, grid: { color: chartGridColor } }, y: { ticks: { color: chartTextColor, font: { size: 11 } }, grid: { display: false } } }
-        }
+            scales: { x: { beginAtZero: true, ticks: { color: chartTextColor, callback: v => v + 'h' }, grid: { color: chartGridColor } }, y: { ticks: { color: chartTextColor, font: { size: 11 } }, grid: { display: false } } } }
     });
 };
 
@@ -3040,6 +3077,43 @@ const renderEmpRptEmpTable = (data) => {
         ${buildRptPagination(data.length, empRptEmpPage, empRptEmpPageSize, 'goEmpRptEmpPage', 'changeEmpRptEmpPageSize')}`;
 };
 
+// ---------- Missing Attendance Table ----------
+const renderEmpRptMissingTable = data => {
+    const totalPages = Math.ceil(data.length / empRptMissingPageSize) || 1;
+    if (empRptMissingPage > totalPages) empRptMissingPage = totalPages;
+    if (empRptMissingPage < 1) empRptMissingPage = 1;
+    const start = (empRptMissingPage - 1) * empRptMissingPageSize;
+    const page = data.slice(start, start + empRptMissingPageSize);
+
+    const rows = data.length === 0
+        ? '<tr><td colspan="4" style="text-align:center;color:var(--ok);padding:30px">All employees have keyed in attendance</td></tr>'
+        : page.map(r => {
+            const dateTags = r.missedDays.map(d => {
+                const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d + 'T00:00:00').getDay()];
+                const color = dow === 'Mon' ? '#ef4444' : dow === 'Fri' ? '#f59e0b' : dow === 'Sat' ? '#8b5cf6' : 'var(--main-text3)';
+                return '<span style="display:inline-block;background:var(--main-bg);border:1px solid var(--main-border);border-radius:4px;padding:2px 6px;margin:1px;font-size:.72rem;font-family:var(--font-m);white-space:nowrap">' + formatDateDMY(d) + ' <span style="color:' + color + '">' + dow + '</span></span>';
+            }).join('');
+            return '<tr>'
+                + '<td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(r.name || '') + '">' + (r.name || 'Unknown') + '</td>'
+                + '<td style="white-space:nowrap">' + (r.dept || '—') + '</td>'
+                + '<td style="text-align:center;font-family:var(--font-m);color:var(--danger);font-weight:600;white-space:nowrap">' + r.missedDays.length + '</td>'
+                + '<td><div style="overflow-x:auto;white-space:nowrap;padding:4px 0">' + dateTags + '</div></td>'
+                + '</tr>';
+        }).join('');
+
+    document.getElementById('emp-rpt-missing-table-area').innerHTML = ''
+        + '<div class="table-wrap"><table style="table-layout:fixed;width:100%">'
+        + '<thead><tr>'
+        + '<th style="width:150px">Employee</th>'
+        + '<th style="width:120px">Department</th>'
+        + '<th style="text-align:center;width:80px">Missed</th>'
+        + '<th>Missed Dates</th>'
+        + '</tr></thead>'
+        + '<tbody>' + rows + '</tbody>'
+        + '</table></div>'
+        + buildRptPagination(data.length, empRptMissingPage, empRptMissingPageSize, 'goEmpRptMissingPage', 'changeEmpRptMissingPageSize');
+};
+
 // ---------- Time Detail Table ----------
 const renderEmpRptTimeTable = data => {
     const totalPages = Math.ceil(data.length / empRptTimePageSize) || 1;
@@ -3093,7 +3167,7 @@ const exportEmpReportExcel = () => {
     rows.push(['Report: ' + fromDate + ' to ' + toDate]);
     rows.push([]);
 
-    // Section 1: Category Summary (no Util%)
+    // Section 1: Category Summary
     rows.push(['CATEGORY SUMMARY']);
     rows.push(['Category \u2192 ID/Name', 'Countdown', 'Days', 'Members', 'Entries', 'Duration', 'OT', 'Cost']);
     if (empRptItemData_cache.length) {
@@ -3105,7 +3179,7 @@ const exportEmpReportExcel = () => {
     rows.push([]);
     rows.push([]);
 
-    // Section 2: Employee Summary (Util% stays — it's accurate per-employee)
+    // Section 2: Employee Summary
     rows.push(['EMPLOYEE SUMMARY']);
     rows.push(['Employee', 'Position', 'Department', 'Entries', 'Days', 'Duration', 'OT', 'Util%', 'Cost', 'Rate']);
     if (empRptEmpData_cache.length) {
@@ -3117,17 +3191,34 @@ const exportEmpReportExcel = () => {
     rows.push([]);
     rows.push([]);
 
-    // Section 3: Time Detail
+    // Section 3: Missing Attendance
+    rows.push(['MISSING ATTENDANCE']);
+    rows.push(['Employee', 'Department', 'Total Missed', 'Date', 'Day']);
+    if (empRptMissingData_cache.length) {
+        empRptMissingData_cache.forEach(r => {
+            r.missedDays.forEach((d, i) => {
+                const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d + 'T00:00:00').getDay()];
+                rows.push([
+                    i === 0 ? (r.name || 'Unknown') : '',
+                    i === 0 ? (r.dept || '—') : '',
+                    i === 0 ? r.missedDays.length : '',
+                    d,
+                    dow
+                ]);
+            });
+        });
+    } else { rows.push(['All employees have keyed in', '', '', '', '']); }
+
+    rows.push([]);
+    rows.push([]);
+
+    // Section 4: Time Detail
     rows.push(['TIME DETAIL']);
     rows.push(['Date', 'Day', 'Employee', 'Department', 'Category \u2192 ID/Name', 'Clock In', 'Clock Out', 'Duration', 'Standard', 'OT']);
     if (empRptTimeData_cache.length) {
         empRptTimeData_cache.forEach(r => {
             rows.push([
-                r.date,
-                r.dayOfWeek,
-                r.name,
-                r.dept,
-                r.project,
+                r.date, r.dayOfWeek, r.name, r.dept, r.project,
                 r.clockIn ? formatTime(r.clockIn) : '\u2014',
                 r.clockOut ? formatTime(r.clockOut) : '\u2014',
                 formatDuration(r.hours * 3600000),
@@ -3165,6 +3256,16 @@ const changeEmpRptEmpPageSize = size => {
     empRptEmpPageSize = parseInt(size);
     empRptEmpPage = 1;
     renderEmpRptEmpTable(empRptEmpData_cache);
+};
+const goEmpRptMissingPage = page => {
+    const tp = Math.ceil(empRptMissingData_cache.length / empRptMissingPageSize) || 1;
+    empRptMissingPage = Math.max(1, Math.min(page, tp));
+    renderEmpRptMissingTable(empRptMissingData_cache);
+};
+const changeEmpRptMissingPageSize = size => {
+    empRptMissingPageSize = parseInt(size);
+    empRptMissingPage = 1;
+    renderEmpRptMissingTable(empRptMissingData_cache);
 };
 const goEmpRptTimePage = page => {
     const totalPages = Math.ceil(empRptTimeData_cache.length / empRptTimePageSize) || 1;
