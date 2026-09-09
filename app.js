@@ -3087,21 +3087,33 @@ const renderEmpRptMissingTable = data => {
 
     const cards = data.length === 0
         ? '<div style="text-align:center;color:var(--ok);padding:30px">All employees have keyed in attendance</div>'
-        : page.map(r => {
-            const dateTags = r.missedDays.map(d => {
+        : page.map((r, idx) => {
+            const makeTag = d => {
                 const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d + 'T00:00:00').getDay()];
                 const color = dow === 'Mon' ? '#ef4444' : dow === 'Fri' ? '#f59e0b' : dow === 'Sat' ? '#8b5cf6' : 'var(--main-text3)';
                 return '<span style="display:inline-block;background:var(--main-bg);border:1px solid var(--main-border);border-radius:4px;padding:2px 6px;margin:2px;font-size:.72rem;font-family:var(--font-m)">' + formatDateDMY(d) + ' <span style="color:' + color + '">' + dow + '</span></span>';
+            };
+            const count = r.missedDays.length;
+            const hasMore = count > 10;
+            const idPrefix = 'emp-missed-' + start + '-' + idx;
+            const extra = count - 10;
+            const allTagsHtml = r.missedDays.map((d, i) => {
+                const tag = makeTag(d);
+                if (i >= 10) return '<span class="' + idPrefix + '-hidden" style="display:none">' + tag + '</span>';
+                return tag;
             }).join('');
+            const btn = hasMore
+                ? ' <span id="' + idPrefix + '-btn" data-extra="' + extra + '" style="display:inline-block;background:var(--main-bg);border:1px solid var(--accent);border-radius:4px;padding:2px 10px;margin:2px;font-size:.72rem;font-family:var(--font-m);color:var(--accent);cursor:pointer;vertical-align:middle" onclick="toggleMissedShowMore(\'' + idPrefix + '\')">&#x25BC; +' + extra + ' more</span>'
+                : '';
             return '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px">'
                 + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
                 + '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
                 + '<span style="font-weight:600;font-size:.92rem">' + (r.name || 'Unknown') + '</span>'
                 + '<span style="font-size:.78rem;color:var(--main-text3)">' + (r.dept || '—') + '</span>'
                 + '</div>'
-                + '<span style="font-family:var(--font-m);color:var(--danger);font-weight:600;font-size:.88rem">' + r.missedDays.length + ' missed</span>'
+                + '<span style="font-family:var(--font-m);color:var(--danger);font-weight:600;font-size:.88rem">' + count + ' missed</span>'
                 + '</div>'
-                + '<div>' + dateTags + '</div>'
+                + '<div>' + allTagsHtml + btn + '</div>'
                 + '</div>';
         }).join('');
 
@@ -5826,21 +5838,33 @@ const renderRptMissingTable = data => {
 
     const cards = data.length === 0
         ? '<div style="text-align:center;color:var(--ok);padding:30px">All employees have keyed in attendance</div>'
-        : page.map(r => {
-            const dateTags = r.missedDays.map(d => {
+        : page.map((r, idx) => {
+            const makeTag = d => {
                 const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d + 'T00:00:00').getDay()];
                 const color = dow === 'Mon' ? '#ef4444' : dow === 'Fri' ? '#f59e0b' : dow === 'Sat' ? '#8b5cf6' : 'var(--main-text3)';
                 return '<span style="display:inline-block;background:var(--main-bg);border:1px solid var(--main-border);border-radius:4px;padding:2px 6px;margin:2px;font-size:.72rem;font-family:var(--font-m)">' + formatDateDMY(d) + ' <span style="color:' + color + '">' + dow + '</span></span>';
+            };
+            const count = r.missedDays.length;
+            const hasMore = count > 10;
+            const idPrefix = 'rpt-missed-' + start + '-' + idx;
+            const extra = count - 10;
+            const allTagsHtml = r.missedDays.map((d, i) => {
+                const tag = makeTag(d);
+                if (i >= 10) return '<span class="' + idPrefix + '-hidden" style="display:none">' + tag + '</span>';
+                return tag;
             }).join('');
+            const btn = hasMore
+                ? ' <span id="' + idPrefix + '-btn" data-extra="' + extra + '" style="display:inline-block;background:var(--main-bg);border:1px solid var(--accent);border-radius:4px;padding:2px 10px;margin:2px;font-size:.72rem;font-family:var(--font-m);color:var(--accent);cursor:pointer;vertical-align:middle" onclick="toggleMissedShowMore(\'' + idPrefix + '\')">&#x25BC; +' + extra + ' more</span>'
+                : '';
             return '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px">'
                 + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
                 + '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
                 + '<span style="font-weight:600;font-size:.92rem">' + (r.name || 'Unknown') + '</span>'
                 + '<span style="font-size:.78rem;color:var(--main-text3)">' + (r.dept || '—') + '</span>'
                 + '</div>'
-                + '<span style="font-family:var(--font-m);color:var(--danger);font-weight:600;font-size:.88rem">' + r.missedDays.length + ' missed</span>'
+                + '<span style="font-family:var(--font-m);color:var(--danger);font-weight:600;font-size:.88rem">' + count + ' missed</span>'
                 + '</div>'
-                + '<div>' + dateTags + '</div>'
+                + '<div>' + allTagsHtml + btn + '</div>'
                 + '</div>';
         }).join('');
 

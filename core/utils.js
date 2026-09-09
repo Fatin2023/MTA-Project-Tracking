@@ -252,3 +252,18 @@ const buildPagination = (totalItems, currentPage, pageSize, goFn, changeFn, opts
             <div class="pagination-controls">${btns}</div>
         </div></div>`;
 };
+
+// missed attendance collapse toggle
+const toggleMissedShowMore = idPrefix => {
+    const btn = document.getElementById(idPrefix + '-btn');
+    if (!btn) return;
+    const hiddens = document.querySelectorAll('.' + idPrefix + '-hidden');
+    if (!hiddens.length) return;
+    const isHidden = hiddens[0].style.display === 'none';
+    hiddens.forEach(el => el.style.display = isHidden ? 'inline-block' : 'none');
+    if (isHidden) {
+        btn.innerHTML = '&#x25B2; Show less';
+    } else {
+        btn.innerHTML = '&#x25BC; +' + btn.dataset.extra + ' more';
+    }
+};
