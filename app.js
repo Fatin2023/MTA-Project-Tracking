@@ -2826,7 +2826,7 @@ const generateEmpReport = () => {
             <div class="stat-card${ac}"><div class="stat-label">Active ID/Name</div><div class="stat-value">${itemMap.size}</div></div>
         </div>`;
 
-    // ========== Missing Attendance Detection ==========
+        // ========== Missing Attendance Detection ==========
     const holidayDates = new Set((DB.publicHolidays || []).map(h => h.date));
     let checkMembers = picMemberIds.map(mid => DB.members.find(m => m.id === mid)).filter(m => m && m.role === 'employee');
     if (empIds.length) {
@@ -5621,8 +5621,8 @@ const generateReport = () => {
             <div class="stat-card${ac}"><div class="stat-label">Active ID/Name</div><div class="stat-value">${itemMap.size}</div></div>
         </div>`;
 
-    // ========== Missing Attendance Detection ==========
-        const holidayDates = new Set((DB.publicHolidays || []).map(h => h.date));
+        // ========== Missing Attendance Detection ==========
+    const holidayDates = new Set((DB.publicHolidays || []).map(h => h.date));
     let checkMembers;
     if (empIds.length) {
         checkMembers = DB.members.filter(m => empIds.includes(m.id));
@@ -5633,20 +5633,11 @@ const generateReport = () => {
     }
     checkMembers = checkMembers.filter(m => !viewerMemberIds.has(m.id) && m.role === 'employee');
 
-    // ✅ Debug: check department data structure
-    console.log('[Missing] departments:', DB.departments);
-    if (checkMembers.length > 0) {
-        const sampleDept = DB.departments.find(d => d.id === checkMembers[0].departmentId);
-        console.log('[Missing] sample dept:', sampleDept);
-    }
-
     const saturdayWorkerIds = new Set();
     checkMembers.forEach(m => {
         const dept = DB.departments.find(d => d.id === m.departmentId);
         if (dept && dept.workDaysPerWeek >= 6) saturdayWorkerIds.add(m.id);
     });
-
-    console.log('[Missing] saturdayWorkerIds:', [...saturdayWorkerIds]);
 
     const allAttInRange = new Map();
     DB.attendance.filter(a => a.date >= fromDate && a.date <= toDate).forEach(a => {
@@ -5662,7 +5653,6 @@ const generateReport = () => {
         const dy = String(cur.getDate()).padStart(2, '0');
         const ds = `${y}-${mo}-${dy}`;
         const dow = cur.getDay();
-
         if (dow !== 0 && !holidayDates.has(ds)) {
             for (const m of checkMembers) {
                 if (dow === 6 && !saturdayWorkerIds.has(m.id)) continue;
