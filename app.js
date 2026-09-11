@@ -3123,36 +3123,44 @@ const renderEmpRptMissingTable = data => {
 
 // ---------- Time Detail Table ----------
 const renderEmpRptTimeTable = data => {
+    if (!Array.isArray(data)) return;
     const totalPages = Math.ceil(data.length / empRptTimePageSize) || 1;
     if (empRptTimePage > totalPages) empRptTimePage = totalPages;
     if (empRptTimePage < 1) empRptTimePage = 1;
     const start = (empRptTimePage - 1) * empRptTimePageSize;
     const page = data.slice(start, start + empRptTimePageSize);
+
     const rows = data.length === 0
         ? '<tr><td colspan="10" style="text-align:center;color:var(--main-text3);padding:30px">No data</td></tr>'
         : page.map(r => {
             const clockInStr = r.clockIn ? formatTime(r.clockIn) : '\u2014';
             const clockOutStr = r.clockOut ? formatTime(r.clockOut) : '\u2014';
-            const dayColor = r.dayOfWeek === 'Sun' ? 'var(--danger)' : r.dayOfWeek === 'Sat' ? 'var(--warning)' : 'var(--main-text)';
-            return `<tr>
-                <td style="font-family:var(--font-m)">${formatDateDMY(r.date)}</td>
-                <td style="color:${dayColor};font-weight:600">${r.dayOfWeek}</td>
-                <td>${esc(r.name)}</td>
-                <td>${esc(r.dept)}</td>
-                <td>${r.project}</td>
-                <td style="font-family:var(--font-m)">${clockInStr}</td>
-                <td style="font-family:var(--font-m)">${clockOutStr}</td>
-                <td style="text-align:right;font-family:var(--font-m)">${formatDuration(r.hours * 3600000)}</td>
-                <td style="text-align:right;font-family:var(--font-m)">${fmtStdHours(r.standardHours)}</td>
-                <td style="text-align:right;font-family:var(--font-m);color:${r.ot > 0 ? 'var(--warning)' : 'var(--main-text3)'}">${r.ot > 0 ? formatDuration(r.ot * 3600000) : '\u2014'}</td>
-            </tr>`;
+            const day = r.dayOfWeek || '\u2014';
+            const dayColor = day === 'Sun' ? 'var(--danger)' : day === 'Sat' ? 'var(--warning)' : 'var(--main-text)';
+            const hours = typeof r.hours === 'number' ? r.hours : 0;
+            const stdHrs = typeof r.standardHours === 'number' ? r.standardHours : 0;
+            const ot = typeof r.ot === 'number' ? r.ot : 0;
+            return '<tr>'
+                + '<td style="font-family:var(--font-m)">' + formatDateDMY(r.date || '') + '</td>'
+                + '<td style="color:' + dayColor + ';font-weight:600">' + esc(day) + '</td>'
+                + '<td>' + esc(r.name || '—') + '</td>'
+                + '<td>' + esc(r.dept || '—') + '</td>'
+                + '<td>' + esc(r.project || '—') + '</td>'
+                + '<td style="font-family:var(--font-m)">' + clockInStr + '</td>'
+                + '<td style="font-family:var(--font-m)">' + clockOutStr + '</td>'
+                + '<td style="text-align:right;font-family:var(--font-m)">' + formatDuration(hours * 3600000) + '</td>'
+                + '<td style="text-align:right;font-family:var(--font-m)">' + fmtStdHours(stdHrs) + '</td>'
+                + '<td style="text-align:right;font-family:var(--font-m);color:' + (ot > 0 ? 'var(--warning)' : 'var(--main-text3)') + '">' + (ot > 0 ? formatDuration(ot * 3600000) : '\u2014') + '</td>'
+                + '</tr>';
         }).join('');
-    document.getElementById('emp-rpt-time-table-area').innerHTML = `
-        <div class="table-wrap"><table>
-            <thead><tr><th>Date</th><th>Day</th><th>Employee</th><th>Department</th><th>Category → ID/Name</th><th>Clock In</th><th>Clock Out</th><th style="text-align:right">Duration</th><th style="text-align:right">Standard</th><th style="text-align:right">OT</th></tr></thead>
-            <tbody>${rows}</tbody>
-        </table></div>
-        ${buildRptPagination(data.length, empRptTimePage, empRptTimePageSize, 'goEmpRptTimePage', 'changeEmpRptTimePageSize')}`;
+
+    const el = document.getElementById('emp-rpt-time-table-area');
+    if (!el) return;
+    el.innerHTML = '<div class="table-wrap"><table>'
+        + '<thead><tr><th>Date</th><th>Day</th><th>Employee</th><th>Department</th><th>Category \u2192 ID/Name</th><th>Clock In</th><th>Clock Out</th><th style="text-align:right">Duration</th><th style="text-align:right">Standard</th><th style="text-align:right">OT</th></tr></thead>'
+        + '<tbody>' + rows + '</tbody>'
+        + '</table></div>'
+        + buildRptPagination(data.length, empRptTimePage, empRptTimePageSize, 'goEmpRptTimePage', 'changeEmpRptTimePageSize');
 };
 
 // ---------- Export Excel ----------
@@ -5830,25 +5838,35 @@ const generateReport = () => {
 
 // ---------- Missing Attendance Table ----------
 const renderRptMissingTable = data => {
+    if (!Array.isArray(data)) return;
     const totalPages = Math.ceil(data.length / rptMissingPageSize) || 1;
     if (rptMissingPage > totalPages) rptMissingPage = totalPages;
     if (rptMissingPage < 1) rptMissingPage = 1;
     const start = (rptMissingPage - 1) * rptMissingPageSize;
     const page = data.slice(start, start + rptMissingPageSize);
 
+    const DAY_COLORS = { Mon: '#ef4444', Fri: '#f59e0b', Sat: '#8b5cf6' };
+    const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+    const makeTag = d => {
+        const dow = DOW[new Date(d + 'T00:00:00').getDay()] || '';
+        const color = DAY_COLORS[dow] || 'var(--main-text3)';
+        return '<span style="display:inline-block;background:var(--main-bg);border:1px solid var(--main-border);border-radius:4px;padding:2px 6px;margin:2px;font-size:.72rem;font-family:var(--font-m)">'
+            + formatDateDMY(d) + ' <span style="color:' + color + '">' + esc(dow) + '</span></span>';
+    };
+
     const cards = data.length === 0
         ? '<div style="text-align:center;color:var(--ok);padding:30px">All employees have keyed in attendance</div>'
         : page.map((r, idx) => {
-            const makeTag = d => {
-                const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d + 'T00:00:00').getDay()];
-                const color = dow === 'Mon' ? '#ef4444' : dow === 'Fri' ? '#f59e0b' : dow === 'Sat' ? '#8b5cf6' : 'var(--main-text3)';
-                return '<span style="display:inline-block;background:var(--main-bg);border:1px solid var(--main-border);border-radius:4px;padding:2px 6px;margin:2px;font-size:.72rem;font-family:var(--font-m)">' + formatDateDMY(d) + ' <span style="color:' + color + '">' + dow + '</span></span>';
-            };
-            const count = r.missedDays.length;
+            const name = esc(r.name || 'Unknown');
+            const dept = esc(r.dept || '\u2014');
+            const days = Array.isArray(r.missedDays) ? r.missedDays : [];
+            const count = days.length;
+            if (!count) return '';
             const hasMore = count > 10;
             const idPrefix = 'rpt-missed-' + start + '-' + idx;
             const extra = count - 10;
-            const allTagsHtml = r.missedDays.map((d, i) => {
+            const allTagsHtml = days.map((d, i) => {
                 const tag = makeTag(d);
                 if (i >= 10) return '<span class="' + idPrefix + '-hidden" style="display:none">' + tag + '</span>';
                 return tag;
@@ -5859,16 +5877,18 @@ const renderRptMissingTable = data => {
             return '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px">'
                 + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
                 + '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
-                + '<span style="font-weight:600;font-size:.92rem">' + (r.name || 'Unknown') + '</span>'
-                + '<span style="font-size:.78rem;color:var(--main-text3)">' + (r.dept || '—') + '</span>'
+                + '<span style="font-weight:600;font-size:.92rem">' + name + '</span>'
+                + '<span style="font-size:.78rem;color:var(--main-text3)">' + dept + '</span>'
                 + '</div>'
                 + '<span style="font-family:var(--font-m);color:var(--danger);font-weight:600;font-size:.88rem">' + count + ' missed</span>'
                 + '</div>'
                 + '<div>' + allTagsHtml + btn + '</div>'
                 + '</div>';
-        }).join('');
+        }).filter(Boolean).join('');
 
-    document.getElementById('rpt-missing-table-area').innerHTML = cards
+    const el = document.getElementById('rpt-missing-table-area');
+    if (!el) return;
+    el.innerHTML = cards
         + buildRptPagination(data.length, rptMissingPage, rptMissingPageSize, 'goRptMissingPage', 'changeRptMissingPageSize');
 };
 
@@ -5958,7 +5978,7 @@ const renderRptTimeTable = data => {
                 <td style="color:${dayColor};font-weight:600">${r.dayOfWeek}</td>
                 <td>${esc(r.name)}</td>
                 <td>${esc(r.dept)}</td>
-                <td>${r.project}</td>
+                <td>${esc(r.project)}</td>
                 <td style="font-family:var(--font-m)">${clockInStr}</td>
                 <td style="font-family:var(--font-m)">${clockOutStr}</td>
                 <td style="text-align:right;font-family:var(--font-m)">${formatDuration(r.hours * 3600000)}</td>
