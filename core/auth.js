@@ -114,7 +114,8 @@ function handleLogin(e) {
                 if (currentUser.role === 'admin' || isViewer) {
                     document.getElementById('admin-layout').classList.add('active');
                     _setRoleLabel('admin-layout', isViewer ? 'Viewer' : 'Administrator');
-                    adminNav('projects');
+                    adminNav('dashboard');
+                    updateAvatars(); 
                 } else {
                     document.getElementById('employee-layout').classList.add('active');
                     _noticesDismissed = false;

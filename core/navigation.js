@@ -36,8 +36,10 @@ async function showPage(id) {
 }
 
 async function adminNav(tab, el) {
+    if (!tab) tab = 'dashboard';  // ✅ 默认 dashboard
+
     if (currentUser && currentUser.role === 'viewer' && (tab === 'users' || tab === 'departments' || tab === 'positions')) {
-        tab = 'projects';
+        tab = 'dashboard';  // ✅ viewer 也回 dashboard
     }
 
     localStorage.setItem('multitrade_admin_page', tab);
@@ -53,6 +55,7 @@ async function adminNav(tab, el) {
     }
 
     switch (tab) {
+        case 'dashboard': renderPTDashboard(); break;  // ✅ 新增
         case 'projects': renderMainScope(); break;
         case 'users': renderUsersList(); break;
         case 'positions': renderPositionsList(); break;

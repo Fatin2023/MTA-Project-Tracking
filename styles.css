@@ -953,3 +953,41 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
         scrollbar-width: none;
     }
 }
+
+
+/* Dashboard */
+.dash-card {
+    background: var(--main-surface);
+    border: 1px solid var(--main-border);
+    border-radius: var(--radius);
+    padding: 20px;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+.dash-card:hover {
+    border-color: rgba(59,130,246,.2);
+    box-shadow: 0 0 20px rgba(59,130,246,.05);
+}
+.dash-card-title {
+    font-size: .8rem;
+    font-weight: 600;
+    color: var(--main-text2);
+    margin: 0 0 14px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    font-family: var(--font-d);
+}
+.pt-dash-grid > .dash-card {
+    min-width: 0;
+}
+.dash-chart-container {
+    position: relative;
+    height: 260px;
+    min-width: 0;
+    overflow: hidden;
+}
+.dash-chart-container-radar {
+    height: 280px;
+}
+@media (max-width: 900px) {
+    .pt-dash-grid { grid-template-columns: 1fr !important; }
+}

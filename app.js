@@ -1,4 +1,470 @@
 /* ==========================================================
+   SECTION X: PROJECT TRACKING DASHBOARD (Admin Only)
+   ========================================================== */
+
+// Keep responsive Chart.js instances so a dashboard refresh never leaves
+// resize observers attached to canvases that have been removed from the page.
+let ptDashboardCharts = [];
+
+const renderPTDashboard = () => {
+    const today = todayStr();
+    const d30 = new Date(); d30.setDate(d30.getDate() - 30);
+    const from30 = d30.toISOString().slice(0, 10);
+
+    // ── 排除 admin 和 viewer ──
+    const viewerIds = new Set(getViewerMemberIds());
+    const adminIds = new Set(DB.members.filter(m => {
+        const u = DB.users.find(u2 => u2.memberId === m.id);
+        return u && u.role === 'admin';
+    }).map(m => m.id));
+    const excludedIds = new Set([...viewerIds, ...adminIds]);
+
+    const validMembers = DB.members.filter(m => !excludedIds.has(m.id));
+    const validMemberIds = new Set(validMembers.map(m => m.id));
+
+    // ── 今天出勤 ──
+    const todayAtt = DB.attendance.filter(a => a.date === today && validMemberIds.has(a.memberId));
+    const todayInIds = new Set(todayAtt.map(a => a.memberId));
+
+    // ── KPIs ──
+    const totalStaff = validMembers.length;
+    const todayIn = todayInIds.size;
+
+    const holidayDates = new Set((DB.publicHolidays || []).map(h => h.date));
+    const dow = new Date(today + 'T00:00:00').getDay();
+    const isWorkingDay = dow !== 0 && !holidayDates.has(today);
+    const saturdayWorkerIds = new Set();
+    validMembers.forEach(m => {
+        const dept = DB.departments.find(d => d.id === m.departmentId);
+        if (dept && dept.workDaysPerWeek >= 6) saturdayWorkerIds.add(m.id);
+    });
+    const isSaturdayForSome = dow === 6;
+    let todayMissing = 0;
+    if (isWorkingDay) {
+        validMembers.forEach(m => {
+            if (isSaturdayForSome && !saturdayWorkerIds.has(m.id)) return;
+            if (!todayInIds.has(m.id)) todayMissing++;
+        });
+    }
+
+    const activeProjects = DB.projects.filter(p => p.status === 'Inprogress').length;
+    const overdueProjects = DB.projects.filter(p => p.status !== 'Completed' && p.endDate && p.endDate < today).length;
+
+    // ── 30天有效出勤 ──
+    const att30 = DB.attendance.filter(a => a.date >= from30 && a.date <= today && validMemberIds.has(a.memberId));
+
+    // ── Department Attendance (30天) ──
+    const deptMap = new Map();
+    DB.departments.forEach(d => deptMap.set(d.id, { name: d.name, ms: 0, entries: 0 }));
+    att30.forEach(a => {
+        const member = DB.members.find(m => m.id === a.memberId);
+        if (!member || !deptMap.has(member.departmentId)) return;
+        const result = calcOT(a.clockIn, a.clockOut, a.memberId, a.date);
+        const ms = result.ms || 0;
+        const dept = deptMap.get(member.departmentId);
+        dept.ms += ms;
+        dept.entries++;
+    });
+    const deptSorted = [...deptMap.values()].filter(d => d.ms > 0).sort((a, b) => b.ms - a.ms);
+
+    // ── Employee Attendance Top 10 (30天) ──
+    const empMap = new Map();
+    att30.forEach(a => {
+        const result = calcOT(a.clockIn, a.clockOut, a.memberId, a.date);
+        const ms = result.ms || 0;
+        if (!empMap.has(a.memberId)) empMap.set(a.memberId, { ms: 0, days: new Set(), entries: 0 });
+        const e = empMap.get(a.memberId);
+        e.ms += ms;
+        e.days.add(a.date);
+        e.entries++;
+    });
+    const empSorted = [...empMap.entries()].sort((a, b) => b[1].ms - a[1].ms).slice(0, 10);
+    const empLabels = empSorted.map(([mid]) => DB.members.find(m => m.id === mid)?.name || 'Unknown');
+    const empHours = empSorted.map(([, s]) => Math.round(s.ms / 3600000 * 10) / 10);
+
+    // ── Daily Trend This Week (人数) ──
+    const weekStart = new Date();
+    const dayOfWeek = weekStart.getDay();
+    const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    weekStart.setDate(weekStart.getDate() - diff);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dailyPeople = new Map();
+    DB.attendance.forEach(a => {
+        if (!validMemberIds.has(a.memberId)) return;
+        const d = new Date(a.date + 'T00:00:00');
+        if (d < weekStart) return;
+        const idx = d.getDay() === 0 ? 6 : d.getDay() - 1;
+        if (!dailyPeople.has(idx)) dailyPeople.set(idx, new Set());
+        dailyPeople.get(idx).add(a.memberId);
+    });
+    const dailyCount = weekDays.map((_, i) => dailyPeople.has(i) ? dailyPeople.get(i).size : 0);
+    const todayIdx = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+
+    // ── Day of Week Radar (30天平均) ──
+    const dowData = [0, 0, 0, 0, 0, 0, 0];
+    const dowCount = [0, 0, 0, 0, 0, 0, 0];
+    const dowDays = new Set();
+    att30.forEach(a => {
+        const d = new Date(a.date + 'T00:00:00');
+        const idx = d.getDay() === 0 ? 6 : d.getDay() - 1;
+        const result = calcOT(a.clockIn, a.clockOut, a.memberId, a.date);
+        dowData[idx] += (result.ms || 0) / 3600000;
+        const dateKey = a.date + '_' + idx;
+        if (!dowDays.has(dateKey)) {
+            dowDays.add(dateKey);
+            dowCount[idx]++;
+        }
+    });
+    const dowAvg = dowData.map((total, i) => dowCount[i] > 0 ? Math.round(total / dowCount[i] * 10) / 10 : 0);
+
+    // ── Missing Key-in Today ──
+    const missingToday = [];
+    if (isWorkingDay) {
+        validMembers.forEach(m => {
+            if (isSaturdayForSome && !saturdayWorkerIds.has(m.id)) return;
+            if (!todayInIds.has(m.id)) {
+                missingToday.push({ name: m.name, dept: getDeptName(m.departmentId) || '\u2014' });
+            }
+        });
+        missingToday.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    // ── Upcoming Deadlines (Projects + File Tasks) ──
+    const upcoming = [];
+
+    DB.projects
+        .filter(p => p.status !== 'Completed' && p.endDate && p.endDate >= today)
+        .forEach(p => {
+            const scope = p.categoryId ? DB.scopes.find(s => s.id === p.categoryId) : null;
+            const label = scope ? scope.name + ' \u2192 ' + p.name : p.name;
+            upcoming.push({ type: 'project', date: p.endDate, label, status: p.status, obj: p });
+        });
+
+    (DB.fileTasks || [])
+        .filter(t => t.isActive && t.deadline)
+        .forEach(t => {
+            const dl = typeof t.deadline === 'string' ? t.deadline.substring(0, 10) : new Date(t.deadline).toISOString().slice(0, 10);
+            if (dl >= today) {
+                upcoming.push({ type: 'filetask', date: dl, label: t.title, desc: t.description || '', status: 'active' });
+            }
+        });
+
+    upcoming.sort((a, b) => a.date.localeCompare(b.date));
+    const upcomingSliced = upcoming.slice(0, 8);
+
+    // ── Recent Attendance ──
+    const recent = DB.attendance
+        .filter(a => a.clockIn && validMemberIds.has(a.memberId))
+        .sort((a, b) => b.clockIn.localeCompare(a.clockIn))
+        .slice(0, 10);
+
+    // ═══════════════════════════════════════════
+    // RENDER
+    // ═══════════════════════════════════════════
+    const el = document.getElementById('admin-dashboard');
+    if (!el) return;
+
+    ptDashboardCharts.forEach(chart => chart.destroy());
+    ptDashboardCharts = [];
+
+    el.innerHTML = `
+    <div class="app-header pt-anim-filter" style="margin-bottom:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+            <div><h2 style="margin:0">Dashboard</h2><div class="header-sub">Today's operational overview</div></div>
+            <button class="btn btn-ghost btn-sm" onclick="renderPTDashboard()">↻ Refresh</button>
+        </div>
+    </div>
+    <div class="app-body" style="max-width:none;padding-top:20px">
+
+        <!-- KPIs -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:28px">
+            <div class="stat-anim dash-card" style="padding:16px 18px">${dashKPICard('Total Staff', totalStaff, 'var(--main-text)', '👤')}</div>
+            <div class="stat-anim dash-card" style="padding:16px 18px">${dashKPICard('Clocked In Today', todayIn, '#22c55e', '✓')}</div>
+            <div class="stat-anim dash-card" style="padding:16px 18px">${dashKPICard('Missing Key-in', todayMissing, todayMissing > 0 ? '#ef4444' : '#22c55e', '⚠')}</div>
+            <div class="stat-anim dash-card" style="padding:16px 18px">${dashKPICard('Active Projects', activeProjects, '#3b82f6', '⚡')}</div>
+            <div class="stat-anim dash-card" style="padding:16px 18px">${dashKPICard('Overdue Projects', overdueProjects, overdueProjects > 0 ? '#ef4444' : '#22c55e', '⏰')}</div>
+        </div>
+
+        <!-- ROW 1: Dept + Employee -->
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;margin-bottom:20px" class="pt-dash-grid pt-anim-head">
+            <div class="dash-card">
+                <h3 class="dash-card-title">Department Attendance (30d)</h3>
+                <div class="dash-chart-container"><canvas id="chart-dash-dept"></canvas></div>
+            </div>
+            <div class="dash-card">
+                <h3 class="dash-card-title">Top Employees by Hours (30d)</h3>
+                <div class="dash-chart-container"><canvas id="chart-dash-emp"></canvas></div>
+            </div>
+        </div>
+
+        <!-- ROW 2: Week Trend + Missing Today -->
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;margin-bottom:20px" class="pt-dash-grid pt-anim-table">
+            <div class="dash-card">
+                <h3 class="dash-card-title">This Week Attendance (People)</h3>
+                <div class="dash-chart-container"><canvas id="chart-dash-week"></canvas></div>
+            </div>
+            <div class="dash-card">
+                <h3 class="dash-card-title">Missing Key-in Today</h3>
+                <div id="pt-dash-missing-today" style="max-height:260px;overflow-y:auto">${dashMissingToday(missingToday)}</div>
+            </div>
+        </div>
+
+        <!-- ROW 3: Deadlines + Recent -->
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;margin-bottom:20px" class="pt-dash-grid pt-anim-table">
+            <div class="dash-card">
+                <h3 class="dash-card-title">Upcoming Deadlines</h3>
+                <div id="pt-dash-deadlines">${dashDeadlines(upcoming, today)}</div>
+            </div>
+            <div class="dash-card">
+                <h3 class="dash-card-title">Recent Attendance</h3>
+                <div id="pt-dash-recent">${dashRecentActivity(recent)}</div>
+            </div>
+        </div>
+
+        <!-- ROW 4: Radar + Progress -->
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;margin-bottom:20px" class="pt-dash-grid pt-anim-table">
+            <div class="dash-card">
+                <h3 class="dash-card-title">Attendance by Day of Week (30d Avg)</h3>
+                <div class="dash-chart-container dash-chart-container-radar"><canvas id="chart-dash-dow"></canvas></div>
+            </div>
+            <div class="dash-card">
+                <h3 class="dash-card-title">Category Progress</h3>
+                <div id="pt-dash-progress">${dashCatProgressFromDB(today)}</div>
+            </div>
+        </div>
+    </div>`;
+
+    // ═══════════════════════════════════════════
+    // CHARTS
+    // ═══════════════════════════════════════════
+    const tc = '#7a7570', gc = 'rgba(122,117,112,0.1)';
+    const PT_COLORS = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
+
+    // Department
+    ptDashboardCharts.push(new Chart(document.getElementById('chart-dash-dept'), {
+        type: 'bar',
+        data: {
+            labels: deptSorted.map(d => d.name),
+            datasets: [{
+                label: 'Hours',
+                data: deptSorted.map(d => Math.round(d.ms / 3600000 * 10) / 10),
+                backgroundColor: deptSorted.map((_, i) => PT_COLORS[i % PT_COLORS.length] + 'cc'),
+                borderRadius: 6, maxBarThickness: 50
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.y + 'h' } } },
+            scales: {
+                y: { beginAtZero: true, ticks: { color: tc, callback: v => v + 'h', font: { size: 10 } }, grid: { color: gc }, border: { color: gc } },
+                x: { ticks: { color: tc, font: { size: 10 } }, grid: { display: false }, border: { color: gc } }
+            }
+        }
+    }));
+
+    // Employee Top 10
+    ptDashboardCharts.push(new Chart(document.getElementById('chart-dash-emp'), {
+        type: 'bar',
+        data: {
+            labels: empLabels,
+            datasets: [{
+                label: 'Hours',
+                data: empHours,
+                backgroundColor: empHours.map((_, i) => PT_COLORS[i % PT_COLORS.length] + 'cc'),
+                borderRadius: 4, maxBarThickness: 22
+            }]
+        },
+        options: {
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.x + 'h' } } },
+            scales: {
+                x: { beginAtZero: true, ticks: { color: tc, callback: v => v + 'h', font: { size: 10 } }, grid: { color: gc }, border: { color: gc } },
+                y: { ticks: { color: tc, font: { size: 10 } }, grid: { display: false }, border: { color: gc } }
+            }
+        }
+    }));
+
+    // This Week Trend (人数)
+    new Chart(document.getElementById('chart-dash-week'), {
+        type: 'bar',
+        data: {
+            labels: weekDays,
+            datasets: [{
+                label: 'People',
+                data: dailyCount,
+                backgroundColor: dailyCount.map((_, i) => i === todayIdx ? '#3b82f6cc' : '#3b82f666'),
+                borderRadius: 6, maxBarThickness: 40
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.y + ' people' } } },
+            scales: {
+                y: { beginAtZero: true, ticks: { color: tc, stepSize: 1, font: { size: 10 } }, grid: { color: gc }, border: { color: gc } },
+                x: { ticks: { color: tc, font: { size: 11 } }, grid: { display: false }, border: { color: gc } }
+            }
+        }
+    });
+
+    // Day of Week Radar
+    ptDashboardCharts.push(new Chart(document.getElementById('chart-dash-dow'), {
+        type: 'radar',
+        data: {
+            labels: weekDays,
+            datasets: [{
+                label: 'Avg Hours',
+                data: dowAvg,
+                backgroundColor: 'rgba(59,130,246,0.15)',
+                borderColor: '#3b82f6',
+                borderWidth: 2,
+                pointBackgroundColor: '#3b82f6',
+                pointRadius: 4,
+                pointHoverRadius: 6
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.parsed.r + 'h avg' } } },
+            scales: {
+                r: {
+                    beginAtZero: true,
+                    ticks: { color: tc, backdropColor: 'transparent', font: { size: 10 }, callback: v => v + 'h' },
+                    grid: { color: gc },
+                    angleLines: { color: gc },
+                    pointLabels: { color: tc, font: { size: 11 } }
+                }
+            }
+        }
+    }));
+
+    // ═══════════════════════════════════════════
+    // Animate KPI numbers
+    // ═══════════════════════════════════════════
+    setTimeout(() => {
+        document.querySelectorAll('.dash-kpi-value[data-target]').forEach(el => {
+            const target = parseFloat(el.dataset.target);
+            if (isNaN(target)) return;
+            let current = 0;
+            const step = Math.max(1, Math.floor(target / 30));
+            const interval = setInterval(() => {
+                current += step;
+                if (current >= target) { current = target; clearInterval(interval); }
+                el.textContent = el.dataset.prefix ? el.dataset.prefix + current.toLocaleString() : current.toLocaleString();
+            }, 30);
+        });
+    }, 200);
+
+    // ═══════════════════════════════════════════
+    // Clear animation classes (allow replay next visit)
+    // ═══════════════════════════════════════════
+    setTimeout(() => {
+        const dashEl = document.getElementById('admin-dashboard');
+        if (!dashEl) return;
+        dashEl.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table, .stat-anim').forEach(el => {
+            el.classList.remove('pt-anim-filter', 'pt-anim-head', 'pt-anim-table', 'stat-anim');
+        });
+    }, 1200);
+};
+
+// ═══════════════════════════════════════════
+// SUB-RENDERERS
+// ═══════════════════════════════════════════
+
+const dashKPICard = (label, value, color, icon) => {
+    const isNum = typeof value === 'number';
+    const dataAttr = isNum ? ' data-target="' + value + '"' : '';
+    const display = isNum ? '0' : esc(String(value));
+    return '<div style="display:flex;align-items:center;gap:10px">'
+        + '<span style="font-size:1.3rem;opacity:.6">' + icon + '</span>'
+        + '<div>'
+        + '<div class="dash-kpi-value"' + dataAttr + ' style="font-size:1.4rem;font-weight:700;font-family:var(--font-m);color:' + color + ';line-height:1.2">' + display + '</div>'
+        + '<div style="font-size:.7rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.05em;margin-top:2px">' + esc(label) + '</div>'
+        + '</div></div>';
+};
+
+const dashMissingToday = list => {
+    if (!list.length) return '<div style="color:var(--ok);padding:24px;text-align:center;font-size:.88rem">All staff clocked in today</div>';
+    return '<div style="display:flex;flex-direction:column;gap:6px">' + list.map(r => {
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--main-bg);border-radius:8px;border-left:3px solid #ef4444">'
+            + '<span style="font-size:.82rem;font-weight:600">' + esc(r.name) + '</span>'
+            + '<span style="font-size:.72rem;color:var(--main-text3)">' + esc(r.dept) + '</span>'
+            + '</div>';
+    }).join('') + '</div>';
+};
+
+const dashCatProgressFromDB = today => {
+    const cats = [...DB.scopes].sort((a, b) => a.name.localeCompare(b.name));
+    if (!cats.length) return '<div style="color:var(--main-text3);padding:20px;text-align:center">No categories</div>';
+    return cats.map(scope => {
+        const projects = DB.projects.filter(p => p.categoryId === scope.id);
+        const total = projects.length;
+        const completed = projects.filter(p => p.status === 'Completed').length;
+        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+        const barColor = pct >= 80 ? '#22c55e' : pct >= 50 ? '#3b82f6' : pct >= 25 ? '#f59e0b' : '#ef4444';
+        return '<div style="margin-bottom:14px">'
+            + '<div style="display:flex;justify-content:space-between;margin-bottom:4px">'
+            + '<span style="font-size:.82rem;font-weight:600;color:var(--main-text)">' + esc(scope.name) + '</span>'
+            + '<span style="font-size:.75rem;font-family:var(--font-m);color:' + barColor + ';font-weight:600">' + pct + '% (' + completed + '/' + total + ')</span>'
+            + '</div>'
+            + '<div style="background:var(--main-bg);border-radius:6px;height:8px;overflow:hidden">'
+            + '<div style="background:' + barColor + ';height:100%;width:' + Math.max(pct, 1) + '%;border-radius:6px;transition:width .6s ease"></div>'
+            + '</div></div>';
+    }).join('');
+};
+
+const dashDeadlines = (items, today) => {
+    if (!items.length) return '<div style="color:var(--ok);padding:20px;text-align:center">No upcoming deadlines</div>';
+    return '<div style="display:flex;flex-direction:column;gap:8px">' + items.map(item => {
+        const dl = new Date(item.date + 'T00:00:00');
+        const now = new Date(today + 'T00:00:00');
+        const countdown = Math.ceil((dl - now) / 86400000);
+        let dot, cdText;
+        if (countdown < 0) { dot = '#ef4444'; cdText = Math.abs(countdown) + 'd overdue'; }
+        else if (countdown === 0) { dot = '#f59e0b'; cdText = 'Today!'; }
+        else if (countdown <= 7) { dot = '#ef4444'; cdText = countdown + 'd left'; }
+        else if (countdown <= 30) { dot = '#f59e0b'; cdText = countdown + 'd left'; }
+        else { dot = '#22c55e'; cdText = countdown + 'd left'; }
+        const isProject = item.type === 'project';
+        const badge = isProject
+            ? '<span style="background:#3b82f622;color:#3b82f6;font-size:.65rem;padding:1px 6px;border-radius:3px;font-weight:600">PROJECT</span>'
+            : '<span style="background:#8b5cf622;color:#8b5cf6;font-size:.65rem;padding:1px 6px;border-radius:3px;font-weight:600">FILE TASK</span>';
+        const desc = !isProject && item.desc
+            ? '<div style="font-size:.72rem;color:var(--main-text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + esc(item.desc) + '">' + esc(item.desc) + '</div>'
+            : '';
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--main-bg);border-radius:8px;border-left:3px solid ' + dot + '">'
+            + '<div style="min-width:0;flex:1">'
+            + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">'
+            + badge
+            + '<span style="font-size:.72rem;color:var(--main-text3)">' + formatDateDMY(item.date) + '</span>'
+            + '</div>'
+            + '<div style="font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + esc(item.label) + '">' + esc(item.label) + '</div>'
+            + desc
+            + '</div>'
+            + '<span style="font-size:.75rem;font-family:var(--font-m);font-weight:600;color:' + dot + ';white-space:nowrap;margin-left:12px">' + cdText + '</span>'
+            + '</div>';
+    }).join('') + '</div>';
+};
+
+const dashRecentActivity = entries => {
+    if (!entries.length) return '<div style="color:var(--main-text3);padding:20px;text-align:center">No recent activity</div>';
+    return '<div style="display:flex;flex-direction:column;gap:6px">' + entries.map(a => {
+        const member = DB.members.find(m => m.id === a.memberId);
+        const proj = a.projectId ? DB.projects.find(p => p.id === a.projectId) : null;
+        const scope = proj?.categoryId ? DB.scopes.find(s => s.id === proj.categoryId) : null;
+        const projLabel = proj ? (scope ? scope.name + ' \u2192 ' + proj.name : proj.name) : '\u2014';
+        const time = a.clockIn ? a.clockIn.split('T')[1].substring(0, 5) : '';
+        return '<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--main-bg);border-radius:8px">'
+            + '<span style="font-size:.72rem;font-family:var(--font-m);color:var(--main-text3);white-space:nowrap;min-width:40px">' + time + '</span>'
+            + '<span style="font-size:.72rem;font-family:var(--font-m);color:var(--main-text3);white-space:nowrap">' + formatDateDMY(a.date) + '</span>'
+            + '<span style="font-size:.82rem;font-weight:600;white-space:nowrap">' + esc(member?.name || '?') + '</span>'
+            + '<span style="font-size:.75rem;color:var(--main-text3)">\u2192</span>'
+            + '<span style="font-size:.78rem;color:var(--main-text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(projLabel) + '</span>'
+            + '</div>';
+    }).join('') + '</div>';
+};
+
+/* ==========================================================
    SECTION 6: Work Category/MAIN SCOPE
    ========================================================== */
 let activeCategoryId = null, itemSearchQuery = '', itemCurrentPage = 1, itemPageSize = 10, itemStatusSelected = [];
