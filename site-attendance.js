@@ -8,13 +8,13 @@ var saEmpCurrentPage = 1, saEmpPageSize = 10, saEmpFilteredData = [];
 async function saLoadDB() {
     try {
         var data = await api('/site-attendance/load');
-        SA_DB.employees = (data.employees || []).map(function(e) {
+        SA_DB.employees = (data.employees || []).map(function (e) {
             return { id: e.id, name: e.name, nric: e.nric, company: e.company, phone: e.phone, status: e.status, remark: e.remark, createdAt: e.created_at };
         });
-        SA_DB.projects = (data.projects || []).map(function(p) {
+        SA_DB.projects = (data.projects || []).map(function (p) {
             return { id: p.id, name: p.name, categoryId: p.category_id };
         });
-        SA_DB.scopes = (data.scopes || []).map(function(s) {
+        SA_DB.scopes = (data.scopes || []).map(function (s) {
             return { id: s.id, name: s.name };
         });
     } catch (e) {
@@ -26,14 +26,18 @@ async function saLoadDB() {
 // ── Navigation ──
 function saNav(tab, el) {
     localStorage.setItem('multitrade_sa_page', tab);
-    document.querySelectorAll('#sa-layout .sa-view').forEach(function(v) { v.style.display = 'none'; });
+    document.querySelectorAll('#sa-layout .sa-view').forEach(function (v) { v.style.display = 'none'; });
     var target = document.getElementById('sa-' + tab);
     if (target) target.style.display = '';
 
     var nav = document.getElementById('sa-nav');
-    if (nav) nav.querySelectorAll('.nav-item').forEach(function(n) {
+    if (nav) nav.querySelectorAll('.nav-item').forEach(function (n) {
         n.classList.toggle('active', n.dataset.page === tab);
     });
+
+    // Reset animation flags so page entrance animations replay on each tab switch
+    saEmpFirstRender = true;
+    saPrintRenderLock = false;
 
     switch (tab) {
         case 'sa-employees': renderSAEmployees(); break;
@@ -50,45 +54,48 @@ function saFilterEmpChecklist() {
     if (!searchEl) return;
     var typed = searchEl.value.trim().toLowerCase();
 
-    document.querySelectorAll('#sa-emp-checklist .sa-emp-row').forEach(function(row) {
+    document.querySelectorAll('#sa-emp-checklist .sa-emp-row').forEach(function (row) {
         var text = row.getAttribute('data-search') || '';
         var isMatch = !typed || text.indexOf(typed) !== -1;
         row.style.display = isMatch ? 'flex' : 'none';
     });
 }
 
+var saPrintRenderLock = false;
 function renderSAPrint() {
+    if (saPrintRenderLock) return;
+    saPrintRenderLock = true;
     var el = document.getElementById('sa-sa-print');
-    if (!el) return;
+    if (!el) { saPrintRenderLock = false; return; }
 
-    var activeEmps = SA_DB.employees.filter(function(e) { return e.status === 'active'; })
-        .sort(function(a, b) { return a.name.localeCompare(b.name); });
+    var activeEmps = SA_DB.employees.filter(function (e) { return e.status === 'active'; })
+        .sort(function (a, b) { return a.name.localeCompare(b.name); });
 
     // Resolve category IDs by name (Panel Build / Project), then dedupe "Other"
     var targetNames = ['panel build', 'project'];
     var allowedCategoryIds = (SA_DB.scopes || [])
-        .filter(function(s) {
+        .filter(function (s) {
             var n = (s.name || '').trim().toLowerCase();
             return targetNames.indexOf(n) !== -1;
         })
-        .map(function(s) { return s.id; });
+        .map(function (s) { return s.id; });
 
     var seenOther = false;
     var filteredProjects = SA_DB.projects
-        .filter(function(p) { return allowedCategoryIds.indexOf(p.categoryId) !== -1; })
-        .filter(function(p) {
+        .filter(function (p) { return allowedCategoryIds.indexOf(p.categoryId) !== -1; })
+        .filter(function (p) {
             if (p.name.trim().toLowerCase() === 'other') {
                 if (seenOther) return false;
                 seenOther = true;
             }
             return true;
         })
-        .sort(function(a, b) { return a.name.localeCompare(b.name); });
+        .sort(function (a, b) { return a.name.localeCompare(b.name); });
 
     // Store globally so the dropdown filter function can access it without rebuilding HTML
     window._saProjectList = filteredProjects;
 
-    var checkboxes = activeEmps.map(function(e) {
+    var checkboxes = activeEmps.map(function (e) {
         var searchText = (e.name + ' ' + (e.company || '')).toLowerCase();
         return '<label class="sa-emp-row" data-search="' + esc(searchText) + '" style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:4px;border-radius:6px;cursor:pointer;transition:background .15s" onmouseover="this.style.background=\'var(--main-bg)\'" onmouseout="this.style.background=\'\'">'
             + '<input type="checkbox" class="sa-emp-cb" value="' + e.id + '" style="accent-color:var(--accent)" onchange="saAutoPreview()">'
@@ -98,25 +105,25 @@ function renderSAPrint() {
     }).join('');
 
     el.innerHTML = ''
-        + '<div class="app-header">'
+        + '<div class="app-header pt-anim-filter">'
         + '<h2>Print Attendance Sheet</h2>'
         + '<div class="header-sub">Select employees and generate A4 attendance sheet</div>'
         + '</div>'
         + '<div class="app-body">'
 
         // Sheet Information
-        + '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;margin-bottom:20px">'
+        + '<div class="pt-anim-head" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;margin-bottom:20px">'
         + '<h3 style="margin:0 0 16px;font-size:.95rem;font-family:var(--font-d)">Sheet Information (Optional)</h3>'
         + '<div class="sa-form-grid">'
         + '<div class="field"><label>Title</label><input class="input" id="sa-print-title" placeholder="e.g. Safety Toolbox Meeting" oninput="saAutoPreview()"></div>'
         + '<div class="field" style="position:relative">'
         + '<label>For Project</label>'
         + '<input class="input" id="sa-print-project-search" placeholder="Search or click to select..." autocomplete="off" '
-        +   'oninput="saClearProjectIfTyping();saFilterProjectDropdown();saAutoPreview()" onfocus="saFilterProjectDropdown()">'
+        + 'oninput="saClearProjectIfTyping();saFilterProjectDropdown();saAutoPreview()" onfocus="saFilterProjectDropdown()">'
         + '<input type="hidden" id="sa-print-project">'
         + '<div id="sa-project-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;'
-        +   'background:var(--main-surface);border:1px solid var(--main-border);border-radius:8px;'
-        +   'max-height:220px;overflow-y:auto;margin-top:4px;box-shadow:0 4px 12px rgba(0,0,0,.15)"></div>'
+        + 'background:var(--main-surface);border:1px solid var(--main-border);border-radius:8px;'
+        + 'max-height:220px;overflow-y:auto;margin-top:4px;box-shadow:0 4px 12px rgba(0,0,0,.15)"></div>'
         + '</div>'
         + '<div class="field"><label>Date &amp; Time</label><input class="input" id="sa-print-datetime" type="date" onchange="saAutoPreview()"></div>'
         + '<div class="field"><label>Place</label><input class="input" id="sa-print-place" placeholder="e.g. Site Store Room" oninput="saAutoPreview()"></div>'
@@ -138,7 +145,7 @@ function renderSAPrint() {
         + '</div>'
 
         // Print Preview Area (now INSIDE app-body, same width as boxes above)
-        + '<div id="sa-print-area-wrapper" style="display:none">'
+        + '<div id="sa-print-area-wrapper" class="pt-anim-table" style="display:none">'
         + '<div style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">'
         + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px" class="sa-no-print">'
         + '<h3 style="margin:0;font-size:.95rem;font-family:var(--font-d)">Preview</h3>'
@@ -160,13 +167,21 @@ function renderSAPrint() {
         + '</div>'
         + '</div>'
 
-    + '</div>'; // closes app-body
+        + '</div>'; // closes app-body
 
     // Close dropdown when clicking outside of it
     document.addEventListener('click', saCloseProjectDropdownOutside);
 
     // Show an initial preview automatically (all employees by default)
     saAutoPreview();
+
+    // Clear animation classes after they finish (allow replay on next visit)
+    setTimeout(function () {
+        el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function (a) {
+            a.classList.remove('pt-anim-filter', 'pt-anim-head', 'pt-anim-table');
+        });
+    }, 550);
+    setTimeout(function () { saPrintRenderLock = false; }, 550);
 }
 
 // Filters and renders the dropdown list below the search input
@@ -179,13 +194,13 @@ function saFilterProjectDropdown() {
     var list = window._saProjectList || [];
 
     var matches = typed
-        ? list.filter(function(p) { return p.name.toLowerCase().indexOf(typed) !== -1; })
+        ? list.filter(function (p) { return p.name.toLowerCase().indexOf(typed) !== -1; })
         : list;
 
     if (!matches.length) {
         dropdownEl.innerHTML = '<div style="padding:10px 12px;font-size:.82rem;color:var(--main-text3)">No matches</div>';
     } else {
-        dropdownEl.innerHTML = matches.map(function(p) {
+        dropdownEl.innerHTML = matches.map(function (p) {
             return '<div class="sa-project-option" style="padding:8px 12px;font-size:.85rem;cursor:pointer" '
                 + 'onmouseover="this.style.background=\'var(--main-bg)\'" onmouseout="this.style.background=\'\'" '
                 + 'onmousedown="event.preventDefault();saSelectProject(' + p.id + ', \'' + esc(p.name).replace(/'/g, "\\'") + '\')">'
@@ -228,13 +243,13 @@ function saToggleSelectAll() {
     var allCb = document.getElementById('sa-select-all');
     if (!allCb) return;
     var checked = allCb.checked;
-    document.querySelectorAll('.sa-emp-cb').forEach(function(cb) { cb.checked = checked; });
+    document.querySelectorAll('.sa-emp-cb').forEach(function (cb) { cb.checked = checked; });
 }
 
 var _saAutoPreviewTimer = null;
 function saAutoPreview() {
     clearTimeout(_saAutoPreviewTimer);
-    _saAutoPreviewTimer = setTimeout(function() {
+    _saAutoPreviewTimer = setTimeout(function () {
         saPreviewPrint();
     }, 200);
 }
@@ -246,13 +261,13 @@ function saPreviewPrint() {
     var selectedEmps;
 
     if (mode === 'all') {
-        selectedEmps = SA_DB.employees.filter(function(e) { return e.status === 'active'; })
-            .sort(function(a, b) { return a.name.localeCompare(b.name); });
+        selectedEmps = SA_DB.employees.filter(function (e) { return e.status === 'active'; })
+            .sort(function (a, b) { return a.name.localeCompare(b.name); });
     } else {
         var checkedIds = [];
-        document.querySelectorAll('.sa-emp-cb:checked').forEach(function(cb) { checkedIds.push(parseInt(cb.value)); });
-        selectedEmps = SA_DB.employees.filter(function(e) { return checkedIds.indexOf(e.id) !== -1; })
-            .sort(function(a, b) { return a.name.localeCompare(b.name); });
+        document.querySelectorAll('.sa-emp-cb:checked').forEach(function (cb) { checkedIds.push(parseInt(cb.value)); });
+        selectedEmps = SA_DB.employees.filter(function (e) { return checkedIds.indexOf(e.id) !== -1; })
+            .sort(function (a, b) { return a.name.localeCompare(b.name); });
     }
 
     var title = '';
@@ -515,7 +530,7 @@ function saDoPrint() {
 
     var tableHtml = '';
 
-    printPages.forEach(function(page, pageIndex) {
+    printPages.forEach(function (page, pageIndex) {
         tableHtml += '<div class="sa-print-page">';
 
         if (page.isFirst) {
@@ -570,7 +585,7 @@ function saDoPrint() {
 
     document.getElementById('sa-print-area').innerHTML = tableHtml;
 
-    setTimeout(function() {
+    setTimeout(function () {
         window.print();
         saRenderPreviewPage(window._saCurrentPage || 0);
     }, 100);
@@ -580,6 +595,7 @@ function saDoPrint() {
    EMPLOYEE LIST (CRUD)
    ========================================================== */
 
+var saEmpFirstRender = true;
 function renderSAEmployees() {
     var el = document.getElementById('sa-sa-employees');
     if (!el) return;
@@ -602,7 +618,7 @@ function renderSAEmployees() {
 
     var list = SA_DB.employees;
     if (searchVal) {
-        list = list.filter(function(e) {
+        list = list.filter(function (e) {
             return (e.name || '').toLowerCase().indexOf(searchVal) !== -1
                 || (e.nric || '').toLowerCase().indexOf(searchVal) !== -1
                 || (e.company || '').toLowerCase().indexOf(searchVal) !== -1
@@ -611,7 +627,7 @@ function renderSAEmployees() {
         });
     }
     if (statusVal !== 'all') {
-        list = list.filter(function(e) { return e.status === statusVal; });
+        list = list.filter(function (e) { return e.status === statusVal; });
     }
 
     saEmpFilteredData = list;
@@ -625,7 +641,7 @@ function renderSAEmployees() {
     if (list.length === 0) {
         rows = '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No employees found</td></tr>';
     } else {
-        rows = page.map(function(e, i) {
+        rows = page.map(function (e, i) {
             var statusHtml = e.status === 'active'
                 ? '<span style="color:var(--ok);font-weight:600">Active</span>'
                 : '<span style="color:var(--main-text3)">Inactive</span>';
@@ -650,13 +666,17 @@ function renderSAEmployees() {
             'goSAEmpPage', 'changeSAEmpPageSize', { label: 'employees', sizes: [10, 25, 50] });
     }
 
+    var animF = saEmpFirstRender ? ' pt-anim-filter' : '';
+    var animH = saEmpFirstRender ? ' pt-anim-head' : '';
+    var animT = saEmpFirstRender ? ' pt-anim-table' : '';
+
     el.innerHTML = ''
-        + '<div class="app-header">'
+        + '<div class="app-header' + animF + '">'
         + '<h2 style="margin:0">Employees</h2><div class="header-sub">Manage site attendance employees</div>'
         + '</div>'
         + '<div class="app-body">'
-        + '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">'
-        + '<input type="text" class="input" id="sa-emp-search" placeholder="Search name, NRIC, company..." value="' + esc(searchVal) + '" oninput="saEmpCurrentPage=1;renderSAEmployees()" style="max-width:300px">'
+        + '<div class="' + animH.trim() + '" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">'
+        + '<input type="text" class="input" id="sa-emp-search" placeholder="Search name, NRIC, company, phone, remark..." value="' + esc(searchVal) + '" oninput="saEmpCurrentPage=1;renderSAEmployees()" style="max-width:300px">'
         + '<select class="input" id="sa-emp-status-filter" onchange="saEmpCurrentPage=1;renderSAEmployees()" style="width:130px">'
         + '<option value="all"' + (statusVal === 'all' ? ' selected' : '') + '>All Status</option>'
         + '<option value="active"' + (statusVal === 'active' ? ' selected' : '') + '>Active</option>'
@@ -665,10 +685,11 @@ function renderSAEmployees() {
         + '<span style="font-size:.78rem;color:var(--main-text3)">' + list.length + ' employees</span>'
         + '<button class="btn btn-green" onclick="showSAAddEmployee()" style="margin-left:auto">+ Add Employee</button>'
         + '</div>'
-        + '<div class="table-wrap"><table><thead><tr>'
+        + '<div class="' + animT.trim() + '"><div class="table-wrap"><table><thead><tr>'
         + '<th style="width:50px">No</th><th>Name</th><th>NRIC/Passport</th><th>Company</th><th>Phone</th><th>Remark</th><th style="width:80px">Status</th><th style="width:90px">Actions</th>'
         + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
         + pagHtml
+        + '</div>'
         + '</div>';
 
     // Restore focus + cursor position after re-render
@@ -678,6 +699,16 @@ function renderSAEmployees() {
             input.focus();
             input.setSelectionRange(selStart, selEnd);
         }
+    }
+
+    // Clear animation classes after they finish (first render only)
+    if (saEmpFirstRender) {
+        setTimeout(function () {
+            el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function (a) {
+                a.classList.remove('pt-anim-filter', 'pt-anim-head', 'pt-anim-table');
+            });
+            saEmpFirstRender = false;
+        }, 550);
     }
 }
 
