@@ -432,64 +432,24 @@ tbody tr:last-child td{border-bottom:none}
 
 @media (max-width: 860px) {
     thead th,
-    tbody td {
-        padding: 10px 8px;
-        font-size: .78rem;
-    }
+    tbody td {padding: 10px 8px;font-size: .78rem;}
     /* Sticky action column on mobile */
     .table-wrap table thead th:last-child,
-    .table-wrap table tbody td:last-child {
-        position: sticky;
-        right: 0;
-        z-index: 2;
-        min-width: 44px;
-        max-width: 50px;
-        padding: 6px 4px;
-        text-align: center;
-        background: var(--main-surface);
-        box-shadow: -4px 0 8px rgba(0,0,0,.06);
-    }
-    .table-wrap table thead th:last-child {
-        background: var(--main-surface2);
-        z-index: 3;
-    }
+    .table-wrap table tbody td:last-child {position: sticky;right: 0;z-index: 2;min-width: 44px;max-width: 50px;padding: 6px 4px;text-align: center;background: var(--main-surface);box-shadow: -4px 0 8px rgba(0,0,0,.06);}
+    .table-wrap table thead th:last-child {background: var(--main-surface2);z-index: 3;}
     .table-wrap table tbody tr:hover td:last-child,
-    .table-wrap table tbody tr:active td:last-child {
-        background: var(--main-surface) !important;
-    }
+    .table-wrap table tbody tr:active td:last-child {background: var(--main-surface) !important;}
     /* Buttons vertical */
-    .actions-cell {
-        flex-direction: column;
-        gap: 8px;
-        align-items: center;
-    padding: 4px 0;
-    }
-    .actions-cell .btn-icon {
-      width: 35px;
-      height: 35px;
-      font-size: .90rem;
-    }
+    .actions-cell {flex-direction: column;gap: 8px;align-items: center;padding: 4px 0;}
+    .actions-cell .btn-icon {width: 35px;height: 35px;font-size: .90rem;}
 }
 @media (min-width: 861px) {
     .table-wrap table thead th:last-child,
-    .table-wrap table tbody td:last-child {
-        position: sticky;
-        right: 0;
-        z-index: 2;
-        background: var(--sticky-bg);
-        box-shadow: -4px 0 8px rgba(0,0,0,.08);
-    }
-    .table-wrap table thead th:last-child {
-        background: var(--main-surface2);
-        z-index: 3;
-    }
+    .table-wrap table tbody td:last-child {position: sticky;right: 0;z-index: 2;background: var(--sticky-bg);box-shadow: -4px 0 8px rgba(0,0,0,.08);}
+    .table-wrap table thead th:last-child {background: var(--main-surface2);z-index: 3;}
     .table-wrap table tbody tr:hover td:last-child,
-    .table-wrap table tbody tr:active td:last-child {
-        background: var(--sticky-bg) !important;
-    }
-    .table-wrap table tbody tr:nth-child(even) td:last-child {
-        background: var(--sticky-bg);
-    }
+    .table-wrap table tbody tr:active td:last-child {background: var(--sticky-bg) !important;}
+    .table-wrap table tbody tr:nth-child(even) td:last-child {background: var(--sticky-bg);}
 }
 
 /* Column widths */
@@ -896,19 +856,10 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
 
 @media (max-width: 860px) {
     .modal input[type="date"],
-    .modal input[type="time"] {
-        padding-right: 36px;
-        appearance: none;
-    }
+    .modal input[type="time"] {padding-right: 36px;appearance: none;}
     .modal input[type="date"]::-webkit-calendar-picker-indicator,
-    .modal input[type="time"]::-webkit-calendar-picker-indicator {
-        position: absolute;
-        right: 10px;
-        z-index: 1;
-    }
-    .modal .field {
-        position: relative;
-    }
+    .modal input[type="time"]::-webkit-calendar-picker-indicator {position: absolute;right: 10px;z-index: 1;}
+    .modal .field {position: relative;}
 }
 
 /* Pull to Refresh */
@@ -928,326 +879,104 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
 
 /* Desktop: thin subtle scrollbar */
 @media (min-width: 601px) {
-    .modal ::-webkit-scrollbar {
-        width: 5px;
-    }
-    .modal ::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    .modal ::-webkit-scrollbar-thumb {
-        background: var(--main-border);
-        border-radius: 10px;
-    }
-    .modal ::-webkit-scrollbar-thumb:hover {
-        background: var(--main-text3);
-    }
+    .modal ::-webkit-scrollbar {width: 5px;}
+    .modal ::-webkit-scrollbar-track {background: transparent;}
+    .modal ::-webkit-scrollbar-thumb {background: var(--main-border);border-radius: 10px;}
+    .modal ::-webkit-scrollbar-thumb:hover {background: var(--main-text3);}
 }
 
 /* Mobile: hide scrollbar, keep scrollable */
 @media (max-width: 600px) {
-    .modal ::-webkit-scrollbar {
-        width: 0;
-        display: none;
-    }
-    .modal {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-    }
+    .modal ::-webkit-scrollbar {width: 0;display: none;}
+    .modal {-ms-overflow-style: none;scrollbar-width: none;}
 }
 
 
 /* Dashboard */
-.dash-card {
-    background: var(--main-surface);
-    border: 1px solid var(--main-border);
-    border-radius: var(--radius);
-    padding: 20px;
-    transition: border-color .2s ease, box-shadow .2s ease;
-}
-.dash-card:hover {
-    border-color: rgba(59,130,246,.2);
-    box-shadow: 0 0 20px rgba(59,130,246,.05);
-}
-.dash-card-title {
-    font-size: .8rem;
-    font-weight: 600;
-    color: var(--main-text2);
-    margin: 0 0 14px;
-    text-transform: uppercase;
-    letter-spacing: .04em;
-    font-family: var(--font-d);
-}
-.pt-dash-grid > .dash-card {
-    min-width: 0;
-}
-.dash-chart-container {
-    position: relative;
-    height: 260px;
-    min-width: 0;
-    overflow: hidden;
-}
-.dash-chart-container-radar {
-    height: 280px;
-}
-@media (max-width: 900px) {
-    .pt-dash-grid { grid-template-columns: 1fr !important; }
-}
+.dash-card {background: var(--main-surface);border: 1px solid var(--main-border);border-radius: var(--radius);padding: 20px;transition: border-color .2s ease, box-shadow .2s ease;}
+.dash-card:hover {border-color: rgba(59,130,246,.2);box-shadow: 0 0 20px rgba(59,130,246,.05);}
+.dash-card-title {font-size: .8rem;font-weight: 600;color: var(--main-text2);margin: 0 0 14px;text-transform: uppercase;letter-spacing: .04em;font-family: var(--font-d);}
+.pt-dash-grid > .dash-card {min-width: 0;}
+.dash-chart-container {position: relative;height: 260px;min-width: 0;overflow: hidden;}
+.dash-chart-container-radar {height: 280px;}
+@media (max-width: 900px) {.pt-dash-grid { grid-template-columns: 1fr !important; }}
 
 
 /* ==========================================================
    SITE ATTENDANCE — Print Table
    ========================================================== */
    /* 分页容器 */
-.sa-print-page {
-    page-break-after: always;
-    break-after: page;
-}
-.sa-print-page:last-child {
-    page-break-after: auto;
-    break-after: auto;
-}
+.sa-print-page {page-break-after: always;break-after: page;}
+.sa-print-page:last-child {page-break-after: auto;break-after: auto;}
 
 /* 第二页开始的表格顶部稍微加点间距 */
-.sa-print-page + .sa-print-page {
-    margin-top: 0;
-}
-.sa-print-table tr {
-    page-break-inside: avoid;
-    page-break-after: auto;
-}
+.sa-print-page + .sa-print-page {margin-top: 0;}
+.sa-print-table tr {page-break-inside: avoid;page-break-after: auto;}
 
-.sa-print-table {
-    page-break-inside: auto;
-    width: 100%;
-    border-collapse: collapse;
-    font-family: 'Arial', 'Helvetica Neue', sans-serif;
-    font-size: 11pt;
-    line-height: 1.4;
-    table-layout: fixed;          /* important for consistent column widths */
-}
+.sa-print-table {page-break-inside: auto;width: 100%;border-collapse: collapse;font-family: 'Arial', 'Helvetica Neue', sans-serif;font-size: 11pt;line-height: 1.4;table-layout: fixed;          /* important for consistent column widths */}
 
 .sa-print-table th,
-.sa-print-table td {
-    border: 1px solid #333;
-    padding: 8px 10px;
-    text-align: left;
-    vertical-align: middle;
-}
+.sa-print-table td {border: 1px solid #333;padding: 8px 10px;text-align: left;vertical-align: middle;}
 
-.sa-pt-title {
-    text-align: center;
-    font-size: 16pt;
-    font-weight: 700;
-    letter-spacing: 3px;
-    padding: 16px 10px;
-    border-bottom: 2px solid #333;
-    /* background: #fafafa; */
-}
+.sa-pt-title {text-align: center;font-size: 16pt;font-weight: 700;letter-spacing: 3px;padding: 16px 10px;border-bottom: 2px solid #333;/* background: #fafafa; */}
 
 /* Info table (separate) */
-.sa-print-info {
-    width: 100%;
-    border-collapse: collapse;
-    font-family: 'Arial', 'Helvetica Neue', sans-serif;
-    font-size: 11pt;
-    margin-bottom: 0;
-}
-.sa-print-info td {
-    border: 1px solid #333;
-    padding: 8px 10px;
-    vertical-align: middle;
-}
-.sa-pt-label {
-    font-weight: 700;
-    white-space: nowrap;
-    width: 22%;
-    font-size: 10.5pt;
-}
-.sa-pt-value {
-    font-size: 10.5pt;
-    min-height: 28px;
-}
+.sa-print-info {width: 100%;border-collapse: collapse;font-family: 'Arial', 'Helvetica Neue', sans-serif;font-size: 11pt;margin-bottom: 0;}
+.sa-print-info td {border: 1px solid #333;padding: 8px 10px;vertical-align: middle;}
+.sa-pt-label {font-weight: 700;white-space: nowrap;width: 22%;font-size: 10.5pt;}
+.sa-pt-value {font-size: 10.5pt;min-height: 28px;}
 
 /* Employee list columns – independent widths */
-.sa-pt-no {
-    width: 6%;
-    text-align: center;
-    font-weight: 700;
-}
-.sa-pt-name {
-    width: 32%;
-    font-weight: 700;
-}
-.sa-pt-nric {
-    width: 18%;
-    text-align: center;
-    font-weight: 700;
-}
-.sa-pt-company {
-    width: 24%;
-    font-weight: 700;
-}
-.sa-pt-sig {
-    width: 20%;
-    font-weight: 700;
-    text-align: center;
-}
+.sa-pt-no {width: 6%;text-align: center;font-weight: 700;}
+.sa-pt-name {width: 32%;font-weight: 700;}
+.sa-pt-nric {width: 18%;text-align: center;font-weight: 700;}
+.sa-pt-company {width: 24%;font-weight: 700;}
+.sa-pt-sig {width: 20%;font-weight: 700;text-align: center;}
 
-.sa-print-table tbody td {
-    min-height: 36px;
-    height: 36px;
-}
-.sa-print-table .sa-pt-lastrow td {
-    border-bottom: 1px solid #000;
-}
+.sa-print-table tbody td {min-height: 36px;height: 36px;}
+.sa-print-table .sa-pt-lastrow td {border-bottom: 1px solid #000;}
 
 /* 分页容器 */
-.sa-print-page {
-    page-break-after: always;
-    break-after: page;
-}
-.sa-print-page:last-child {
-    page-break-after: auto;
-    break-after: auto;
-}
+.sa-print-page {page-break-after: always;break-after: page;}
+.sa-print-page:last-child {page-break-after: auto;break-after: auto;}
 
 /* 网页预览时：让分页看起来完全连续，不要有粗线 */
 @media screen {
     /* 隐藏第2页及以后的表头 */
-    .sa-print-page:not(:first-child) .sa-print-table tr:first-of-type {
-        display: none !important;
-    }
-
+    .sa-print-page:not(:first-child) .sa-print-table tr:first-of-type {display: none !important;}
     /* 去掉中间页的粗底边框，让它看起来不断开 */
-    .sa-print-page:not(:last-child) .sa-pt-lastrow td {
-        border-bottom: 1px solid #333 !important;   /* 改回普通细线 */
-    }
-
+    .sa-print-page:not(:last-child) .sa-pt-lastrow td {border-bottom: 1px solid #333 !important;   /* 改回普通细线 */}
     /* 让两个页面的表格紧紧贴在一起 */
-    .sa-print-page + .sa-print-page {
-        margin-top: -1px !important;
-    }
-
+    .sa-print-page + .sa-print-page {margin-top: -1px !important;}
     /* 可选：去掉中间页表格的上边框，更自然 */
-    .sa-print-page:not(:first-child) .sa-print-table {
-        border-top: none !important;
-    }
-    .sa-print-scroll {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        cursor: grab;
-    }
-    .sa-print-scroll.sa-dragging {
-        cursor: grabbing;
-        user-select: none;
-    }
-    .sa-print-scroll #sa-print-area {
-        min-width: 794px;
-    }
+    .sa-print-page:not(:first-child) .sa-print-table {border-top: none !important;}
+    .sa-print-scroll {overflow-x: auto;-webkit-overflow-scrolling: touch;cursor: grab;}
+    .sa-print-scroll.sa-dragging {cursor: grabbing;user-select: none;}
+    .sa-print-scroll #sa-print-area {min-width: 794px;}
 }
 
 /* 打印时强制分页 */
 @media print {
-    body * {
-        visibility: hidden !important;
-    }
-
+    body * {visibility: hidden !important;}
     #sa-print-area,
-    #sa-print-area * {
-        visibility: visible !important;
-    }
-
-    #sa-print-area {
-        position: absolute !important;   /* 必须用 absolute，不能用 fixed */
-        left: 0 !important;
-        top: 0 !important;
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        background: #fff !important;
-        z-index: 999999 !important;
-    }
-
-    .sa-no-print {
-        display: none !important;
-    }
-
-    body {
-        margin: 0 !important;
-        padding: 0 !important;
-    }
-
-    @page {
-        size: A4;
-        margin: 15mm;
-    }
-
-    .sa-print-page {
-        page-break-after: always !important;
-        break-after: page !important;
-    }
-
-    .sa-print-page:last-child {
-        page-break-after: auto !important;
-        break-after: auto !important;
-    }
-
-    .sa-print-table {
-        page-break-inside: auto;
-    }
-
-    .sa-print-table tr {
-        page-break-inside: avoid;
-        page-break-after: auto;
-    }
-    .sa-print-scroll {
-        overflow: visible;
-    }
-    .sa-print-scroll #sa-print-area {
-        min-width: 0;
-    }
+    #sa-print-area * {visibility: visible !important;}
+    #sa-print-area {position: absolute !important;   /* 必须用 absolute，不能用 fixed */left: 0 !important;top: 0 !important;width: 100% !important;margin: 0 !important;padding: 0 !important;background: #fff !important;z-index: 999999 !important;}
+    .sa-no-print {display: none !important;}
+    body {margin: 0 !important;padding: 0 !important;}
+    @page {size: A4;margin: 15mm;}
+    .sa-print-page {page-break-after: always !important;break-after: page !important;}
+    .sa-print-page:last-child {page-break-after: auto !important;break-after: auto !important;}
+    .sa-print-table {page-break-inside: auto;}
+    .sa-print-table tr {page-break-inside: avoid;page-break-after: auto;}
+    .sa-print-scroll {overflow: visible;}
+    .sa-print-scroll #sa-print-area {min-width: 0;}
 }
 
 /* Preview 分页控件 */
-.sa-preview-pagination {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 12px;
-    margin-top: 16px;
-    padding-top: 12px;
-    border-top: 1px solid var(--main-border);
-}
-
-.sa-preview-pagination button {
-    padding: 6px 14px;
-    font-size: 0.85rem;
-    border-radius: 6px;
-    border: 1px solid var(--main-border);
-    background: var(--main-surface);
-    cursor: pointer;
-}
-
-.sa-preview-pagination button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
-.sa-preview-pagination .sa-page-info {
-    font-size: 0.85rem;
-    color: var(--main-text2);
-    min-width: 80px;
-    text-align: center;
-}
-
-.sa-form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-}
-
-@media (max-width: 640px) {
-    .sa-form-grid {
-        grid-template-columns: 1fr;
-    }
+.sa-preview-pagination {display: flex;justify-content: center;align-items: center;gap: 12px;margin-top: 16px;padding-top: 12px;border-top: 1px solid var(--main-border);}
+.sa-preview-pagination button {padding: 6px 14px;font-size: 0.85rem;border-radius: 6px;border: 1px solid var(--main-border);background: var(--main-surface);cursor: pointer;}
+.sa-preview-pagination button:disabled {opacity: 0.4;cursor: not-allowed;}
+.sa-preview-pagination .sa-page-info {font-size: 0.85rem;color: var(--main-text2);min-width: 80px;text-align: center;}
+.sa-form-grid {display: grid;grid-template-columns: 1fr 1fr;gap: 12px;}
+@media (max-width: 640px) {.sa-form-grid {grid-template-columns: 1fr;}
 }
