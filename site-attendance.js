@@ -605,7 +605,9 @@ function renderSAEmployees() {
         list = list.filter(function(e) {
             return (e.name || '').toLowerCase().indexOf(searchVal) !== -1
                 || (e.nric || '').toLowerCase().indexOf(searchVal) !== -1
-                || (e.company || '').toLowerCase().indexOf(searchVal) !== -1;
+                || (e.company || '').toLowerCase().indexOf(searchVal) !== -1
+                || (e.phone || '').toLowerCase().indexOf(searchVal) !== -1
+                || (e.remark || '').toLowerCase().indexOf(searchVal) !== -1;
         });
     }
     if (statusVal !== 'all') {
@@ -621,7 +623,7 @@ function renderSAEmployees() {
 
     var rows = '';
     if (list.length === 0) {
-        rows = '<tr><td colspan="7" style="text-align:center;color:var(--main-text3);padding:30px">No employees found</td></tr>';
+        rows = '<tr><td colspan="8" style="text-align:center;color:var(--main-text3);padding:30px">No employees found</td></tr>';
     } else {
         rows = page.map(function(e, i) {
             var statusHtml = e.status === 'active'
@@ -633,6 +635,7 @@ function renderSAEmployees() {
                 + '<td style="font-family:var(--font-m)">' + esc(e.nric || '\u2014') + '</td>'
                 + '<td>' + esc(e.company || '\u2014') + '</td>'
                 + '<td style="font-family:var(--font-m)">' + esc(e.phone || '\u2014') + '</td>'
+                + '<td style="font-size:.82rem;color:var(--main-text2)">' + esc(e.remark || '\u2014') + '</td>'
                 + '<td>' + statusHtml + '</td>'
                 + '<td><div class="actions-cell">'
                 + '<button class="btn-icon" onclick="showSAEditEmployee(' + e.id + ')" title="Edit">&#9998;</button> '
@@ -663,7 +666,7 @@ function renderSAEmployees() {
         + '<button class="btn btn-green" onclick="showSAAddEmployee()" style="margin-left:auto">+ Add Employee</button>'
         + '</div>'
         + '<div class="table-wrap"><table><thead><tr>'
-        + '<th style="width:50px">No</th><th>Name</th><th>NRIC/Passport</th><th>Company</th><th>Phone</th><th style="width:80px">Status</th><th style="width:90px">Actions</th>'
+        + '<th style="width:50px">No</th><th>Name</th><th>NRIC/Passport</th><th>Company</th><th>Phone</th><th>Remark</th><th style="width:80px">Status</th><th style="width:90px">Actions</th>'
         + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
         + pagHtml
         + '</div>';
