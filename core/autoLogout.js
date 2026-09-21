@@ -68,33 +68,22 @@
 
         stopListening();
         clearAllTimers();
-        removeOverlayHandler();     // ✅ 登出时清旧 handler
+        removeOverlayHandler();
         currentUser = null;
-
-        ['multitrade_session', 'multitrade_module',
-         'multitrade_admin_page', 'multitrade_emp_page',
-         'multitrade_pt_page'].forEach(key => localStorage.removeItem(key));
+        ['multitrade_session', 'multitrade_module', 'multitrade_admin_page',
+         'multitrade_emp_page', 'multitrade_pt_page', 'multitrade_sa_page']
+            .forEach(key => localStorage.removeItem(key));
 
         document.querySelectorAll('.pt-drawer, .pt-drawer-overlay, .sidebar, .mobile-overlay')
             .forEach(el => el.classList.remove('active'));
-
         const noticeBtn = document.getElementById('notice-float-btn');
-        if (noticeBtn) {
-            noticeBtn.style.display = 'none';
-            noticeBtn.innerHTML = '';
-        }
+        if (noticeBtn) { noticeBtn.style.display = 'none'; noticeBtn.innerHTML = ''; }
+        document.querySelectorAll('.app-layout').forEach(el => { el.style.visibility = 'hidden'; });
 
-        document.querySelectorAll('.app-layout').forEach(el => {
-            el.style.visibility = 'hidden';
-        });
-
-        // ---------- 显示会话过期弹窗 ----------
         const goToLogin = () => {
             clearAllTimers();
-            removeOverlayHandler();     // ✅ 跳转前清 handler
-
+            removeOverlayHandler();
             hideModal();
-
             document.querySelectorAll('.app-layout').forEach(el => {
                 el.classList.remove('active');
                 el.style.visibility = '';
@@ -103,7 +92,12 @@
             document.getElementById('login-page').classList.add('active');
             document.getElementById('login-pass').value = '';
             document.getElementById('login-pass').focus();
-            currentUser = null;
+            selectedModule = 'attendance';
+            document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
+            const firstTab = document.querySelector('.login-tab');
+            if (firstTab) firstTab.classList.add('active');
+            const subtitle = document.getElementById('login-subtitle');
+            if (subtitle) subtitle.textContent = 'Project Tracking Management';
         };
 
         showModal(`
@@ -118,18 +112,10 @@
         `);
 
         document.getElementById('session-expired-btn').onclick = goToLogin;
-
-        // ✅ 命名引用，确保能 removeEventListener
         const overlay = document.getElementById('modal-overlay');
-        window._sessionOverlayHandler = (e) => {
-            if (e.target === overlay) goToLogin();
-        };
+        window._sessionOverlayHandler = e => { if (e.target === overlay) goToLogin(); };
         overlay.addEventListener('click', window._sessionOverlayHandler);
-
-        // 后备：5 秒后若用户未操作则自动跳转
-        sessionExpiredTimer = setTimeout(() => {
-            if (!currentUser) goToLogin();
-        }, 5000);
+        sessionExpiredTimer = setTimeout(() => { if (!currentUser) goToLogin(); }, 5000);
     }
 
     // ---------- 启动 ----------

@@ -10,7 +10,8 @@ const ROLE_PERMISSIONS = {
     admin:    ['admin', 'manager', 'all'],
     manager:  ['manager', 'all'],
     employee: ['all'],
-    viewer:   ['all']
+    viewer:   ['all'],
+    site_admin: ['all']
 };
 
 const getCurrentRole = () => currentUser ? currentUser.role : 'viewer';
@@ -82,12 +83,49 @@ function handleLogin(e) {
             err.textContent = '';
             localStorage.setItem('multitrade_session', JSON.stringify(currentUser));
 
+            console.log('Login OK, role:', currentUser.role, 'module:', selectedModule);
+
             if (window.clearSessionExpiredTimer) window.clearSessionExpiredTimer();
             if (window.clearSessionOverlayHandler) window.clearSessionOverlayHandler();
             if (window.restartAutoLogout) window.restartAutoLogout();
 
             const isViewer = currentUser.role === 'viewer';
+            const isSiteAdmin = currentUser.role === 'site_admin' || currentUser.role === 'admin';
 
+            // ── SITE ATTENDANCE ──
+            if (selectedModule === 'site') {
+                if (!isSiteAdmin) {
+                    err.textContent = 'Site Attendance access denied';
+                    currentUser = null;
+                    localStorage.removeItem('multitrade_session');
+                    return;
+                }
+                console.log('Entering SA layout...');
+                localStorage.setItem('multitrade_module', 'site');
+                document.querySelectorAll('.auth-page,.app-layout').forEach(el => el.classList.remove('active'));
+                var saLayout = document.getElementById('sa-layout');
+                console.log('SA layout found:', !!saLayout);
+                if (saLayout) saLayout.classList.add('active');
+                var saAvatar = document.getElementById('sa-avatar');
+                var saUserName = document.getElementById('sa-user-name');
+                if (saAvatar) saAvatar.textContent = currentUser.username.charAt(0).toUpperCase();
+                if (saUserName) saUserName.textContent = currentUser.username;
+                _setRoleLabel('sa-layout', currentUser.role === 'admin' ? 'Administrator' : 'Site Admin');
+                await saLoadDB();
+                saNav('sa-print');
+                applyNavPermissions();
+                return;
+            }
+
+            // ── SITE ADMIN BLOCKED FROM PT/PANEL ──
+            if (currentUser.role === 'site_admin') {
+                err.textContent = 'Please use Site Attendance';
+                currentUser = null;
+                localStorage.removeItem('multitrade_session');
+                return;
+            }
+
+            // ── PANEL TRACKING ──
             if (selectedModule === 'panel') {
                 if (currentUser.role !== 'admin' && !isViewer) {
                     err.textContent = 'Panel Tracking is for admin only';
@@ -100,13 +138,12 @@ function handleLogin(e) {
                 document.getElementById('panel-layout').classList.add('active');
                 document.getElementById('pt-avatar').textContent = currentUser.username.charAt(0).toUpperCase();
                 document.getElementById('pt-user-name').textContent = currentUser.username;
-
-                _setRoleLabel('panel-layout', isViewer ? 'Viewer' : 'Admin');
-
+                _setRoleLabel('panel-layout', isViewer ? 'Viewer' : 'Administrator');
                 await ptLoadDB();
                 ptNav('pt-dashboard');
                 applyNavPermissions();
             } else {
+                // ── PROJECT TRACKING ──
                 localStorage.setItem('multitrade_module', 'attendance');
                 await loadDB();
                 document.querySelectorAll('.auth-page,.app-layout').forEach(el => el.classList.remove('active'));
@@ -115,7 +152,7 @@ function handleLogin(e) {
                     document.getElementById('admin-layout').classList.add('active');
                     _setRoleLabel('admin-layout', isViewer ? 'Viewer' : 'Administrator');
                     adminNav('dashboard');
-                    updateAvatars(); 
+                    updateAvatars();
                 } else {
                     document.getElementById('employee-layout').classList.add('active');
                     _noticesDismissed = false;
@@ -126,7 +163,10 @@ function handleLogin(e) {
                 updateAvatars();
                 updateFileBadge();
             }
-        } catch (ex) { err.textContent = ex.message; }
+        } catch (ex) {
+            console.error('Login error:', ex);
+            err.textContent = ex.message;
+        }
     })();
 }
 
@@ -167,12 +207,20 @@ function confirmLogout() {
 }
 
 function doLogout() {
-    ['multitrade_session', 'multitrade_admin_page', 'multitrade_emp_page', 'multitrade_pt_page', 'multitrade_module']
+    ['multitrade_session', 'multitrade_admin_page', 'multitrade_emp_page', 'multitrade_pt_page', 'multitrade_module', 'multitrade_sa_page']
         .forEach(k => localStorage.removeItem(k));
     currentUser = null;
     document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
     document.getElementById('login-page').classList.add('active');
     selectedModule = 'attendance';
+
+    // 重置 login tab
+    document.querySelectorAll('.login-tab').forEach(t => t.classList.remove('active'));
+    var firstTab = document.querySelector('.login-tab');
+    if (firstTab) firstTab.classList.add('active');
+    var subtitle = document.getElementById('login-subtitle');
+    if (subtitle) subtitle.textContent = 'Project Tracking Management';
+
     window.location.href = window.location.pathname;
     hideModal();
 }

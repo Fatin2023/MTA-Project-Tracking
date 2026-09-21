@@ -24,6 +24,7 @@
     <div class="login-tabs">
       <button class="login-tab active" onclick="selectModule('attendance',this)">Project Management</button>
       <button class="login-tab" onclick="selectModule('panel',this)">Panel Tracking</button>
+      <button class="login-tab" onclick="selectModule('site',this)">Site Attendance</button>
     </div>
     <p class="subtitle" id="login-subtitle">Project Tracking Management</p>
     <form onsubmit="handleLogin(event)">
@@ -500,6 +501,59 @@
     </div>
 </div>
 
+
+<!-- ===== SITE ATTENDANCE LAYOUT ===== -->
+  <div id="sa-layout" class="app-layout">
+  <div class="sidebar">
+    <div class="sidebar-toggle" onclick="toggleSidebar()">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+    <div class="sidebar-brand">
+      <h1>Multi<span>trade</span></h1>
+      <div class="brand-sub">Site Attendance</div>
+    </div>
+    <div class="sidebar-nav" id="sa-nav">
+      <div class="nav-section" onclick="toggleNavGroup(this)">
+        Site Attendance <span class="nav-arrow">▾</span>
+      </div>
+      <div class="nav-group" data-group="sa-main">
+        <div class="nav-item" data-page="sa-print" data-tooltip="Print Sheet" onclick="saNav('sa-print',this)">
+          <span class="nav-icon">🖨</span><span class="nav-label">Print Sheet</span>
+        </div>
+        <div class="nav-item active" data-page="sa-employees" data-tooltip="Employees" onclick="saNav('sa-employees',this)">
+          <span class="nav-icon">👤</span><span class="nav-label">Employees</span>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+        <span class="theme-icon">☾</span>
+        <span class="theme-label">Dark Mode</span>
+      </div>
+      <div class="sidebar-user">
+        <div class="avatar" id="sa-avatar">A</div>
+        <div class="user-info">
+          <div class="user-name" id="sa-user-name">Admin</div>
+          <div class="user-role">Site Admin</div>
+        </div>
+      </div>
+      <button class="logout-btn" onclick="confirmLogout()">← Sign Out</button>
+    </div>
+  </div>
+  <div class="app-main">
+    <div id="sa-sa-employees" class="sa-view"></div>
+    <div id="sa-sa-print" class="sa-view" style="display:none"></div>
+  </div>
+  <div class="mobile-header">
+    <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+    <div class="brand">Multi<span>trade</span></div>
+    <button class="mobile-logout-hdr" onclick="confirmLogout()">Sign Out</button>
+  </div>
+  <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+</div>
+
 <script src="core/theme.js"></script>
 <script src="core/utils.js"></script>
 <script src="core/api.js"></script>
@@ -511,6 +565,8 @@
 <script src="core/navigation.js"></script>
 <script src="core/pullToRefresh.js"></script>
 <script src="core/autoLogout.js"></script>
+<script src="site-attendance.js"></script>
 <script src="app.js"></script>
+
 </body>
 </html>

@@ -79,6 +79,15 @@ function requireEdit(req, res, next) {
     });
 }
 
+function requireSiteAdmin(req, res, next) {
+    requireAuth(req, res, function() {
+        if (req.user.role !== 'site_admin' && req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Site Attendance access required' });
+        }
+        next();
+    });
+}
+
 async function requireEditOrPic(req, res, next) {
     requireAuth(req, res, async function() {
         if (req.user.role === 'admin') return next();
@@ -2268,6 +2277,119 @@ app.get('/api/template/projects/:scopeId', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+
+/* ==========================================================
+   SITE ATTENDANCE — Schema Init
+   ========================================================== */
+async function initSiteAttendance() {
+    try {
+        await pool.query('CREATE SCHEMA IF NOT EXISTS site_attendance');
+        await pool.query(`CREATE TABLE IF NOT EXISTS site_attendance.employees (
+            id SERIAL PRIMARY KEY, name VARCHAR(200) NOT NULL,
+            nric VARCHAR(50) DEFAULT '', company VARCHAR(200) DEFAULT '',
+            phone VARCHAR(50) DEFAULT '', status VARCHAR(20) DEFAULT 'active',
+            remark TEXT DEFAULT '', created_at TIMESTAMP DEFAULT NOW()
+        )`);
+        console.log('Site Attendance schema ready');
+    } catch (e) {
+        console.log('SA init skip:', e.message.substring(0, 80));
+    }
+}
+
+
+/* --------------------------------------------------------------------------------------------------------*/
+
+/* ==========================================================
+   SITE ATTENDANCE — API Routes
+   ========================================================== */
+
+// Load all SA data
+app.get('/api/site-attendance/load', requireSiteAdmin, async (req, res) => {
+    try {
+        const employees = await pool.query('SELECT * FROM site_attendance.employees ORDER BY name');
+        const projects = await pool.query('SELECT * FROM projects ORDER BY name');
+        const scopes = await pool.query('SELECT id, name FROM scopes ORDER BY name'); // adjust columns if needed
+        res.json({ employees: employees.rows, projects: projects.rows, scopes: scopes.rows });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Create employee
+app.post('/api/site-attendance/employees', requireSiteAdmin, async (req, res) => {
+    const { name, nric, company, phone, status, remark } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
+
+    try {
+        // 检查重複：name / nric / phone，忽略大小写和空白
+        const dup = await pool.query(
+            `SELECT id, name, nric, phone FROM site_attendance.employees
+             WHERE LOWER(TRIM(name)) = LOWER(TRIM($1))
+                OR ($2 <> '' AND LOWER(TRIM(nric)) = LOWER(TRIM($2)))
+                OR ($3 <> '' AND LOWER(TRIM(phone)) = LOWER(TRIM($3)))
+             LIMIT 1`,
+            [name, nric || '', phone || '']
+        );
+        if (dup.rows.length) {
+            const d = dup.rows[0];
+            let field = 'Name';
+            if (nric && d.nric && d.nric.trim().toLowerCase() === nric.trim().toLowerCase()) field = 'NRIC/Passport';
+            else if (phone && d.phone && d.phone.trim().toLowerCase() === phone.trim().toLowerCase()) field = 'Phone';
+            return res.status(409).json({ error: field + ' already exists (' + d.name + ')' });
+        }
+
+        const result = await pool.query(
+            `INSERT INTO site_attendance.employees (name, nric, company, phone, status, remark)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+            [name.trim(), nric || '', company || '', phone || '', status || 'active', remark || '']
+        );
+        res.json(result.rows[0]);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Update employee
+app.put('/api/site-attendance/employees/:id', requireSiteAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { name, nric, company, phone, status, remark } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
+
+    try {
+        // 检查重複，排除自己（id <> $4）
+        const dup = await pool.query(
+            `SELECT id, name, nric, phone FROM site_attendance.employees
+             WHERE id <> $4 AND (
+                   LOWER(TRIM(name)) = LOWER(TRIM($1))
+                OR ($2 <> '' AND LOWER(TRIM(nric)) = LOWER(TRIM($2)))
+                OR ($3 <> '' AND LOWER(TRIM(phone)) = LOWER(TRIM($3)))
+             ) LIMIT 1`,
+            [name, nric || '', phone || '', id]
+        );
+        if (dup.rows.length) {
+            const d = dup.rows[0];
+            let field = 'Name';
+            if (nric && d.nric && d.nric.trim().toLowerCase() === nric.trim().toLowerCase()) field = 'NRIC/Passport';
+            else if (phone && d.phone && d.phone.trim().toLowerCase() === phone.trim().toLowerCase()) field = 'Phone';
+            return res.status(409).json({ error: field + ' already exists (' + d.name + ')' });
+        }
+
+        const result = await pool.query(
+            `UPDATE site_attendance.employees SET name=$1, nric=$2, company=$3, phone=$4, status=$5, remark=$6
+             WHERE id=$7 RETURNING *`,
+            [name.trim(), nric || '', company || '', phone || '', status || 'active', remark || '', id]
+        );
+        if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
+        res.json(result.rows[0]);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
+
+
 async function initDB() {
     var tables = [
         `CREATE TABLE IF NOT EXISTS positions (
@@ -2554,6 +2676,35 @@ async function initDB() {
 
     console.log('Admin user ready');
     console.log('Admin user ready');
+
+    // ========== SITE ATTENDANCE SCHEMA ==========
+    try {
+        await pool.query('CREATE SCHEMA IF NOT EXISTS site_attendance');
+    } catch (e) {
+        console.log('SA schema skip:', e.message.substring(0, 80));
+    }
+
+    var saTables = [
+        `CREATE TABLE IF NOT EXISTS site_attendance.employees (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(200) NOT NULL,
+            nric VARCHAR(50) DEFAULT '',
+            company VARCHAR(200) DEFAULT '',
+            phone VARCHAR(50) DEFAULT '',
+            status VARCHAR(20) DEFAULT 'active',
+            remark TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`
+    ];
+
+    for (var i = 0; i < saTables.length; i++) {
+        try {
+            await pool.query(saTables[i]);
+        } catch (e) {
+            console.log('SA table skip:', e.message.substring(0, 80));
+        }
+    }
+    console.log('Site Attendance schema ready');
 
     console.log('Database fully initialized');
 }

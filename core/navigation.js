@@ -168,10 +168,19 @@ async function openProject(pid) {
 function updateAvatars() {
     if (!currentUser) return;
     const initial = currentUser.username.charAt(0).toUpperCase();
-    ['admin-avatar', 'detail-avatar', 'emp-avatar'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = initial; });
-    ['admin-user-name', 'detail-user-name', 'emp-user-name'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = currentUser.username; });
+    ['admin-avatar', 'detail-avatar', 'emp-avatar', 'pt-avatar', 'sa-avatar'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = initial;
+    });
+    ['admin-user-name', 'detail-user-name', 'emp-user-name', 'pt-user-name', 'sa-user-name'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = currentUser.username;
+    });
     const roleEl = document.getElementById('emp-user-role');
-    if (roleEl) { const member = currentUser.memberId ? DB.members.find(m => m.id === currentUser.memberId) : null; roleEl.textContent = member && member.positionId ? getPositionName(member.positionId) : 'Employee'; }
+    if (roleEl) {
+        const member = currentUser.memberId ? DB.members.find(m => m.id === currentUser.memberId) : null;
+        roleEl.textContent = member && member.positionId ? getPositionName(member.positionId) : 'Employee';
+    }
 }
 
 // Mobile menu

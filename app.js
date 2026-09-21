@@ -1240,7 +1240,7 @@ const renderUsersTable = () => {
             const sal = member ? latestSalary(member) : null;
             const projs = member ? getMemberProjects(member.id) : [];
             const projHtml = projs.length ? projs.map(p => `<span class="badge badge-employee" style="margin:1px">${esc(p.name)}</span>`).join(' ') : '<span style="color:var(--main-text3)">None</span>';
-            const roleClass = u.role === 'admin' ? 'badge-admin' : u.role === 'viewer' ? 'badge-viewer' : 'badge-employee';
+            const roleClass = u.role === 'admin' ? 'badge-admin' : u.role === 'viewer' ? 'badge-viewer' : u.role === 'site_admin' ? 'badge-siteadmin' : 'badge-employee';
             return `<tr>
                 <td style="font-family:var(--font-m);color:var(--main-text3)">${start + idx + 1}</td>
                 <td style="font-family:var(--font-m)">${esc(u.username)}</td>
@@ -1323,7 +1323,7 @@ const showAddUser = () => {
         <div style="flex:1;min-height:0;overflow-y:auto">
             <h3>Add User</h3>
             <div class="field"><label>Role</label><select class="input" id="adduser-role" onchange="toggleAddUserFields()">
-                <option value="employee">Employee</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></div>
+                <option value="employee">Employee</option><option value="viewer">Viewer</option><option value="admin">Admin</option><option value="site_admin">Site Admin</option></select></div>
             <div id="emp-fields">
                 <div class="field"><label>Full Name</label><input class="input" id="adduser-name" placeholder="e.g. John Smith"></div>
                 <div class="field"><label>Email <span style="font-size:.72rem;color:var(--main-text3)">(for notifications)</span></label><input class="input" id="adduser-email" type="email" placeholder="e.g. john@gmail.com"></div>
@@ -1408,6 +1408,7 @@ const showEditUser = userId => {
                 <option value="admin"${user.role==='admin'?' selected':''}>Admin</option>
                 <option value="viewer"${user.role==='viewer'?' selected':''}>Viewer</option>
                 <option value="employee"${user.role==='employee'?' selected':''}>Employee</option>
+                <option value="site_admin"${user.role==='site_admin'?' selected':''}>Site Admin</option>
             </select></div>
             <p class="auth-error" id="edituser-error"></p>
         </div>
@@ -8656,8 +8657,14 @@ function selectModule(mod, el) {
     selectedModule = mod;
     document.querySelectorAll('.login-tab').forEach(function(t) { t.classList.remove('active'); });
     if (el) el.classList.add('active');
-    document.getElementById('login-subtitle').textContent =
-        mod === 'attendance' ? 'Project Tracking Management' : 'Panel Tracking System';
+    var subtitle = document.getElementById('login-subtitle');
+    if (subtitle) {
+        switch (mod) {
+            case 'attendance': subtitle.textContent = 'Project Tracking Management'; break;
+            case 'panel': subtitle.textContent = 'Panel Tracking System'; break;
+            case 'site': subtitle.textContent = 'Site Attendance Management'; break;
+        }
+    }
 }
 
 function ptLogout() {
@@ -10492,7 +10499,46 @@ document.addEventListener('touchstart', (e) => {
 
     document.querySelectorAll('.auth-page,.app-layout').forEach(p => p.classList.remove('active'));
 
-    if (savedModule === 'panel') {
+    // ── SITE ATTENDANCE ──
+    if (savedModule === 'site' && (currentUser.role === 'site_admin' || currentUser.role === 'admin')) {
+        try {
+            document.getElementById('sa-layout').classList.add('active');
+            document.getElementById('sa-avatar').textContent = currentUser.username.charAt(0).toUpperCase();
+            document.getElementById('sa-user-name').textContent = currentUser.username;
+            _setRoleLabel('sa-layout', currentUser.role === 'admin' ? 'Administrator' : 'Site Admin');
+            await saLoadDB();
+            let page = localStorage.getItem('multitrade_sa_page') || 'sa-print';
+            activateNav('sa-nav', page);
+            saNav(page);
+            applyNavPermissions();
+        } catch (e) {
+            console.error('SA load error:', e);
+            document.getElementById('sa-layout').classList.add('active');
+            saNav('sa-print');
+        }
+    }
+
+    // ── site_admin 但 module 不是 site → 强制跳 SA ──
+    else if (currentUser.role === 'site_admin') {
+        localStorage.setItem('multitrade_module', 'site');
+        selectedModule = 'site';
+        try {
+            document.getElementById('sa-layout').classList.add('active');
+            document.getElementById('sa-avatar').textContent = currentUser.username.charAt(0).toUpperCase();
+            document.getElementById('sa-user-name').textContent = currentUser.username;
+            _setRoleLabel('sa-layout', 'Site Admin');
+            await saLoadDB();
+            saNav('sa-print');
+            applyNavPermissions();
+        } catch (e) {
+            console.error('SA load error:', e);
+            document.getElementById('sa-layout').classList.add('active');
+            saNav('sa-print');
+        }
+    }
+
+    // ── PANEL TRACKING ──
+    else if (savedModule === 'panel') {
         try {
             await ptLoadDB();
             document.getElementById('panel-layout').classList.add('active');
@@ -10500,7 +10546,7 @@ document.addEventListener('touchstart', (e) => {
             document.getElementById('pt-user-name').textContent = currentUser.username;
 
             const isViewer = currentUser.role === 'viewer';
-            _setRoleLabel('panel-layout', isViewer ? 'Viewer' : 'Admin');
+            _setRoleLabel('panel-layout', isViewer ? 'Viewer' : 'Administrator');
 
             let page = localStorage.getItem('multitrade_pt_page') || 'pt-dashboard';
             if (isViewer && (page === 'pt-import' || page === 'pt-users')) page = 'pt-dashboard';
@@ -10515,7 +10561,10 @@ document.addEventListener('touchstart', (e) => {
             ptNav('pt-dashboard');
             applyNavPermissions();
         }
-    } else {
+    }
+
+    // ── PROJECT TRACKING ──
+    else {
         try {
             await loadDB();
             if (currentUser.role === 'admin' || currentUser.role === 'viewer') {
