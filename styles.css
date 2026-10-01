@@ -1038,3 +1038,85 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
     font-size: .8rem;
     white-space: nowrap;
 }
+
+/* ═══════════════════════════════════════════
+   iOS Safari Date 修复
+   ═══════════════════════════════════════════ */
+
+/* Container fix — 阻止 date input 撑破 grid/flex cell */
+.sa-ios-date-field {
+    min-width: 0;
+    overflow: hidden;
+}
+.sa-ios-date-field input[type="date"] {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+@supports (-webkit-touch-callout: none) {
+
+    /* ── Print Sheet Date ── */
+    #sa-print-datetime {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        -webkit-appearance: none !important;
+        appearance: none !important;
+    }
+    #sa-print-datetime::-webkit-datetime-edit,
+    #sa-print-datetime::-webkit-date-and-time-value {
+        min-width: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+    }
+
+    /* ── Records From ── */
+    #sa-rec-from {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        -webkit-appearance: none !important;
+        appearance: none !important;
+    }
+    #sa-rec-from::-webkit-datetime-edit,
+    #sa-rec-from::-webkit-date-and-time-value {
+        min-width: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+    }
+
+    /* ── Records To ── */
+    #sa-rec-to {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        -webkit-appearance: none !important;
+        appearance: none !important;
+    }
+    #sa-rec-to::-webkit-datetime-edit,
+    #sa-rec-to::-webkit-date-and-time-value {
+        min-width: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+    }
+
+    /* ── Work Records filter items containing dates — give them a fixed narrow width on small screens ── */
+    .sa-rec-filter-grid .sa-ios-date-field {
+        flex: 0 0 auto;
+        width: 140px;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .sa-rec-filter-grid .sa-ios-date-field input[type="date"] {
+        height: 42px !important;
+        min-height: 42px !important;
+    }
+}
