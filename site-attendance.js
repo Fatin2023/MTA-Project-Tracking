@@ -299,7 +299,7 @@ function renderSAPrint() {
         + 'background:var(--main-surface);border:1px solid var(--main-border);border-radius:8px;'
         + 'max-height:220px;overflow-y:auto;margin-top:4px;box-shadow:0 4px 12px rgba(0,0,0,.15)"></div>'
         + '</div>'
-        + '<div class="field"><label>Date &amp; Time</label><input class="input" id="sa-print-datetime" type="date" value="' + todayDate + '" onchange="saLoadHoursForDate()"></div>'
+        + '<div class="field sa-ios-date-field"><label>Date &amp; Time</label><input class="input" id="sa-print-datetime" type="date" value="' + todayDate + '" onchange="saLoadHoursForDate()"></div>'
         + '<div class="field"><label>Place</label><input class="input" id="sa-print-place" placeholder="e.g. Site Store Room" oninput="saAutoPreview()"></div>'
         + '<div class="field" style="grid-column:1/-1"><label>Conducted / Chaired by</label><input class="input" id="sa-print-conducted" placeholder="e.g. Ahmad bin Hassan" oninput="saAutoPreview()"></div>'
         + (currentUser && currentUser.role === 'admin'
@@ -1676,8 +1676,8 @@ function renderSARecords() {
     + '<h3 style="margin:0 0 14px;font-size:.9rem;font-family:var(--font-d)">Filter</h3>'
     + '<div class="sa-rec-filter-grid">'
     + '<div class="sa-rec-filter-item" style="flex:0 1 300px"><label>Search</label><input class="input" id="sa-rec-search" placeholder="Search name, company, site..." oninput="saQueueRecordsTable()"></div>'
-    + '<div class="sa-rec-filter-item"><label>From</label><input class="input" id="sa-rec-from" type="date" value="" onchange="saLoadRecords()"></div>'
-    + '<div class="sa-rec-filter-item"><label>To</label><input class="input" id="sa-rec-to" type="date" value="" onchange="saLoadRecords()"></div>'
+    + '<div class="sa-rec-filter-item sa-ios-date-field"><label>From</label><input class="input" id="sa-rec-from" type="date" value="" onchange="saLoadRecords()"></div>'
+    + '<div class="sa-rec-filter-item sa-ios-date-field"><label>To</label><input class="input" id="sa-rec-to" type="date" value="" onchange="saLoadRecords()"></div>'
     + saRecDropdownHtml('emp', 'Employee')
     + saRecDropdownHtml('rate', 'Rate Type')
     // admin → dropdown，site_admin → 锁定 label
