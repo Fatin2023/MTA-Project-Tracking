@@ -36,10 +36,11 @@ async function showPage(id) {
 }
 
 async function adminNav(tab, el) {
-    if (!tab) tab = 'dashboard';  // ✅ 默认 dashboard
+    if (!tab) tab = 'dashboard';
 
-    if (currentUser && currentUser.role === 'viewer' && (tab === 'users' || tab === 'departments' || tab === 'positions')) {
-        tab = 'dashboard';  // ✅ viewer 也回 dashboard
+    // ↓↓↓ 加 sites 到 viewer 限制 ↓↓↓
+    if (currentUser && currentUser.role === 'viewer' && (tab === 'users' || tab === 'departments' || tab === 'positions' || tab === 'sites')) {
+        tab = 'dashboard';
     }
 
     localStorage.setItem('multitrade_admin_page', tab);
@@ -55,9 +56,12 @@ async function adminNav(tab, el) {
     }
 
     switch (tab) {
-        case 'dashboard': renderPTDashboard(); break;  // ✅ 新增
+        case 'dashboard': renderPTDashboard(); break;
         case 'projects': renderMainScope(); break;
         case 'users': renderUsersList(); break;
+        // ↓↓↓ 新增 ↓↓↓
+        case 'sites': renderSitesPage(); break;
+        // ↑↑↑ 结束 ↑↑↑
         case 'positions': renderPositionsList(); break;
         case 'departments': renderDepartmentsList(); break;
         case 'attendance': renderAdminAttendance(); break;

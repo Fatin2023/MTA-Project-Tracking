@@ -976,6 +976,144 @@ const confirmDeleteItem = pid => {
 };
 const doDeleteItem = async pid => { await api('/projects/'+pid, { method:'DELETE' }); hideModal(); await loadDB(); renderItemsTable(); };
 
+
+/* ==========================================================
+   SITE MANAGEMENT (Admin Only)
+   ========================================================== */
+
+let sitesFirstRender = true;
+
+function renderSitesPage() {
+    var el = document.getElementById('admin-sites');
+    if (!el) return;
+    var sites = DB.sites || [];
+
+    var rows = sites.length === 0
+        ? '<tr><td colspan="5" style="text-align:center;color:var(--main-text3);padding:30px">No sites yet</td></tr>'
+        : sites.map(function(s, i) {
+            return '<tr>'
+                + '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (i + 1) + '</td>'
+                + '<td style="font-weight:600">' + esc(s.name) + '</td>'
+                + '<td>' + esc(s.location || '—') + '</td>'
+                + '<td style="font-size:.82rem;color:var(--main-text2)">' + esc(s.remark || '—') + '</td>'
+                + '<td><div class="actions-cell">'
+                + '<button class="btn-icon" onclick="showEditSite(' + s.id + ')" title="Edit">&#9998;</button> '
+                + '<button class="btn-icon danger" onclick="confirmDeleteSite(' + s.id + ')" title="Delete">&#10005;</button>'
+                + '</div></td></tr>';
+        }).join('');
+
+    var animF = sitesFirstRender ? ' pt-anim-filter' : '';
+    var animH = sitesFirstRender ? ' pt-anim-head' : '';
+    var animT = sitesFirstRender ? ' pt-anim-table' : '';
+
+    el.innerHTML = ''
+        + '<div class="app-header' + animF + '">'
+        + '<h2 style="margin:0">Sites</h2><div class="header-sub">Manage construction/work sites</div>'
+        + '</div>'
+        + '<div class="app-body">'
+        + '<div class="' + animH.trim() + '" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'
+        + '<span style="font-size:.82rem;color:var(--main-text3)">' + sites.length + ' sites</span>'
+        + '<button class="btn btn-green" onclick="showAddSite()">+ Add Site</button>'
+        + '</div>'
+        + '<div class="' + animT.trim() + '"><div class="table-wrap"><table><thead><tr>'
+        + '<th style="width:50px">No</th><th>Site Name</th><th>Location</th><th>Remark</th><th style="width:90px">Actions</th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>'
+        + '</div>';
+
+    if (sitesFirstRender) {
+        setTimeout(function() {
+            el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function(a) {
+                a.classList.remove('pt-anim-filter', 'pt-anim-head', 'pt-anim-table');
+            });
+            sitesFirstRender = false;
+        }, 550);
+    }
+}
+
+function showAddSite() {
+    if (typeof showModal !== 'function') return;
+    showModal(
+        '<h3>Add Site</h3>'
+        + '<div class="field"><label>Site Name *</label><input class="input" id="site-name" placeholder="e.g. Johor Bahru Site A"></div>'
+        + '<div class="field"><label>Location</label><input class="input" id="site-location" placeholder="e.g. Lot 123, Jalan ABC"></div>'
+        + '<div class="field"><label>Remark</label><textarea class="input" id="site-remark" rows="2"></textarea></div>'
+        + '<p class="auth-error" id="site-error"></p>'
+        + '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button>'
+        + '<button class="btn btn-accent" onclick="doAddSite()">Save</button></div>'
+    );
+}
+
+async function doAddSite() {
+    var errEl = document.getElementById('site-error');
+    var name = document.getElementById('site-name').value.trim();
+    if (!name) { errEl.textContent = 'Site name required'; return; }
+    try {
+        await api('/site-attendance/sites', {
+            method: 'POST',
+            body: { name: name, location: document.getElementById('site-location').value.trim(), remark: document.getElementById('site-remark').value.trim() }
+        });
+        hideModal();
+        DB.sites = await api('/site-attendance/sites');
+        renderSitesPage();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
+}
+
+function showEditSite(id) {
+    var site = null;
+    for (var i = 0; i < (DB.sites || []).length; i++) {
+        if (DB.sites[i].id === id) { site = DB.sites[i]; break; }
+    }
+    if (!site) return;
+    if (typeof showModal !== 'function') return;
+    showModal(
+        '<h3>Edit Site</h3>'
+        + '<div class="field"><label>Site Name *</label><input class="input" id="site-name" value="' + esc(site.name) + '"></div>'
+        + '<div class="field"><label>Location</label><input class="input" id="site-location" value="' + esc(site.location || '') + '"></div>'
+        + '<div class="field"><label>Remark</label><textarea class="input" id="site-remark" rows="2">' + esc(site.remark || '') + '</textarea></div>'
+        + '<p class="auth-error" id="site-error"></p>'
+        + '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button>'
+        + '<button class="btn btn-accent" onclick="doEditSite(' + id + ')">Save</button></div>'
+    );
+}
+
+async function doEditSite(id) {
+    var errEl = document.getElementById('site-error');
+    var name = document.getElementById('site-name').value.trim();
+    if (!name) { errEl.textContent = 'Site name required'; return; }
+    try {
+        await api('/site-attendance/sites/' + id, {
+            method: 'PUT',
+            body: { name: name, location: document.getElementById('site-location').value.trim(), remark: document.getElementById('site-remark').value.trim() }
+        });
+        hideModal();
+        DB.sites = await api('/site-attendance/sites');
+        renderSitesPage();
+    } catch (e) { errEl.textContent = 'Failed: ' + e.message; }
+}
+
+function confirmDeleteSite(id) {
+    var site = null;
+    for (var i = 0; i < (DB.sites || []).length; i++) {
+        if (DB.sites[i].id === id) { site = DB.sites[i]; break; }
+    }
+    if (!site) return;
+    showModal(
+        '<h3>Delete Site</h3>'
+        + '<p style="color:var(--main-text2)">Delete <strong>' + esc(site.name) + '</strong>?</p>'
+        + '<div class="btns"><button class="btn btn-ghost" onclick="hideModal()">Cancel</button>'
+        + '<button class="btn btn-danger" onclick="doDeleteSite(' + id + ')">Delete</button></div>'
+    );
+}
+
+async function doDeleteSite(id) {
+    try {
+        await api('/site-attendance/sites/' + id, { method: 'DELETE' });
+        hideModal();
+        DB.sites = await api('/site-attendance/sites');
+        renderSitesPage();
+    } catch (e) { alert('Delete failed: ' + e.message); }
+}
+
 /* ==========================================================
    SECTION 10: Project Detail
    ========================================================== */
@@ -1315,9 +1453,17 @@ const renderUsersList = () => {
 const showAddUser = () => {
     const posOpts = selectOptions(DB.positions, null);
     const deptOpts = selectOptions(DB.departments, null);
+    // ↓↓↓ 新增：site 选项 ↓↓↓
+    const siteOpts = (DB.sites || []).map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+    // ↑↑↑ 结束 ↑↑↑
     const viewerHtml = `<div id="viewer-scope-fields" style="display:none">
         <div class="field"><label>Work Category Access</label>
         <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${scopeCheckboxes([], 'add-viewer-scope-cb')}</div></div></div>`;
+    // ↓↓↓ 新增：site 字段（默认隐藏） ↓↓↓
+    const siteField = `<div id="site-admin-fields" style="display:none">
+        <div class="field"><label>Site <span style="font-size:.72rem;color:var(--main-text3)">(required for Site Admin)</span></label>
+        <select class="input" id="adduser-site"><option value="">Select Site...</option>${siteOpts}</select></div></div>`;
+    // ↑↑↑ 结束 ↑↑↑
     showModal(`
     <div style="max-height:85vh;display:flex;flex-direction:column">
         <div style="flex:1;min-height:0;overflow-y:auto">
@@ -1331,6 +1477,7 @@ const showAddUser = () => {
                 <div class="field"><label>Department</label><select class="input" id="adduser-dept">${deptOpts}</select></div>
                 <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="adduser-salary" type="number" placeholder="e.g. 15000.00"></div>
             </div>
+            ${siteField}
             ${viewerHtml}
             <div class="field"><label>Username</label><input class="input" id="adduser-user" placeholder="Login username"></div>
             <div class="field"><label>Password</label><input class="input" id="adduser-pass" type="password" placeholder="Min. 6 characters"></div>
@@ -1345,6 +1492,7 @@ const toggleAddUserFields = () => {
     const role = document.getElementById('adduser-role').value;
     document.getElementById('emp-fields').style.display = (role === 'employee' || role === 'viewer') ? '' : 'none';
     document.getElementById('viewer-scope-fields').style.display = role === 'viewer' ? '' : 'none';
+    document.getElementById('site-admin-fields').style.display = role === 'site_admin' ? '' : 'none';
 };
 
 const doAddUser = async () => {
@@ -1354,6 +1502,15 @@ const doAddUser = async () => {
     const errEl = document.getElementById('adduser-error'); errEl.textContent = '';
     if (!username || username.length < 2) { errEl.textContent = 'Username: min 2 characters'; return; }
     if (pass.length < 6) { errEl.textContent = 'Password: min 6 characters'; return; }
+
+    // ↓↓↓ 新增：site_admin 必须选 site ↓↓↓
+    let siteId = 0;
+    if (role === 'site_admin') {
+        const siteEl = document.getElementById('adduser-site');
+        if (!siteEl || !siteEl.value) { errEl.textContent = 'Please select a Site'; return; }
+        siteId = parseInt(siteEl.value) || 0;
+    }
+    // ↑↑↑ 结束 ↑↑↑
 
     let memberId = null;
     if (role === 'employee' || role === 'viewer') {
@@ -1370,7 +1527,12 @@ const doAddUser = async () => {
     }
 
     try {
-        const result = await api('/users', { method:'POST', body:{ username, password:pass, role, memberId } });
+        // ↓↓↓ body 加 site_id ↓↓↓
+        const result = await api('/users', {
+            method:'POST',
+            body:{ username, password:pass, role, memberId, site_id: siteId }
+        });
+        // ↑↑↑ 结束 ↑↑↑
         if (role === 'viewer' && result?.id) {
             const scopeIds = [...document.querySelectorAll('.add-viewer-scope-cb:checked')].map(c => parseInt(c.value));
             if (scopeIds.length) await api('/viewer-scopes/'+result.id, { method:'PUT', body:{ scopeIds } });
@@ -1386,18 +1548,27 @@ const showEditUser = userId => {
     const deptOpts = selectOptions(DB.departments, member?.departmentId);
     const curSal = member ? latestSalary(member) : 0;
     const existing = (DB.viewerScopes || {})[user.id] || [];
+    // ↓↓↓ 新增：site 选项 ↓↓↓
+    const siteOpts = (DB.sites || []).map(s => `<option value="${s.id}" ${s.id === (user.siteId || user.site_id || 0) ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+    // ↑↑↑ 结束 ↑↑↑
 
     showModal(`
     <div style="max-height:85vh;display:flex;flex-direction:column">
         <div style="flex:1;min-height:0;overflow-y:auto">
             <h3>Edit — ${esc(user.username)}</h3>
-            <div id="edit-member-fields">
+            <div id="edit-member-fields"${user.role!=='employee' && user.role!=='viewer' ? ' style="display:none"' : ''}>
                 <div class="field"><label>Full Name</label><input class="input" id="edituser-name" value="${member?esc(member.name):''}"></div>
                 <div class="field"><label>Email <span style="font-size:.72rem;color:var(--main-text3)">(for notifications)</span></label><input class="input" id="edituser-email" type="email" value="${member&&member.email?esc(member.email):''}" placeholder="e.g. john@gmail.com"></div>
                 <div class="field"><label>Position</label><select class="input" id="edituser-pos">${posOpts}</select></div>
                 <div class="field"><label>Department</label><select class="input" id="edituser-dept">${deptOpts}</select></div>
                 <div class="field"><label>Monthly Salary</label><input class="input input-mono" id="edituser-salary" type="number" value="${curSal>0?curSal:''}" placeholder="e.g. 15000.00"></div>
             </div>
+            <!-- ↓↓↓ 新增：site 字段 ↓↓↓ -->
+            <div id="edit-site-fields"${user.role!=='site_admin'?' style="display:none"':''}>
+                <div class="field"><label>Site <span style="font-size:.72rem;color:var(--main-text3)">(required for Site Admin)</span></label>
+                <select class="input" id="edituser-site"><option value="">Select Site...</option>${siteOpts}</select></div>
+            </div>
+            <!-- ↑↑↑ 结束 ↑↑↑ -->
             <div id="edit-viewer-scope-fields"${user.role!=='viewer'?' style="display:none"':''}>
                 <div class="field"><label>Work Category Access</label>
                 <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px">${scopeCheckboxes(existing)}</div></div>
@@ -1420,8 +1591,10 @@ const toggleEditUserFields = () => {
     const role = document.getElementById('edituser-role').value;
     const mf = document.getElementById('edit-member-fields');
     const vf = document.getElementById('edit-viewer-scope-fields');
+    const sf = document.getElementById('edit-site-fields');
     if (mf) mf.style.display = (role === 'employee' || role === 'viewer') ? '' : 'none';
     if (vf) vf.style.display = role === 'viewer' ? '' : 'none';
+    if (sf) sf.style.display = role === 'site_admin' ? '' : 'none';
 };
 
 const doEditUser = async userId => {
@@ -1432,6 +1605,15 @@ const doEditUser = async userId => {
     const newRole = document.getElementById('edituser-role').value;
     if (!newUsername) { errEl.textContent = 'Username cannot be empty'; return; }
     if (newPass && newPass.length < 6) { errEl.textContent = 'Min 6 characters'; return; }
+
+    // ↓↓↓ 新增：site_admin 必须选 site ↓↓↓
+    let siteId = 0;
+    if (newRole === 'site_admin') {
+        const siteEl = document.getElementById('edituser-site');
+        if (!siteEl || !siteEl.value) { errEl.textContent = 'Please select a Site'; return; }
+        siteId = parseInt(siteEl.value) || 0;
+    }
+    // ↑↑↑ 结束 ↑↑↑
 
     let memberId = user.memberId;
 
@@ -1450,7 +1632,9 @@ const doEditUser = async userId => {
         }
     }
 
-    await api('/users/'+userId, { method:'PUT', body:{ username:newUsername, password:newPass || null, role:newRole, memberId } });
+    // ↓↓↓ body 加 site_id ↓↓↓
+    await api('/users/'+userId, { method:'PUT', body:{ username:newUsername, password:newPass || null, role:newRole, memberId, site_id: siteId } });
+    // ↑↑↑ 结束 ↑↑↑
 
     if (memberId) {
         const nameEl = document.getElementById('edituser-name');
@@ -1458,7 +1642,7 @@ const doEditUser = async userId => {
         const deptEl = document.getElementById('edituser-dept');
         const salEl = document.getElementById('edituser-salary');
         const member = DB.members.find(m => m.id === memberId);
-                const emailEl = document.getElementById('edituser-email');
+        const emailEl = document.getElementById('edituser-email');
         await api('/members/'+memberId, { method:'PUT', body: {
             name: nameEl?.value.trim() || member?.name || '',
             email: emailEl?.value.trim() || null,

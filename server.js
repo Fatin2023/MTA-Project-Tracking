@@ -50,7 +50,7 @@ function requireAuth(req, res, next) {
     }
     var token = auth.slice(7);
     pool.query(
-        `SELECT u.id, u.username, u.role, u.member_id
+        `SELECT u.id, u.username, u.role, u.member_id, u.site_id
          FROM sessions s JOIN users u ON s.user_id = u.id
          WHERE s.token = $1`,
         [token]
@@ -62,7 +62,8 @@ function requireAuth(req, res, next) {
             id: result.rows[0].id,
             username: result.rows[0].username,
             role: result.rows[0].role,
-            memberId: result.rows[0].member_id
+            memberId: result.rows[0].member_id,
+            siteId: result.rows[0].site_id || 0
         };
         next();
     }).catch(function(err) {
@@ -128,6 +129,7 @@ app.post('/api/login', async (req, res) => {
             username: u.username,
             role: u.role,
             memberId: u.member_id,
+            siteId: u.site_id || 0,
             token: token
         });
     } catch (err) {
@@ -312,6 +314,7 @@ app.put('/api/members/:id', requireEdit, async (req, res) => {
 // ========================================
 app.get('/api/users', requireAuth, async (req, res) => {
     try {
+        // ↓↓↓ 加 site_id ↓↓↓
         const result = await pool.query(`
             SELECT u.*, m.name as member_name, m.position_id, m.department_id
             FROM users u
@@ -335,6 +338,7 @@ app.get('/api/users', requireAuth, async (req, res) => {
                 memberName: r.member_name,
                 positionId: r.position_id,
                 departmentId: r.department_id,
+                siteId: r.site_id || 0,   // ← 加这行
                 salaries
             };
         }));
@@ -345,15 +349,17 @@ app.get('/api/users', requireAuth, async (req, res) => {
 });
 
 app.post('/api/users', requireEdit, async (req, res) => {
-    const { username, password, role, memberId } = req.body;
+    // ↓↓↓ 加 site_id ↓↓↓
+    const { username, password, role, memberId, site_id } = req.body;
     try {
         const exists = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
         if (exists.rows.length > 0) {
             return res.status(400).json({ error: 'Username already taken' });
         }
+        // ↓↓↓ INSERT 加 site_id ↓↓↓
         const result = await pool.query(
-            'INSERT INTO users (username, password, role, member_id) VALUES ($1, $2, $3, $4) RETURNING id',
-            [username, password, role, memberId || null]
+            'INSERT INTO users (username, password, role, member_id, site_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+            [username, password, role, memberId || null, parseInt(site_id) || 0]
         );
         res.json({ id: result.rows[0].id });
     } catch (err) {
@@ -362,17 +368,20 @@ app.post('/api/users', requireEdit, async (req, res) => {
 });
 
 app.put('/api/users/:id', requireEdit, async (req, res) => {
-    const { username, password, role, memberId } = req.body;
+    // ↓↓↓ 加 site_id ↓↓↓
+    const { username, password, role, memberId, site_id } = req.body;
     try {
         if (password) {
+            // ↓↓↓ UPDATE 加 site_id ↓↓↓
             await pool.query(
-                'UPDATE users SET username = $1, password = $2, role = $3, member_id = $4 WHERE id = $5',
-                [username, password, role, memberId || null, req.params.id]
+                'UPDATE users SET username = $1, password = $2, role = $3, member_id = $4, site_id = $5 WHERE id = $6',
+                [username, password, role, memberId || null, parseInt(site_id) || 0, req.params.id]
             );
         } else {
+            // ↓↓↓ UPDATE 加 site_id ↓↓↓
             await pool.query(
-                'UPDATE users SET username = $1, role = $2, member_id = $3 WHERE id = $4',
-                [username, role, memberId || null, req.params.id]
+                'UPDATE users SET username = $1, role = $2, member_id = $3, site_id = $4 WHERE id = $5',
+                [username, role, memberId || null, parseInt(site_id) || 0, req.params.id]
             );
         }
         res.json({ success: true });
@@ -382,6 +391,7 @@ app.put('/api/users/:id', requireEdit, async (req, res) => {
 });
 
 app.put('/api/users/:id/password', requireAuth, async (req, res) => {
+    // 不用改
     const { newPassword } = req.body;
     try {
         if (!newPassword || newPassword.length < 4) {
@@ -398,6 +408,7 @@ app.put('/api/users/:id/password', requireAuth, async (req, res) => {
 });
 
 app.delete('/api/users/:id', requireEdit, async (req, res) => {
+    // 不用改
     try {
         const user = await pool.query('SELECT member_id FROM users WHERE id = $1', [req.params.id]);
         if (user.rows.length > 0 && user.rows[0].member_id) {
@@ -2304,12 +2315,26 @@ async function initSiteAttendance() {
    SITE ATTENDANCE — API Routes
    ========================================================== */
 
+// helper: admin 返回 null（看全部），site_admin 返回自己的 siteId
+function getSiteScope(req) {
+    if (req.user.role === 'admin') return null;
+    return req.user.siteId || 0;
+}
+
 // Load all SA data
 app.get('/api/site-attendance/load', requireSiteAdmin, async (req, res) => {
     try {
-        const employees = await pool.query('SELECT * FROM site_attendance.employees ORDER BY name');
+        var scope = getSiteScope(req);
+        var empSql = 'SELECT * FROM site_attendance.employees';
+        var empParams = [];
+        if (scope !== null) {
+            empSql += ' WHERE site_id = $1';
+            empParams.push(scope);
+        }
+        empSql += ' ORDER BY name';
+        const employees = await pool.query(empSql, empParams);
         const projects = await pool.query('SELECT * FROM projects ORDER BY name');
-        const scopes = await pool.query('SELECT id, name FROM scopes ORDER BY name'); // adjust columns if needed
+        const scopes = await pool.query('SELECT id, name FROM scopes ORDER BY name');
         res.json({ employees: employees.rows, projects: projects.rows, scopes: scopes.rows });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -2318,10 +2343,14 @@ app.get('/api/site-attendance/load', requireSiteAdmin, async (req, res) => {
 
 // Create employee
 app.post('/api/site-attendance/employees', requireSiteAdmin, async (req, res) => {
-    const { name, nric, company, phone, status, remark } = req.body;
+    const { name, nric, company, phone, status, remark, site_id } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
 
     try {
+        var scope = getSiteScope(req);
+        // admin 可以指定 site_id，site_admin 自动用自己的
+        var siteId = scope !== null ? scope : (parseInt(site_id) || 0);
+
         // 检查重複：name / nric / phone，忽略大小写和空白
         const dup = await pool.query(
             `SELECT id, name, nric, phone FROM site_attendance.employees
@@ -2340,9 +2369,9 @@ app.post('/api/site-attendance/employees', requireSiteAdmin, async (req, res) =>
         }
 
         const result = await pool.query(
-            `INSERT INTO site_attendance.employees (name, nric, company, phone, status, remark)
-             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-            [name.trim(), nric || '', company || '', phone || '', status || 'active', remark || '']
+            `INSERT INTO site_attendance.employees (name, nric, company, phone, status, remark, site_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+            [name.trim(), nric || '', company || '', phone || '', status || 'active', remark || '', siteId]
         );
         res.json(result.rows[0]);
     } catch (e) {
@@ -2353,11 +2382,23 @@ app.post('/api/site-attendance/employees', requireSiteAdmin, async (req, res) =>
 // Update employee
 app.put('/api/site-attendance/employees/:id', requireSiteAdmin, async (req, res) => {
     const { id } = req.params;
-    const { name, nric, company, phone, status, remark } = req.body;
+    const { name, nric, company, phone, status, remark, site_id } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
 
     try {
-        // 检查重複，排除自己（id <> $4）
+        var scope = getSiteScope(req);
+
+        // 验证归属：site_admin 不能改别的 site 的人
+        const owner = await pool.query('SELECT site_id FROM site_attendance.employees WHERE id = $1', [id]);
+        if (!owner.rows.length) return res.status(404).json({ error: 'Not found' });
+        if (scope !== null && owner.rows[0].site_id !== scope) {
+            return res.status(403).json({ error: 'Not your site' });
+        }
+
+        // site_admin 不能改 site_id，admin 可以
+        var siteId = scope !== null ? scope : (parseInt(site_id) || owner.rows[0].site_id || 0);
+
+        // 检查重複，排除自己
         const dup = await pool.query(
             `SELECT id, name, nric, phone FROM site_attendance.employees
              WHERE id <> $4 AND (
@@ -2376,17 +2417,204 @@ app.put('/api/site-attendance/employees/:id', requireSiteAdmin, async (req, res)
         }
 
         const result = await pool.query(
-            `UPDATE site_attendance.employees SET name=$1, nric=$2, company=$3, phone=$4, status=$5, remark=$6
-             WHERE id=$7 RETURNING *`,
-            [name.trim(), nric || '', company || '', phone || '', status || 'active', remark || '', id]
+            `UPDATE site_attendance.employees SET name=$1, nric=$2, company=$3, phone=$4, status=$5, remark=$6, site_id=$7
+             WHERE id=$8 RETURNING *`,
+            [name.trim(), nric || '', company || '', phone || '', status || 'active', remark || '', siteId, id]
         );
-        if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
         res.json(result.rows[0]);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
 
+// Delete employee
+app.delete('/api/site-attendance/employees/:id', requireSiteAdmin, async (req, res) => {
+    try {
+        var scope = getSiteScope(req);
+        const owner = await pool.query('SELECT site_id FROM site_attendance.employees WHERE id = $1', [req.params.id]);
+        if (!owner.rows.length) return res.status(404).json({ error: 'Not found' });
+        if (scope !== null && owner.rows[0].site_id !== scope) {
+            return res.status(403).json({ error: 'Not your site' });
+        }
+        await pool.query('DELETE FROM site_attendance.employees WHERE id = $1', [req.params.id]);
+        res.json({ ok: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ── Rate Settings ──
+app.get('/api/site-attendance/rates', requireSiteAdmin, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM site_attendance.rate_settings ORDER BY multiplier');
+        res.json(result.rows.map(function(r) {
+            return { id: r.id, name: r.name, label: r.label, multiplier: parseFloat(r.multiplier) };
+        }));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/site-attendance/rates', requireAuth, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+        var rates = req.body.rates || [];
+        for (var i = 0; i < rates.length; i++) {
+            await pool.query('UPDATE site_attendance.rate_settings SET multiplier = $1, updated_at = NOW() WHERE name = $2',
+                [rates[i].multiplier, rates[i].name]);
+        }
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Work Records ──
+app.get('/api/site-attendance/work-records', requireSiteAdmin, async (req, res) => {
+    var from = req.query.from || '', to = req.query.to || '';
+    var empId = req.query.employeeId || '', rateType = req.query.rateType || '';
+    try {
+        var scope = getSiteScope(req);
+        var sql = 'SELECT wr.*, e.name as employee_name, e.site_id as emp_site_id FROM site_attendance.work_records wr JOIN site_attendance.employees e ON wr.employee_id = e.id WHERE 1=1';
+        var params = [], idx = 1;
+        if (scope !== null) {
+            sql += ' AND e.site_id = $' + idx; params.push(scope); idx++;
+        }
+        if (from) { sql += ' AND wr.date >= $' + idx; params.push(from); idx++; }
+        if (to) { sql += ' AND wr.date <= $' + idx; params.push(to); idx++; }
+        if (empId) { sql += ' AND wr.employee_id = $' + idx; params.push(parseInt(empId)); idx++; }
+        if (rateType) { sql += ' AND wr.rate_type = $' + idx; params.push(rateType); idx++; }
+        sql += ' ORDER BY wr.date DESC, e.name, wr.rate_type';
+        var result = await pool.query(sql, params);
+        res.json(result.rows.map(function(r) {
+            return {
+                id: r.id, employeeId: r.employee_id, employeeName: r.employee_name,
+                siteId: r.site_id,
+                date: r.date ? String(r.date).slice(0, 10) : '',
+                hours: parseFloat(r.hours), rateType: r.rate_type,
+                multiplier: parseFloat(r.multiplier), projectId: r.project_id,
+                clockIn: r.clock_in || '', clockOut: r.clock_out || '',
+                duration: parseFloat(r.duration) || 0,
+                remark: r.remark, createdBy: r.created_by, createdAt: r.created_at
+            };
+        }));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/site-attendance/work-records', requireSiteAdmin, async (req, res) => {
+    var records = req.body.records || [];
+    if (!records.length) return res.status(400).json({ error: 'No records' });
+    try {
+        var scope = getSiteScope(req);
+        var inserted = 0;
+        for (var i = 0; i < records.length; i++) {
+            var r = records[i];
+            if (!r.hours || r.hours <= 0) continue;
+            if (scope !== null) {
+                var check = await pool.query('SELECT site_id FROM site_attendance.employees WHERE id = $1', [r.employeeId]);
+                if (!check.rows.length || check.rows[0].site_id !== scope) continue;
+            }
+            await pool.query(
+                `INSERT INTO site_attendance.work_records
+                 (employee_id, site_id, date, hours, rate_type, multiplier, project_id, clock_in, clock_out, duration, remark, created_by)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                 ON CONFLICT (employee_id, date, rate_type, COALESCE(project_id, 0))
+                 DO UPDATE SET hours = EXCLUDED.hours, multiplier = EXCLUDED.multiplier,
+                               clock_in = EXCLUDED.clock_in, clock_out = EXCLUDED.clock_out,
+                               duration = EXCLUDED.duration,
+                               remark = EXCLUDED.remark, created_by = EXCLUDED.created_by`,
+                [r.employeeId, r.siteId || scope || 0, r.date, r.hours, r.rateType,
+                 r.multiplier, r.projectId || 0,
+                 r.clockIn || '', r.clockOut || '', r.duration || 0,
+                 r.remark || '', req.user.id]
+            );
+            inserted++;
+        }
+        res.json({ ok: true, inserted: inserted });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/site-attendance/work-records/:id', requireSiteAdmin, async (req, res) => {
+    try {
+        var scope = getSiteScope(req);
+        if (scope !== null) {
+            var check = await pool.query(
+                'SELECT e.site_id FROM site_attendance.work_records wr JOIN site_attendance.employees e ON wr.employee_id = e.id WHERE wr.id = $1',
+                [req.params.id]
+            );
+            if (!check.rows.length || check.rows[0].site_id !== scope) {
+                return res.status(403).json({ error: 'Not your site' });
+            }
+        }
+        var result = await pool.query(
+            `UPDATE site_attendance.work_records
+             SET hours = $1, multiplier = $2, remark = $3,
+                 clock_in = $4, clock_out = $5,
+                 site_id = $6, project_id = $7
+             WHERE id = $8 RETURNING *`,
+            [req.body.hours, req.body.multiplier || 1, req.body.remark || '',
+             req.body.clockIn || '', req.body.clockOut || '',
+             req.body.siteId || 0, req.body.projectId || 0,
+             req.params.id]
+        );
+        if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/site-attendance/work-records/:id', requireSiteAdmin, async (req, res) => {
+    try {
+        var scope = getSiteScope(req);
+        if (scope !== null) {
+            var check = await pool.query(
+                'SELECT e.site_id FROM site_attendance.work_records wr JOIN site_attendance.employees e ON wr.employee_id = e.id WHERE wr.id = $1',
+                [req.params.id]
+            );
+            if (!check.rows.length || check.rows[0].site_id !== scope) {
+                return res.status(403).json({ error: 'Not your site' });
+            }
+        }
+        await pool.query('DELETE FROM site_attendance.work_records WHERE id = $1', [req.params.id]);
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Sites CRUD ──
+app.get('/api/site-attendance/sites', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM site_attendance.sites ORDER BY name');
+        res.json(result.rows.map(function(r) {
+            return { id: r.id, name: r.name, location: r.location, remark: r.remark };
+        }));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/site-attendance/sites', requireAuth, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+        const result = await pool.query(
+            'INSERT INTO site_attendance.sites (name, location, remark) VALUES ($1, $2, $3) RETURNING *',
+            [req.body.name, req.body.location || '', req.body.remark || '']
+        );
+        res.json({ id: result.rows[0].id, name: result.rows[0].name, location: result.rows[0].location, remark: result.rows[0].remark });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/site-attendance/sites/:id', requireAuth, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+        const result = await pool.query(
+            'UPDATE site_attendance.sites SET name=$1, location=$2, remark=$3 WHERE id=$4 RETURNING *',
+            [req.body.name, req.body.location || '', req.body.remark || '', req.params.id]
+        );
+        if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/site-attendance/sites/:id', requireAuth, async (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    try {
+        await pool.query('DELETE FROM site_attendance.sites WHERE id = $1', [req.params.id]);
+        res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 
 
@@ -2677,7 +2905,7 @@ async function initDB() {
     console.log('Admin user ready');
     console.log('Admin user ready');
 
-    // ========== SITE ATTENDANCE SCHEMA ==========
+// ========== SITE ATTENDANCE SCHEMA ==========
     try {
         await pool.query('CREATE SCHEMA IF NOT EXISTS site_attendance');
     } catch (e) {
@@ -2685,6 +2913,15 @@ async function initDB() {
     }
 
     var saTables = [
+        // ↓↓↓ 新增 sites 表 ↓↓↓
+        `CREATE TABLE IF NOT EXISTS site_attendance.sites (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(200) NOT NULL,
+            location VARCHAR(200) DEFAULT '',
+            remark TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        // ↑↑↑ 新增结束 ↑↑↑
         `CREATE TABLE IF NOT EXISTS site_attendance.employees (
             id SERIAL PRIMARY KEY,
             name VARCHAR(200) NOT NULL,
@@ -2692,7 +2929,28 @@ async function initDB() {
             company VARCHAR(200) DEFAULT '',
             phone VARCHAR(50) DEFAULT '',
             status VARCHAR(20) DEFAULT 'active',
+            site_id INT DEFAULT 0,
             remark TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS site_attendance.rate_settings (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(50) NOT NULL UNIQUE,
+            label VARCHAR(100) NOT NULL,
+            multiplier NUMERIC(5,2) DEFAULT 1.00,
+            updated_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS site_attendance.work_records (
+            id SERIAL PRIMARY KEY,
+            employee_id INT NOT NULL REFERENCES site_attendance.employees(id) ON DELETE CASCADE,
+            site_id INT DEFAULT 0,
+            date DATE NOT NULL,
+            hours NUMERIC(5,2) DEFAULT 0,
+            rate_type VARCHAR(50) DEFAULT 'normal',
+            multiplier NUMERIC(5,2) DEFAULT 1.00,
+            project_id INT DEFAULT 0,
+            remark TEXT DEFAULT '',
+            created_by INT NOT NULL,
             created_at TIMESTAMP DEFAULT NOW()
         )`
     ];
@@ -2704,6 +2962,38 @@ async function initDB() {
             console.log('SA table skip:', e.message.substring(0, 80));
         }
     }
+
+    try {
+        await pool.query("CREATE INDEX IF NOT EXISTS idx_sa_wr_date ON site_attendance.work_records(date)");
+        await pool.query("CREATE INDEX IF NOT EXISTS idx_sa_wr_emp ON site_attendance.work_records(employee_id)");
+        await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS idx_sa_wr_unique ON site_attendance.work_records(employee_id, date, rate_type, COALESCE(project_id, 0))");
+    } catch (e) {
+        console.log('SA index skip:', e.message.substring(0, 80));
+    }
+
+    // 兼容已有表：补 site_id 列
+    try {
+        await pool.query("ALTER TABLE site_attendance.employees ADD COLUMN IF NOT EXISTS site_id INT DEFAULT 0");
+        await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS site_id INT DEFAULT 0");
+        await pool.query("ALTER TABLE site_attendance.work_records ADD COLUMN IF NOT EXISTS clock_in VARCHAR(10) DEFAULT ''");
+        await pool.query("ALTER TABLE site_attendance.work_records ADD COLUMN IF NOT EXISTS clock_out VARCHAR(10) DEFAULT ''");
+        await pool.query("ALTER TABLE site_attendance.work_records ADD COLUMN IF NOT EXISTS duration NUMERIC(5,2) DEFAULT 0");
+    } catch (e) {
+        console.log('SA alter skip:', e.message.substring(0, 80));
+    }
+
+    var saDefaults = [
+        "INSERT INTO site_attendance.rate_settings (name, label, multiplier) VALUES ('normal','Normal Hours',1.00) ON CONFLICT (name) DO NOTHING",
+        "INSERT INTO site_attendance.rate_settings (name, label, multiplier) VALUES ('ot','Overtime (OT)',1.50) ON CONFLICT (name) DO NOTHING",
+        "INSERT INTO site_attendance.rate_settings (name, label, multiplier) VALUES ('sunday','Sunday',2.00) ON CONFLICT (name) DO NOTHING",
+        "INSERT INTO site_attendance.rate_settings (name, label, multiplier) VALUES ('public_holiday','Public Holiday',3.00) ON CONFLICT (name) DO NOTHING"
+    ];
+    for (var i = 0; i < saDefaults.length; i++) {
+        try { await pool.query(saDefaults[i]); } catch (e) {
+            console.log('SA default skip:', e.message.substring(0, 80));
+        }
+    }
+
     console.log('Site Attendance schema ready');
 
     console.log('Database fully initialized');

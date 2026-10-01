@@ -98,6 +98,9 @@
     <div class="nav-item" data-page="users" data-permission="admin" data-tooltip="Users" onclick="adminNav('users',this)">
       <span class="nav-icon">&#128100;</span><span class="nav-label">Users</span>
     </div>
+    <div class="nav-item" data-page="sites" data-permission="admin" data-tooltip="Sites" onclick="adminNav('sites',this)">
+      <span class="nav-icon">&#127959;</span><span class="nav-label">Sites</span>
+    </div>
     <div class="nav-item" data-page="departments" data-permission="admin" data-tooltip="Departments" onclick="adminNav('departments',this)">
       <span class="nav-icon">&#9635;</span><span class="nav-label">Departments</span>
     </div>
@@ -153,6 +156,7 @@
     <div id="admin-dashboard" class="admin-view"></div>
     <div id="admin-projects" class="admin-view" style="display:none"></div>
     <div id="admin-users" class="admin-view" style="display:none"></div>
+    <div id="admin-sites" class="admin-view" style="display:none"></div>
     <div id="admin-positions" class="admin-view" style="display:none"></div>
     <div id="admin-departments" class="admin-view" style="display:none"></div>
     <div id="admin-scopes" class="admin-view" style="display:none"></div>
@@ -520,12 +524,18 @@
       </div>
       <div class="nav-group" data-group="sa-main">
         <div class="nav-item" data-page="sa-print" data-tooltip="Print Sheet" onclick="saNav('sa-print',this)">
-          <span class="nav-icon">🖨</span><span class="nav-label">Print Sheet</span>
+            <span class="nav-icon">🖨</span><span class="nav-label">Attendnace Sheet</span>
+        </div>
+        <div class="nav-item" data-page="sa-records" data-tooltip="Work Records" onclick="saNav('sa-records',this)">
+            <span class="nav-icon">📋</span><span class="nav-label">Records</span>
         </div>
         <div class="nav-item" data-page="sa-employees" data-tooltip="Employees" onclick="saNav('sa-employees',this)">
-          <span class="nav-icon">👤</span><span class="nav-label">Employees</span>
+            <span class="nav-icon">👤</span><span class="nav-label">Employees</span>
         </div>
-      </div>
+        <div class="nav-item" data-page="sa-rates" data-tooltip="Rate Settings" onclick="saNav('sa-rates',this)">
+            <span class="nav-icon">⚙</span><span class="nav-label">Rate Settings</span>
+        </div>
+    </div>
     </div>
     <div class="sidebar-footer">
       <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
@@ -543,8 +553,10 @@
     </div>
   </div>
   <div class="app-main">
-    <div id="sa-sa-employees" class="sa-view"></div>
-    <div id="sa-sa-print" class="sa-view" style="display:none"></div>
+    <div id="sa-sa-print" class="sa-view"></div>
+    <div id="sa-sa-records" class="sa-view" style="display:none"></div>
+    <div id="sa-sa-employees" class="sa-view" style="display:none"></div>
+    <div id="sa-sa-rates" class="sa-view" style="display:none"></div>
   </div>
   <div class="mobile-header">
     <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
