@@ -1107,6 +1107,40 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
         padding: 0 !important;
     }
 
+    /* ── Report From ── */
+    #sa-rpt-from {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        -webkit-appearance: none !important;
+        appearance: none !important;
+    }
+    #sa-rpt-from::-webkit-datetime-edit,
+    #sa-rpt-from::-webkit-date-and-time-value {
+        min-width: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+    }
+
+    /* ── Report To ── */
+    #sa-rpt-to {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        -webkit-appearance: none !important;
+        appearance: none !important;
+    }
+    #sa-rpt-to::-webkit-datetime-edit,
+    #sa-rpt-to::-webkit-date-and-time-value {
+        min-width: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: 0 !important;
+    }
+
     /* ── Work Records filter items containing dates — give them a fixed narrow width on small screens ── */
     .sa-rec-filter-grid .sa-ios-date-field {
         flex: 0 0 auto;
@@ -1119,4 +1153,42 @@ input[type="checkbox"],input[type="radio"]{accent-color:var(--accent)}
         height: 42px !important;
         min-height: 42px !important;
     }
+}
+
+/* ── Donut spin-in ── */
+@keyframes donutSpinIn {
+    from {
+        opacity: 0;
+        transform: rotate(-180deg) scale(.3);
+    }
+    to {
+        opacity: 1;
+        transform: rotate(0deg) scale(1);
+    }
+}
+
+/* ── Bar grow ── */
+.bar-grow {
+    transition: height .6s cubic-bezier(.34,1.56,.64,1);
+}
+
+/* ── Chart Tooltip ── */
+.sa-chart-tip {
+    position: fixed;
+    z-index: 99999;
+    background: var(--main-text);
+    color: var(--main-bg);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: .78rem;
+    font-family: var(--font-m);
+    font-weight: 600;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .15s;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,.2);
+}
+.sa-chart-tip.show {
+    opacity: 1;
 }
