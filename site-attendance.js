@@ -84,6 +84,7 @@ function saNav(tab, el) {
         case 'sa-print': renderSAPrint(); break;
         case 'sa-records': renderSARecords(); break;
         case 'sa-rates': renderSARates(); break;
+        case 'sa-report':_saReportFirstLoad = true;renderSAReport();break;
     }
     requestAnimationFrame(saRestoreNavScroll);
 }
@@ -2625,4 +2626,812 @@ function changeSAEmpPageSize(size) {
     saEmpPageSize = parseInt(size);
     saEmpCurrentPage = 1;
     renderSAEmployees();
+}
+
+
+/* ==========================================================
+   REPORT PAGE
+   ========================================================== */
+
+var saReportData = [];
+var saReportTimer = null;
+var _saReportFirstLoad = true;
+
+// 加一个工具函数
+function saLocalDate(d) {
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+}
+
+// ← Pagination state — 每个 table 独立（和 Employee List 一样 pattern）
+var saRptEmpPage = 1, saRptEmpSize = 10;
+var saRptProjPage = 1, saRptProjSize = 10;
+var saRptSitePage = 1, saRptSiteSize = 10;
+var saRptDayPage = 1, saRptDaySize = 10;
+
+// ← 被过滤后的数据（给 pagination 用）
+var saRptEmpData = [], saRptProjData = [], saRptSiteData = [], saRptDayData = [];
+
+function renderSAReport() {
+    var el = document.getElementById('sa-sa-report');
+    if (!el) return;
+
+    var isAdmin = currentUser && currentUser.role === 'admin';
+    var mySiteId = currentUser ? currentUser.siteId || 0 : 0;
+    var mySiteName = isAdmin ? '' : saGetSiteName(mySiteId);
+
+    var now = new Date();
+    var defaultFrom = saLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    var defaultTo = saLocalDate(now);
+
+    // ← 动画 class 只在首次
+    var animF = _saReportFirstLoad ? ' pt-anim-filter' : '';
+    var animH = _saReportFirstLoad ? ' pt-anim-head' : '';
+    var animT = _saReportFirstLoad ? ' pt-anim-table' : '';
+
+    el.innerHTML = ''
+        + '<div class="app-header' + animF + '">'
+        + '<h2>Report</h2>'
+        + '<div class="header-sub">'
+        + (isAdmin ? 'Work hours and cost summary' : 'Work hours summary — ' + esc(mySiteName))
+        + '</div>'
+        + '</div>'
+        + '<div class="app-body">'
+        + '<div class="' + animH.trim() + '" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px">'
+        + '<h3 style="margin:0 0 14px;font-size:.9rem;font-family:var(--font-d)">Filter</h3>'
+        + '<div class="sa-rec-filter-grid">'
+        + '<div class="sa-rec-filter-item sa-ios-date-field"><label>From</label><input class="input" id="sa-rpt-from" type="date" value="' + defaultFrom + '" onchange="saLoadReport()"></div>'
+        + '<div class="sa-rec-filter-item sa-ios-date-field"><label>To</label><input class="input" id="sa-rpt-to" type="date" value="' + defaultTo + '" onchange="saLoadReport()"></div>'
+        + (isAdmin
+            ? '<div class="sa-rec-filter-item"><label>Site</label><select class="input" id="sa-rpt-site" onchange="saLoadReport()">'
+              + '<option value="">All Sites</option>'
+              + saGetSiteOptions(0)
+              + '</select></div>'
+            : '')
+        + '<div class="sa-rec-filter-item sa-rec-filter-item--btns">'
+        + '<button class="btn btn-ghost" onclick="saResetReportFilter()">Reset</button>'
+        + '<button class="btn btn-blue" onclick="saExportReport()">Export</button>'
+        + '</div>'
+        + '</div>'
+        + '</div>'
+        + '<div id="sa-report-content" class="' + animT.trim() + '">'
+        + '<div style="padding:30px;text-align:center;color:var(--main-text3)">Loading report…</div>'
+        + '</div>'
+        + '</div>';
+
+    saLoadReport();
+
+    setTimeout(function() {
+        el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function(a) {
+            a.classList.remove('pt-anim-filter', 'pt-anim-head', 'pt-anim-table');
+        });
+        _saReportFirstLoad = false;
+    }, 550);
+}
+
+function saResetReportFilter() {
+    var now = new Date();
+    document.getElementById('sa-rpt-from').value = saLocalDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    document.getElementById('sa-rpt-to').value = saLocalDate(now);
+    var siteEl = document.getElementById('sa-rpt-site');
+    if (siteEl) siteEl.value = '';
+    saLoadReport();
+}
+
+function saLoadReport() {
+    var from = document.getElementById('sa-rpt-from') ? document.getElementById('sa-rpt-from').value : '';
+    var to = document.getElementById('sa-rpt-to') ? document.getElementById('sa-rpt-to').value : '';
+    var siteEl = document.getElementById('sa-rpt-site');
+    var siteId = siteEl ? siteEl.value : '';
+
+    var params = [];
+    if (from) params.push('from=' + from);
+    if (to) params.push('to=' + to);
+    if (siteId) params.push('siteId=' + siteId);
+    var qs = params.length ? '?' + params.join('&') : '';
+
+    clearTimeout(saReportTimer);
+    saReportTimer = setTimeout(function() {
+        api('/site-attendance/work-records' + qs).then(function(data) {
+            saReportData = data || [];
+            saRenderReport();
+        }).catch(function(e) {
+            var container = document.getElementById('sa-report-content');
+            if (container) container.innerHTML = '<div style="color:var(--danger);padding:20px;text-align:center">Load failed: ' + esc(e.message) + '</div>';
+        });
+    }, 150);
+}
+
+function saRenderReport() {
+    var container = document.getElementById('sa-report-content');
+    if (!container) return;
+
+    var isAdmin = currentUser && currentUser.role === 'admin';
+
+    // ── Filter by site ──
+    var records = saReportData;
+    if (!isAdmin) {
+        var mySiteId = currentUser ? currentUser.siteId || 0 : 0;
+        records = records.filter(function(r) { return r.siteId === mySiteId; });
+    } else {
+        var siteEl = document.getElementById('sa-rpt-site');
+        var selectedSite = siteEl ? parseInt(siteEl.value) || 0 : 0;
+        if (selectedSite) {
+            records = records.filter(function(r) { return r.siteId === selectedSite; });
+        }
+    }
+
+    if (!records.length) {
+        container.innerHTML = '<div style="text-align:center;color:var(--main-text3);padding:40px">No records found for the selected period</div>';
+        return;
+    }
+
+    // ── Aggregate helpers ──
+    function makeAgg() {
+        var agg = {};
+        SA_DB.rates.forEach(function(r) { agg[r.name] = 0; });
+        agg._total = 0;
+        agg._amount = 0;
+        agg._count = 0;
+        return agg;
+    }
+
+    function addRec(agg, r) {
+        agg[r.rateType] = (agg[r.rateType] || 0) + (parseFloat(r.hours) || 0);
+        agg._total += parseFloat(r.hours) || 0;
+        agg._amount += (parseFloat(r.hours) || 0) * (parseFloat(r.multiplier) || 1);
+    }
+
+    function getProjectName(pid) {
+        if (!pid) return '—';
+        for (var i = 0; i < SA_DB.projects.length; i++) {
+            if (SA_DB.projects[i].id === pid) return SA_DB.projects[i].name;
+        }
+        return 'Proj ' + pid;
+    }
+
+    // ═══ 1. Summary Cards ═══
+    var summary = makeAgg();
+    var empSet = {};
+    records.forEach(function(r) {
+        addRec(summary, r);
+        empSet[r.employeeId] = true;
+    });
+    var empCount = Object.keys(empSet).length;
+    var otHours = summary['ot'] || 0;
+    var workDays = {};
+    records.forEach(function(r) { workDays[r.date] = true; });
+    var dayCount = Object.keys(workDays).length;
+
+    var cardsHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;width:100%">'
+        + saReportCard('Total Hours', summary._total.toFixed(1) + 'h', '#3b82f6')
+        + saReportCard('Total Amount', summary._amount.toFixed(2), '#10b981')
+        + saReportCard('OT Hours', otHours.toFixed(1) + 'h', '#f59e0b')
+        + saReportCard('Employees', String(empCount), '#8b5cf6')
+        + saReportCard('Work Days', String(dayCount), '#ef4444')
+        + '</div>';
+
+    // ═══ 2. Charts ═══
+    var barChart = saReportEmployeeBar(records);
+    var donutChart = saReportDonut(records);
+    var chartsHtml = '';
+    if (barChart && donutChart) {
+        chartsHtml = '<div style="display:flex;gap:20px;margin-bottom:20px;flex-wrap:wrap">'
+            + '<div style="flex:1 1 300px;min-width:300px">' + donutChart + '</div>'
+            + '<div style="flex:1 1 300px;min-width:300px">' + barChart + '</div>'
+            + '</div>';
+    } else {
+        chartsHtml = donutChart + barChart;
+    }
+
+    // ═══ 3. By Employee + Project ═══
+    var empAggs = {};
+    records.forEach(function(r) {
+        var key = r.employeeId + '_' + (r.projectId || 0);
+        if (!empAggs[key]) {
+            empAggs[key] = makeAgg();
+            empAggs[key]._name = r.employeeName;
+            empAggs[key]._siteId = r.siteId;
+            empAggs[key]._projectId = r.projectId || 0;
+        }
+        addRec(empAggs[key], r);
+    });
+
+    var empRows = Object.keys(empAggs).map(function(k) { return empAggs[k]; })
+        .sort(function(a, b) { return b._total - a._total; });
+
+    var empTable = saReportTable('By Employee', [
+        { key: '_name', label: 'Employee', align: 'left' },
+        { key: '_siteName', label: 'Site', align: 'left' },
+        { key: '_projName', label: 'Project', align: 'left' }
+    ], empRows, true, function(agg) {
+        return {
+            _name: agg._name,
+            _siteName: saGetSiteName(agg._siteId || 0),
+            _projName: getProjectName(agg._projectId || 0)
+        };
+    }, 'emp');
+
+    // ═══ 4. By Project ═══
+    var projAggs = {};
+    records.forEach(function(r) {
+        var key = r.projectId || 0;
+        if (!projAggs[key]) {
+            projAggs[key] = makeAgg();
+            projAggs[key]._name = getProjectName(key);
+        }
+        addRec(projAggs[key], r);
+    });
+
+    var projRows = Object.keys(projAggs).map(function(k) { return projAggs[k]; })
+        .sort(function(a, b) { return b._total - a._total; });
+
+    var projTable = saReportTable('By Project', [
+        { key: '_name', label: 'Project', align: 'left' }
+    ], projRows, true, function(agg) {
+        return { _name: agg._name };
+    }, 'proj');
+
+    // ═══ 5. By Site (admin only) ═══
+    var siteTable = '';
+    if (isAdmin) {
+        var siteAggs = {};
+        records.forEach(function(r) {
+            var key = r.siteId || 0;
+            if (!siteAggs[key]) {
+                siteAggs[key] = makeAgg();
+                siteAggs[key]._name = saGetSiteName(key);
+            }
+            addRec(siteAggs[key], r);
+        });
+
+        var siteRows = Object.keys(siteAggs).map(function(k) { return siteAggs[k]; })
+            .sort(function(a, b) { return b._total - a._total; });
+
+        siteTable = saReportTable('By Site', [
+            { key: '_name', label: 'Site', align: 'left' }
+        ], siteRows, true, function(agg) {
+            return { _name: agg._name };
+        }, 'site');
+    }
+
+    // ═══ 6. Daily Summary ═══
+    var dayAggs = {};
+    records.forEach(function(r) {
+        if (!dayAggs[r.date]) {
+            dayAggs[r.date] = makeAgg();
+            dayAggs[r.date]._name = r.date;
+        }
+        addRec(dayAggs[r.date], r);
+    });
+
+    var dayRows = Object.keys(dayAggs).map(function(k) { return dayAggs[k]; })
+        .sort(function(a, b) { return a._name.localeCompare(b._name); });
+
+    var dayTable = saReportTable('Daily Summary', [
+        { key: '_name', label: 'Date', align: 'left' }
+    ], dayRows, true, function(agg) {
+        return { _name: agg._name };
+    }, 'day');
+
+    // ═══ Assemble ═══
+    container.innerHTML = cardsHtml + chartsHtml + empTable + projTable + siteTable + dayTable;
+
+    // ← 首次才有动画，更新数据不播
+    if (_saReportFirstLoad) {
+        setTimeout(function() {
+            container.querySelectorAll('.bar-grow').forEach(function(bar, i) {
+                setTimeout(function() {
+                    bar.style.height = bar.getAttribute('data-h') + '%';
+                }, i * 30);
+            });
+        }, 300);
+    } else {
+        container.querySelectorAll('.bar-grow').forEach(function(bar) {
+            bar.style.height = bar.getAttribute('data-h') + '%';
+        });
+        container.querySelectorAll('.stat-anim').forEach(function(el) {
+            el.classList.remove('stat-anim');
+            el.style.opacity = '1';
+        });
+        container.querySelectorAll('.crud-anim').forEach(function(el) {
+            el.classList.remove('crud-anim');
+        });
+    }
+}
+
+function saReportCard(label, value, color, index) {
+    return '<div class="stat-anim" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:12px;padding:18px;text-align:center">'
+        + '<div style="font-size:.72rem;color:var(--main-text3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;font-weight:600">' + esc(label) + '</div>'
+        + '<div class="stat-value" style="font-size:1.5rem;font-weight:700;font-family:var(--font-m);color:' + color + '">' + esc(value) + '</div>'
+        + '</div>';
+}
+
+/* ── Tooltip ── */
+var _saTip = null;
+
+function saShowTip(e, text) {
+    if (!_saTip) {
+        _saTip = document.createElement('div');
+        _saTip.className = 'sa-chart-tip';
+        document.body.appendChild(_saTip);
+    }
+    _saTip.textContent = text;
+    _saTip.style.left = (e.clientX + 12) + 'px';
+    _saTip.style.top = (e.clientY - 30) + 'px';
+    _saTip.classList.add('show');
+}
+
+function saHideTip() {
+    if (_saTip) _saTip.classList.remove('show');
+}
+
+function saMoveTip(e) {
+    if (_saTip && _saTip.classList.contains('show')) {
+        _saTip.style.left = (e.clientX + 12) + 'px';
+        _saTip.style.top = (e.clientY - 30) + 'px';
+    }
+}
+
+/* ═══ Employee Hours Bar (Horizontal) ═══ */
+function saReportEmployeeBar(records) {
+    var empAggs = {};
+    records.forEach(function(r) {
+        if (!empAggs[r.employeeId]) {
+            empAggs[r.employeeId] = {};
+            SA_DB.rates.forEach(function(rt) { empAggs[r.employeeId][rt.name] = 0; });
+            empAggs[r.employeeId]._name = r.employeeName;
+            empAggs[r.employeeId]._total = 0;
+        }
+        empAggs[r.employeeId][r.rateType] = (empAggs[r.employeeId][r.rateType] || 0) + (parseFloat(r.hours) || 0);
+        empAggs[r.employeeId]._total += parseFloat(r.hours) || 0;
+    });
+
+    var emps = Object.keys(empAggs).map(function(k) { return empAggs[k]; })
+        .sort(function(a, b) { return b._total - a._total; })
+        .slice(0, 10);
+
+    if (!emps.length) return '';
+
+    var maxVal = 0;
+    emps.forEach(function(e) { if (e._total > maxVal) maxVal = e._total; });
+    if (maxVal === 0) maxVal = 1;
+
+    var rows = emps.map(function(e, i) {
+        var segments = SA_DB.rates.map(function(r) {
+            var v = e[r.name] || 0;
+            if (v <= 0) return '';
+            var pct = (v / e._total) * 100;
+            var c = SA_RATE_COLORS[r.name] || '#6b7280';
+            var tipText = (SHORT[r.name] || r.label) + ': ' + v.toFixed(1) + 'h';
+            return '<div style="width:' + pct + '%;height:100%;background:' + c + ';cursor:pointer" '
+                + 'data-tip="' + esc(tipText) + '" '
+                + 'onmouseover="this.style.opacity=.75;saShowTip(event,this.getAttribute(\'data-tip\'))" '
+                + 'onmousemove="saMoveTip(event)" '
+                + 'onmouseout="this.style.opacity=1;saHideTip()">'
+                + '</div>';
+        }).join('');
+
+        var barPct = (e._total / maxVal) * 100;
+        var name = e._name.length > 12 ? e._name.slice(0, 11) + '…' : e._name;
+
+        return '<div class="stat-anim" style="display:flex;align-items:center;gap:10px;padding:4px 0;animation-delay:' + (0.1 + i * 0.06) + 's">'
+            + '<div style="width:20px;font-size:.68rem;font-family:var(--font-m);color:var(--main-text3);text-align:right;flex-shrink:0">' + (i + 1) + '</div>'
+            + '<div style="width:90px;font-size:.78rem;color:var(--main-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0" title="' + esc(e._name) + '">' + esc(name) + '</div>'
+            + '<div style="flex:1;height:22px;background:var(--main-bg);border-radius:6px;overflow:hidden;position:relative">'
+            + '<div style="display:flex;width:' + barPct + '%;height:100%;border-radius:6px;overflow:hidden;transition:width .6s cubic-bezier(.34,1.56,.64,1)">'
+            + segments
+            + '</div>'
+            + '</div>'
+            + '<div style="width:50px;text-align:right;font-family:var(--font-m);font-size:.78rem;font-weight:700;color:var(--main-text);flex-shrink:0">' + e._total.toFixed(1) + 'h</div>'
+            + '</div>';
+    }).join('');
+
+    var legend = SA_DB.rates.map(function(r) {
+        var c = SA_RATE_COLORS[r.name] || '#6b7280';
+        return '<div style="display:flex;align-items:center;gap:5px">'
+            + '<div style="width:12px;height:12px;border-radius:4px;background:' + c + '"></div>'
+            + '<span style="font-size:.72rem;color:var(--main-text2);font-weight:500">' + esc(SHORT[r.name] || r.label) + '</span>'
+            + '</div>';
+    }).join('');
+
+    return '<div class="crud-anim" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;margin-bottom:0;height:320px;display:flex;flex-direction:column;overflow:hidden">'
+        + '<h3 style="margin:0 0 16px;font-size:.95rem;font-family:var(--font-d);color:var(--main-text);flex-shrink:0">Top Employees</h3>'
+        + '<div style="flex:1;overflow-y:auto;min-height:0;padding-right:4px">' + rows + '</div>'
+        + '<div style="display:flex;gap:16px;margin-top:10px;flex-wrap:wrap;flex-shrink:0;justify-content:center">' + legend + '</div>'
+        + '</div>';
+}
+
+/* ═══ Rate Distribution Donut ═══ */
+function saReportDonut(records) {
+    var totals = {};
+    var grand = 0;
+    SA_DB.rates.forEach(function(r) { totals[r.name] = 0; });
+
+    records.forEach(function(r) {
+        totals[r.rateType] = (totals[r.rateType] || 0) + (parseFloat(r.hours) || 0);
+        grand += parseFloat(r.hours) || 0;
+    });
+
+    if (grand === 0) return '';
+
+    var visible = SA_DB.rates.filter(function(r) { return (totals[r.name] || 0) > 0; });
+
+    var cx = 70, cy = 70, r = 70, ri = 44;
+    var circumference = 2 * Math.PI * ((r + ri) / 2);
+    var strokeW = r - ri;
+    var offset = 0;
+
+    var svgPaths = visible.map(function(rate) {
+        var v = totals[rate.name];
+        var pct = (v / grand) * 100;
+        var c = SA_RATE_COLORS[rate.name] || '#6b7280';
+        var dashLen = (pct / 100) * circumference;
+        var dashGap = circumference - dashLen;
+        var tipText = (SHORT[rate.name] || rate.label) + ': ' + v.toFixed(1) + 'h (' + pct.toFixed(1) + '%)';
+
+        var path = '<circle cx="' + cx + '" cy="' + cy + '" r="' + ((r + ri) / 2) + '" '
+            + 'fill="none" stroke="' + c + '" stroke-width="' + strokeW + '" '
+            + 'stroke-dasharray="' + dashLen + ' ' + dashGap + '" '
+            + 'stroke-dashoffset="' + (-offset + (circumference / 4)) + '" '
+            + 'stroke-linecap="butt" '
+            + 'style="cursor:pointer;transition:stroke-width .15s,opacity .15s" '
+            + 'data-tip="' + esc(tipText) + '" '
+            + 'onmouseover="this.setAttribute(\'stroke-width\',\'' + (strokeW + 8) + '\');saShowTip(event,this.getAttribute(\'data-tip\'))" '
+            + 'onmousemove="saMoveTip(event)" '
+            + 'onmouseout="this.setAttribute(\'stroke-width\',\'' + strokeW + '\');saHideTip()"'
+            + '/>';
+
+        offset += dashLen;
+        return path;
+    }).join('');
+
+    var legendRows = SA_DB.rates.map(function(r, i) {
+        var v = totals[r.name] || 0;
+        var pct = grand > 0 ? ((v / grand) * 100).toFixed(1) : '0.0';
+        var c = SA_RATE_COLORS[r.name] || '#6b7280';
+        return '<div class="stat-anim" style="display:flex;align-items:center;gap:10px;padding:6px 0;animation-delay:' + (0.3 + i * 0.08) + 's">'
+            + '<div style="width:14px;height:14px;border-radius:4px;background:' + c + ';flex-shrink:0"></div>'
+            + '<div style="flex:1;font-size:.82rem;color:var(--main-text)">' + esc(SHORT[r.name] || r.label) + '</div>'
+            + '<div class="stat-value" style="font-family:var(--font-m);font-size:.82rem;font-weight:700;color:' + c + '">' + v.toFixed(1) + 'h</div>'
+            + '<div style="font-family:var(--font-m);font-size:.75rem;color:var(--main-text3);width:45px;text-align:right">' + pct + '%</div>'
+            + '</div>';
+    }).join('');
+
+    return '<div class="crud-anim" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;margin-bottom:0;height:320px;display:flex;flex-direction:column;overflow:hidden">'
+        + '<h3 style="margin:0 0 16px;font-size:.95rem;font-family:var(--font-d);color:var(--main-text);flex-shrink:0">Rate Distribution</h3>'
+        + '<div style="flex:1;display:flex;gap:20px;align-items:center;justify-content:center;flex-wrap:wrap;overflow:hidden">'
+        + '<div style="position:relative;width:140px;height:140px;flex-shrink:0;'
+        + (_saReportFirstLoad ? 'animation:donutSpinIn .8s cubic-bezier(.34,1.56,.64,1) .2s both;' : '')
+        + '">'
+        + '<svg width="140" height="140" viewBox="0 0 140 140">' + svgPaths + '</svg>'
+        + '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none">'
+        + '<div style="font-size:.62rem;color:var(--main-text3)">Total</div>'
+        + '<div class="stat-value" style="font-size:1rem;font-weight:700;font-family:var(--font-m);color:var(--main-text)">' + grand.toFixed(1) + 'h</div>'
+        + '</div>'
+        + '</div>'
+        + '<div style="flex:1;min-width:160px;max-width:220px">' + legendRows + '</div>'
+        + '</div>'
+        + '</div>';
+}
+
+/* ═══ Report Table with Pagination ═══ */
+function saReportTable(title, extraCols, data, showTotal, transform, tableKey) {
+    // Rate headers
+    var rateHeaders = SA_DB.rates.map(function(r) {
+        var c = SA_RATE_COLORS[r.name] || '#6b7280';
+        return '<th style="text-align:right;background:' + c + '15">'
+            + esc(SHORT[r.name] || r.label)
+            + '<br><span style="font-size:.65rem;opacity:.7">x' + parseFloat(r.multiplier).toFixed(1) + '</span></th>';
+    }).join('');
+
+    // Extra headers
+    var extraHeaders = extraCols.map(function(c) {
+        return '<th style="text-align:' + (c.align || 'left') + '">' + esc(c.label) + '</th>';
+    }).join('');
+
+    // ── Get pagination state by tableKey ──
+    var curPage, curSize, goFn, chgFn;
+    switch (tableKey) {
+        case 'emp':
+            saRptEmpData = data;
+            curPage = saRptEmpPage; curSize = saRptEmpSize;
+            goFn = 'goSAReportEmpPage'; chgFn = 'changeSAReportEmpPageSize';
+            break;
+        case 'proj':
+            saRptProjData = data;
+            curPage = saRptProjPage; curSize = saRptProjSize;
+            goFn = 'goSAReportProjPage'; chgFn = 'changeSAReportProjPageSize';
+            break;
+        case 'site':
+            saRptSiteData = data;
+            curPage = saRptSitePage; curSize = saRptSiteSize;
+            goFn = 'goSAReportSitePage'; chgFn = 'changeSAReportSitePageSize';
+            break;
+        case 'day':
+            saRptDayData = data;
+            curPage = saRptDayPage; curSize = saRptDaySize;
+            goFn = 'goSAReportDayPage'; chgFn = 'changeSAReportDayPageSize';
+            break;
+        default:
+            curPage = 1; curSize = 10;
+            goFn = 'goSAReportDayPage'; chgFn = 'changeSAReportDayPageSize';
+    }
+
+    var totalPages = Math.ceil(data.length / curSize) || 1;
+    if (curPage > totalPages) curPage = totalPages;
+    if (curPage < 1) curPage = 1;
+
+    // Write back
+    switch (tableKey) {
+        case 'emp': saRptEmpPage = curPage; break;
+        case 'proj': saRptProjPage = curPage; break;
+        case 'site': saRptSitePage = curPage; break;
+        case 'day': saRptDayPage = curPage; break;
+    }
+
+    var start = (curPage - 1) * curSize;
+    var pageData = data.slice(start, start + curSize);
+
+    // Grand totals for ALL data (not just current page)
+    var grand = SA_DB.rates.map(function(r) { return 0; });
+    var grandTotal = 0, grandAmount = 0;
+    data.forEach(function(agg) {
+        grandTotal += agg._total;
+        grandAmount += agg._amount;
+        SA_DB.rates.forEach(function(r, ri) {
+            grand[ri] += agg[r.name] || 0;
+        });
+    });
+
+    // ── Rows ──
+    var rows = pageData.map(function(agg, i) {
+        var extra = transform ? transform(agg) : {};
+        var extraCells = extraCols.map(function(c) {
+            return '<td style="text-align:' + (c.align || 'left') + '">' + esc(extra[c.key] || '—') + '</td>';
+        }).join('');
+
+        var rateCells = SA_DB.rates.map(function(r) {
+            var c = SA_RATE_COLORS[r.name] || '#6b7280';
+            var v = agg[r.name] || 0;
+            return '<td style="text-align:right;font-family:var(--font-m);color:' + (v > 0 ? c : 'var(--main-text3)') + '">' + (v > 0 ? v.toFixed(1) : '—') + '</td>';
+        }).join('');
+
+        return '<tr>'
+            + '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (start + i + 1) + '</td>'
+            + extraCells
+            + rateCells
+            + '<td style="text-align:right;font-family:var(--font-m);font-weight:700">' + agg._total.toFixed(1) + '</td>'
+            + '<td style="text-align:right;font-family:var(--font-m);font-weight:700">' + agg._amount.toFixed(2) + '</td>'
+            + '</tr>';
+    }).join('');
+
+    // ── Total row ──
+    var totalRow = '';
+    if (showTotal && data.length) {
+        var rateTotals = SA_DB.rates.map(function(r, ri) {
+            var c = SA_RATE_COLORS[r.name] || '#6b7280';
+            return '<td style="text-align:right;font-family:var(--font-m);font-weight:700;color:' + c + '">' + grand[ri].toFixed(1) + '</td>';
+        }).join('');
+        totalRow = '<tfoot><tr style="border-top:2px solid var(--main-border);font-weight:700">'
+            + '<td colspan="' + (1 + extraCols.length) + '" style="padding:8px;text-align:right;font-size:.85rem">Total &rarr;</td>'
+            + rateTotals
+            + '<td style="text-align:right;font-family:var(--font-m);font-weight:700">' + grandTotal.toFixed(1) + '</td>'
+            + '<td style="text-align:right;font-family:var(--font-m);font-weight:700">' + grandAmount.toFixed(2) + '</td>'
+            + '</tr></tfoot>';
+    }
+
+    // ── Pagination — 和 Employee List 一样用 buildPagination ──
+    var pagHtml = '';
+    if (typeof buildPagination === 'function' && data.length > 0) {
+        pagHtml = buildPagination(data.length, curPage, curSize,
+            goFn, chgFn, { label: 'entries', sizes: [5, 10, 25, 50] });
+    }
+
+    return '<div class="crud-anim" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px;margin-bottom:20px">'
+        + '<h3 style="margin:0 0 14px;font-size:.95rem;font-family:var(--font-d)">' + esc(title) + '</h3>'
+        + '<div class="table-wrap"><table><thead><tr>'
+        + '<th style="width:45px">No</th>'
+        + extraHeaders
+        + rateHeaders
+        + '<th style="text-align:right">Total Hrs</th><th style="text-align:right">Amount</th>'
+        + '</tr></thead>'
+        + totalRow
+        + '<tbody>' + rows + '</tbody></table></div>'
+        + pagHtml
+        + '</div>';
+}
+
+/* ═══ Pagination Handlers — 每个 table 独立（和 Employee List 一样 pattern） ═══ */
+
+function goSAReportEmpPage(page) {
+    var totalPages = Math.ceil(saRptEmpData.length / saRptEmpSize) || 1;
+    saRptEmpPage = Math.max(1, Math.min(page, totalPages));
+    saRenderReport();
+}
+function changeSAReportEmpPageSize(size) {
+    saRptEmpSize = parseInt(size);
+    saRptEmpPage = 1;
+    saRenderReport();
+}
+
+function goSAReportProjPage(page) {
+    var totalPages = Math.ceil(saRptProjData.length / saRptProjSize) || 1;
+    saRptProjPage = Math.max(1, Math.min(page, totalPages));
+    saRenderReport();
+}
+function changeSAReportProjPageSize(size) {
+    saRptProjSize = parseInt(size);
+    saRptProjPage = 1;
+    saRenderReport();
+}
+
+function goSAReportSitePage(page) {
+    var totalPages = Math.ceil(saRptSiteData.length / saRptSiteSize) || 1;
+    saRptSitePage = Math.max(1, Math.min(page, totalPages));
+    saRenderReport();
+}
+function changeSAReportSitePageSize(size) {
+    saRptSiteSize = parseInt(size);
+    saRptSitePage = 1;
+    saRenderReport();
+}
+
+function goSAReportDayPage(page) {
+    var totalPages = Math.ceil(saRptDayData.length / saRptDaySize) || 1;
+    saRptDayPage = Math.max(1, Math.min(page, totalPages));
+    saRenderReport();
+}
+function changeSAReportDayPageSize(size) {
+    saRptDaySize = parseInt(size);
+    saRptDayPage = 1;
+    saRenderReport();
+}
+
+/* ═══ Export Excel ═══ */
+function saExportReport() {
+    if (!saReportData || !saReportData.length) { alert('No data to export'); return; }
+    if (typeof XLSX === 'undefined') { alert('Excel library not loaded'); return; }
+
+    var isAdmin = currentUser && currentUser.role === 'admin';
+    var records = saReportData;
+    if (!isAdmin) {
+        var mySiteId = currentUser ? currentUser.siteId || 0 : 0;
+        records = records.filter(function(r) { return r.siteId === mySiteId; });
+    }
+
+    function getProjectName(pid) {
+        if (!pid) return '';
+        for (var i = 0; i < SA_DB.projects.length; i++) {
+            if (SA_DB.projects[i].id === pid) return SA_DB.projects[i].name;
+        }
+        return '';
+    }
+
+    // ── Sheet 1: By Employee + Project ──
+    var empAggs = {};
+    records.forEach(function(r) {
+        var key = r.employeeId + '_' + (r.projectId || 0);
+        if (!empAggs[key]) {
+            empAggs[key] = {};
+            SA_DB.rates.forEach(function(rt) { empAggs[key][rt.name] = 0; });
+            empAggs[key]._name = r.employeeName;
+            empAggs[key]._siteId = r.siteId;
+            empAggs[key]._projectId = r.projectId || 0;
+            empAggs[key]._total = 0;
+            empAggs[key]._amount = 0;
+        }
+        empAggs[key][r.rateType] += parseFloat(r.hours) || 0;
+        empAggs[key]._total += parseFloat(r.hours) || 0;
+        empAggs[key]._amount += (parseFloat(r.hours) || 0) * (parseFloat(r.multiplier) || 1);
+    });
+
+    var empSheetData = Object.keys(empAggs).map(function(k) {
+        var a = empAggs[k];
+        var row = {
+            'Employee': a._name,
+            'Site': saGetSiteName(a._siteId || 0),
+            'Project': getProjectName(a._projectId || 0)
+        };
+        SA_DB.rates.forEach(function(r) {
+            row[SHORT[r.name] || r.label] = a[r.name] || 0;
+        });
+        row['Total Hours'] = a._total.toFixed(1);
+        row['Amount'] = a._amount.toFixed(2);
+        return row;
+    });
+
+    // ── Sheet 2: By Project ──
+    var projAggs = {};
+    records.forEach(function(r) {
+        var key = r.projectId || 0;
+        if (!projAggs[key]) {
+            projAggs[key] = {};
+            SA_DB.rates.forEach(function(rt) { projAggs[key][rt.name] = 0; });
+            projAggs[key]._name = getProjectName(key);
+            projAggs[key]._total = 0;
+            projAggs[key]._amount = 0;
+        }
+        projAggs[key][r.rateType] += parseFloat(r.hours) || 0;
+        projAggs[key]._total += parseFloat(r.hours) || 0;
+        projAggs[key]._amount += (parseFloat(r.hours) || 0) * (parseFloat(r.multiplier) || 1);
+    });
+
+    var projSheetData = Object.keys(projAggs).map(function(k) {
+        var a = projAggs[k];
+        var row = { 'Project': a._name };
+        SA_DB.rates.forEach(function(r) {
+            row[SHORT[r.name] || r.label] = a[r.name] || 0;
+        });
+        row['Total Hours'] = a._total.toFixed(1);
+        row['Amount'] = a._amount.toFixed(2);
+        return row;
+    });
+
+    // ── Sheet 3: By Site (admin only) ──
+    var siteSheetData = [];
+    if (isAdmin) {
+        var siteAggs = {};
+        records.forEach(function(r) {
+            var key = r.siteId || 0;
+            if (!siteAggs[key]) {
+                siteAggs[key] = {};
+                SA_DB.rates.forEach(function(rt) { siteAggs[key][rt.name] = 0; });
+                siteAggs[key]._name = saGetSiteName(key);
+                siteAggs[key]._total = 0;
+                siteAggs[key]._amount = 0;
+            }
+            siteAggs[key][r.rateType] += parseFloat(r.hours) || 0;
+            siteAggs[key]._total += parseFloat(r.hours) || 0;
+            siteAggs[key]._amount += (parseFloat(r.hours) || 0) * (parseFloat(r.multiplier) || 1);
+        });
+
+        siteSheetData = Object.keys(siteAggs).map(function(k) {
+            var a = siteAggs[k];
+            var row = { 'Site': a._name };
+            SA_DB.rates.forEach(function(r) {
+                row[SHORT[r.name] || r.label] = a[r.name] || 0;
+            });
+            row['Total Hours'] = a._total.toFixed(1);
+            row['Amount'] = a._amount.toFixed(2);
+            return row;
+        });
+    }
+
+    // ── Sheet 4: Daily Summary ──
+    var dayAggs = {};
+    records.forEach(function(r) {
+        if (!dayAggs[r.date]) {
+            dayAggs[r.date] = {};
+            SA_DB.rates.forEach(function(rt) { dayAggs[r.date][rt.name] = 0; });
+            dayAggs[r.date]._total = 0;
+            dayAggs[r.date]._amount = 0;
+        }
+        dayAggs[r.date][r.rateType] += parseFloat(r.hours) || 0;
+        dayAggs[r.date]._total += parseFloat(r.hours) || 0;
+        dayAggs[r.date]._amount += (parseFloat(r.hours) || 0) * (parseFloat(r.multiplier) || 1);
+    });
+
+    var daySheetData = Object.keys(dayAggs).sort().map(function(k) {
+        var a = dayAggs[k];
+        var row = { 'Date': k };
+        SA_DB.rates.forEach(function(r) {
+            row[SHORT[r.name] || r.label] = a[r.name] || 0;
+        });
+        row['Total Hours'] = a._total.toFixed(1);
+        row['Amount'] = a._amount.toFixed(2);
+        return row;
+    });
+
+    // ── Build Excel ──
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(empSheetData), 'By Employee');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(projSheetData), 'By Project');
+    if (isAdmin && siteSheetData.length) {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(siteSheetData), 'By Site');
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(daySheetData), 'Daily Summary');
+    XLSX.writeFile(wb, 'sa_report_' + saLocalDate(new Date()) + '.xlsx');
 }
