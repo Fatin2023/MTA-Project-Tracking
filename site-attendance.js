@@ -1498,7 +1498,7 @@ function saRecDropdownHtml(type, label) {
     return '<div class="sa-rec-filter-item" style="position:relative">'
         + '<label>' + label + '</label>'
         + '<input class="input" id="sa-rec-' + type + '-search" placeholder="All" autocomplete="off" '
-        + 'oninput="saRecFilterDropdown(\'' + type + '\')" '
+        + 'oninput="saRecDropdownState[\'' + type + '\'].typing=true;saRecFilterDropdown(\'' + type + '\')" '
         + 'onfocus="saRecOpenDropdown(\'' + type + '\')" '
         + 'onkeydown="if(event.key===\'Escape\'){saRecCloseAllDropdowns()}" '
         + 'style="cursor:pointer">'
@@ -1523,6 +1523,10 @@ function saRecOpenDropdown(type) {
             saRecDropdownState[t].open = false;
         }
     });
+
+    saRecDropdownState[type].typing = false;
+    var sEl = document.getElementById('sa-rec-' + type + '-search');
+    if (sEl) sEl.select();   // 点进去就全选，直接打字会替换
     saRecFilterDropdown(type);
     saRecDropdownState[type].open = true;
 }
@@ -1532,8 +1536,8 @@ function saRecFilterDropdown(type) {
     var dropdownEl = document.getElementById('sa-rec-' + type + '-dropdown');
     if (!searchEl || !dropdownEl) return;
 
-    var typed = searchEl.value.trim().toLowerCase();
     var state = saRecDropdownState[type];
+    var typed = state.typing ? searchEl.value.trim().toLowerCase() : '';
     var matches = typed
         ? state.data.filter(function(o) { return o.label.toLowerCase().indexOf(typed) !== -1; })
         : state.data;
@@ -1571,18 +1575,16 @@ function saRecFilterDropdown(type) {
 function saRecToggleOption(type, value) {
     var state = saRecDropdownState[type];
     var idx = state.selected.indexOf(value);
-    if (idx !== -1) {
-        state.selected.splice(idx, 1);
-    } else {
-        state.selected.push(value);
-    }
-    // ← 不改 search 文字，只刷新 checkbox
+    if (idx !== -1) state.selected.splice(idx, 1);
+    else state.selected.push(value);
+    saRecUpdateDisplay(type);
     saRecFilterDropdown(type);
     saRecOnDropdownChange(type);
 }
 
 function saRecClearAll(type) {
     saRecDropdownState[type].selected = [];
+    saRecUpdateDisplay(type);
     saRecFilterDropdown(type);
     saRecOnDropdownChange(type);
 }
@@ -1616,14 +1618,19 @@ function saRecUpdateDisplay(type) {
     var searchEl = document.getElementById('sa-rec-' + type + '-search');
     if (!searchEl) return;
 
-    if (state.selected.length === 0) {
+    state.typing = false;
+    var labels = state.selected.map(function(v) {
+        var f = state.data.find(function(o) { return String(o.value) === v; });
+        return f ? f.label : v;
+    });
+
+    if (!labels.length) {
         searchEl.value = '';
         searchEl.placeholder = 'All';
-    } else if (state.selected.length === 1) {
-        var found = state.data.find(function(o) { return String(o.value) === state.selected[0]; });
-        searchEl.value = found ? found.label : state.selected[0];
+        searchEl.title = '';
     } else {
-        searchEl.value = state.selected.length + ' selected';
+        searchEl.value = labels.join(', ');
+        searchEl.title = labels.join(', ');
     }
 }
 
@@ -1634,26 +1641,6 @@ function saRecOnDropdownChange(type) {
         saRenderRecordsTable();
     }
 }
-
-function saRecCloseAllDropdowns() {
-    ['emp', 'rate', 'site'].forEach(function(type) {
-        var el = document.getElementById('sa-rec-' + type + '-dropdown');
-        if (el) el.style.display = 'none';
-        saRecDropdownState[type].open = false;
-    });
-}
-
-function saRecCloseDropdownsOutside(e) {
-    ['emp', 'rate', 'site'].forEach(function(type) {
-        var dropdownEl = document.getElementById('sa-rec-' + type + '-dropdown');
-        var searchEl = document.getElementById('sa-rec-' + type + '-search');
-        if (!dropdownEl || !searchEl) return;
-        if (e.target === searchEl || dropdownEl.contains(e.target)) return;
-        dropdownEl.style.display = 'none';
-        saRecDropdownState[type].open = false;
-    });
-}
-
 
 // ── Page Render ──
 
@@ -1721,14 +1708,14 @@ function saLoadRecords() {
     var from = document.getElementById('sa-rec-from') ? document.getElementById('sa-rec-from').value : '';
     var to = document.getElementById('sa-rec-to') ? document.getElementById('sa-rec-to').value : '';
 
-    var empIds = saRecDropdownState.emp.selected.join(',');
-    var rateTypes = saRecDropdownState.rate.selected.join(',');
+    var selEmp = saRecDropdownState.emp.selected;
+    var selRate = saRecDropdownState.rate.selected;
 
     var params = [];
     if (from) params.push('from=' + from);
     if (to) params.push('to=' + to);
-    if (empIds) params.push('employeeId=' + empIds);
-    if (rateTypes) params.push('rateType=' + rateTypes);
+    if (selEmp.length === 1) params.push('employeeId=' + encodeURIComponent(selEmp[0]));
+    if (selRate.length === 1) params.push('rateType=' + encodeURIComponent(selRate[0]));
     var qs = params.length ? '?' + params.join('&') : '';
 
     var requestId = ++saRecordsRequestId;
@@ -1784,8 +1771,16 @@ function saRenderRecordsTable() {
         return 'Proj ' + pid;
     }
 
+    var selEmp = saRecDropdownState.emp.selected;
+    var selRate = saRecDropdownState.rate.selected;
+    var sourceData = saRecFilteredData.filter(function(r) {
+        var okEmp = selEmp.length === 0 || selEmp.indexOf(String(r.employeeId)) !== -1;
+        var okRate = selRate.length === 0 || selRate.indexOf(String(r.rateType)) !== -1;
+        return okEmp && okRate;
+    });
+
     var groups = {};
-    saRecFilteredData.forEach(function(r) {
+    sourceData.forEach(function(r) { 
         var key = r.employeeId + '_' + r.date;
         if (!groups[key]) {
             groups[key] = {
@@ -2335,18 +2330,34 @@ function renderSAEmployees() {
     var statusEl = document.getElementById('sa-emp-status-filter');
     if (statusEl) statusVal = statusEl.value;
 
+    // ← Site filter
+    var siteVal = '';  
+    var siteFilterEl = document.getElementById('sa-emp-site-filter');
+    if (siteFilterEl) siteVal = siteFilterEl.value;
+
     var list = SA_DB.employees;
+
+    // ← Search all columns including site name
     if (searchVal) {
         list = list.filter(function(e) {
+            var siteName = (saGetSiteName(e.site_id || 0) || '').toLowerCase();
             return (e.name || '').toLowerCase().indexOf(searchVal) !== -1
                 || (e.nric || '').toLowerCase().indexOf(searchVal) !== -1
                 || (e.company || '').toLowerCase().indexOf(searchVal) !== -1
                 || (e.phone || '').toLowerCase().indexOf(searchVal) !== -1
-                || (e.remark || '').toLowerCase().indexOf(searchVal) !== -1;
+                || (e.remark || '').toLowerCase().indexOf(searchVal) !== -1
+                || siteName.indexOf(searchVal) !== -1;
         });
     }
+
     if (statusVal !== 'all') {
         list = list.filter(function(e) { return e.status === statusVal; });
+    }
+
+    // ← Filter by site dropdown
+    if (siteVal && siteVal !== '0') {
+        var sid = parseInt(siteVal) || 0;
+        list = list.filter(function(e) { return (e.site_id || 0) === sid; });
     }
 
     saEmpFilteredData = list;
@@ -2396,7 +2407,12 @@ function renderSAEmployees() {
         + '</div>'
         + '<div class="app-body">'
         + '<div class="' + animH.trim() + '" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">'
-        + '<input type="text" class="input" id="sa-emp-search" placeholder="Search name, NRIC, company, phone, remark..." value="' + esc(searchVal) + '" oninput="saEmpCurrentPage=1;renderSAEmployees()" style="max-width:300px">'
+        + '<input type="text" class="input" id="sa-emp-search" placeholder="Search name, NRIC, company, site, phone, remark..." value="' + esc(searchVal) + '" oninput="saEmpCurrentPage=1;renderSAEmployees()" style="max-width:280px">'
+        // ← Site dropdown
+        + '<select class="input" id="sa-emp-site-filter" onchange="saEmpCurrentPage=1;renderSAEmployees()" style="width:150px">'
+        + '<option value=""' + (siteVal ? '' : ' selected') + '>All Sites</option>'
+        + saGetSiteOptions(0)
+        + '</select>'
         + '<select class="input" id="sa-emp-status-filter" onchange="saEmpCurrentPage=1;renderSAEmployees()" style="width:130px">'
         + '<option value="all"' + (statusVal === 'all' ? ' selected' : '') + '>All Status</option>'
         + '<option value="active"' + (statusVal === 'active' ? ' selected' : '') + '>Active</option>'
@@ -2411,6 +2427,9 @@ function renderSAEmployees() {
         + pagHtml
         + '</div>'
         + '</div>';
+
+    var newSiteEl = document.getElementById('sa-emp-site-filter');
+    if (newSiteEl) newSiteEl.value = siteVal;
 
     if (focusedId === 'sa-emp-search') {
         var input = document.getElementById('sa-emp-search');
