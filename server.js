@@ -2288,6 +2288,70 @@ app.get('/api/template/projects/:scopeId', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+/* ==========================================================
+   FILE TITLES API
+   ========================================================== */
+
+// GET all
+app.get('/api/file-titles', requireAuth, (req, res) => {
+    pool.query('SELECT * FROM file_titles ORDER BY name ASC')
+        .then(result => res.json(result.rows))
+        .catch(e => res.status(500).json({ error: e.message }));
+});
+
+// POST create
+app.post('/api/file-titles', requireAuth, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const { name } = req.body;
+    if (!name || !name.trim()) {
+        return res.status(400).json({ error: 'Title name required' });
+    }
+    pool.query(
+        'INSERT INTO file_titles (name) VALUES ($1) RETURNING *',
+        [name.trim()]
+    )
+        .then(result => res.json(result.rows[0]))
+        .catch(e => {
+            if (e.code === '23505') {
+                return res.status(400).json({ error: 'Title already exists' });
+            }
+            res.status(500).json({ error: e.message });
+        });
+});
+
+// PUT update
+app.put('/api/file-titles/:id', requireAuth, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const { name } = req.body;
+    const id = parseInt(req.params.id);
+    if (!name || !name.trim()) {
+        return res.status(400).json({ error: 'Title name required' });
+    }
+    pool.query(
+        'UPDATE file_titles SET name = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+        [name.trim(), id]
+    )
+        .then(result => {
+            if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
+            res.json(result.rows[0]);
+        })
+        .catch(e => {
+            if (e.code === '23505') {
+                return res.status(400).json({ error: 'Title already exists' });
+            }
+            res.status(500).json({ error: e.message });
+        });
+});
+
+// DELETE
+app.delete('/api/file-titles/:id', requireAuth, (req, res) => {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const id = parseInt(req.params.id);
+    pool.query('DELETE FROM file_titles WHERE id = $1', [id])
+        .then(() => res.json({ ok: true }))
+        .catch(e => res.status(500).json({ error: e.message }));
+});
+
 
 
 /* ==========================================================
@@ -2797,6 +2861,12 @@ async function initDB() {
             related_id INTEGER,
             is_read BOOLEAN DEFAULT false,
             created_at TIMESTAMP DEFAULT NOW()
+        )`,
+        `CREATE TABLE IF NOT EXISTS file_titles (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL UNIQUE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
         )`
     ];
 
@@ -3300,16 +3370,24 @@ const checkUpcomingTasks = async () => {
 };
 
 
+// const PORT = process.env.PORT || 3001;
+// app.listen(PORT, async () => {
+//     await initDB();
+//     console.log('Multitrade server running on port ' + PORT);
+
+//     // Call this after server starts
+//     startFileTaskScheduler();
+// });
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, async () => {
+
+app.listen(PORT, '0.0.0.0', async () => {
     await initDB();
+
     console.log('Multitrade server running on port ' + PORT);
 
-    // Call this after server starts
     startFileTaskScheduler();
 });
-
-// use for app script access permission
+// use for google app script access permission
 // function authorizeEmail() {
 //   MailApp.sendEmail({
 //     to: 'ongts@multitradepac.com',

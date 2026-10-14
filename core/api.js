@@ -7,7 +7,7 @@ const API = (window.location.hostname === 'localhost' || window.location.hostnam
     : '/api';
 
 const api = async (path, opts = {}) => {
-    const url = '/api' + path;
+    const url = API + path;
     const headers = { 'Content-Type': 'application/json' };
     const session = localStorage.getItem('multitrade_session');
     if (session) {
@@ -28,7 +28,10 @@ const api = async (path, opts = {}) => {
         res = await fetch(url, options);
     }
 
-    const data = await res.json();
+    const contentType = res.headers.get('content-type') || '';
+    const data = contentType.includes('application/json')
+        ? await res.json()
+        : { error: 'The server returned an unexpected response. Restart or redeploy the application server, then try again.' };
     if (!res.ok) {
         if (res.status === 401) {
             // ✅ 再等 3 秒重试一次，可能是服务器刚唤醒

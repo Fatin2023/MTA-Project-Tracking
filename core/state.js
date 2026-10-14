@@ -6,19 +6,19 @@ let DB = {
     projects: [], members: [], users: [], positions: [],
     departments: [], scopes: [], subScopes: [], details: [],
     worklist: [], projectAssignments: [], attendance: [],
-    viewerScopes: {},fileNotices: [],
+    viewerScopes: {}, fileNotices: [], fileTitles: [],
 };
 
 const loadDB = async () => {
     try {
-        const [projects, members, users, positions, departments, scopes, subScopes, details, assignments, attendance, worklist, driveSettings, appConfig, files, fileNotices] =
+        const [projects, members, users, positions, departments, scopes, subScopes, details, assignments, attendance, worklist, driveSettings, appConfig, files, fileNotices, fileTitles] =
             await Promise.all([
                 api('/projects'), api('/members'), api('/users'), api('/positions'),
                 api('/departments'), api('/scopes'), api('/subscopes'), api('/details'),
                 api('/assignments'), api('/attendance'), api('/worklist'),
-                api('/drive-settings'), api('/app-config'), api('/files'), api('/file-notices')
+                api('/drive-settings'), api('/app-config'), api('/files'), api('/file-notices'), api('/file-titles')
             ]);
-        Object.assign(DB, { projects, members, users, positions, departments, scopes, subScopes, details, projectAssignments: assignments, attendance, worklist, driveSettings, appConfig, files, fileNotices });
+        Object.assign(DB, { projects, members, users, positions, departments, scopes, subScopes, details, projectAssignments: assignments, attendance, worklist, driveSettings, appConfig, files, fileNotices, fileTitles });
 
         // ↓↓↓ 新增：加载 sites ↓↓↓
         try { DB.sites = await api('/site-attendance/sites'); } catch(e) { DB.sites = []; }

@@ -4,12 +4,31 @@
 
 var SA_DB = { employees: [], projects: [], scopes: [], rates: [], sites: [] };
 var saEmpCurrentPage = 1, saEmpPageSize = 10, saEmpFilteredData = [];
-var SA_hoursPage = 0;var SA_hoursPageSize = 20;
+var SA_hoursPage = 0; var SA_hoursPageSize = 20;
 var saRecordsSearchTimer = null;
 var saRecordsRequestId = 0;
 var saNavScrollListenerAdded = false;
 var _saEditRecIds = null;
 var _saEditDate = '';
+var saPreviewMode = 'nohours';
+var saRecTablePage = 1;
+var saRecTableSize = 10;
+var saRecTableData = [];
+var saRecDetailPage = 1;
+var saRecDetailSize = 10;
+var saRecDetailRows = [];
+
+function goSARecDetailPage(page) {
+    var totalPages = Math.ceil(saRecDetailRows.length / saRecDetailSize) || 1;
+    saRecDetailPage = Math.max(1, Math.min(page, totalPages));
+    saRenderRecordDetailsTable();
+}
+
+function changeSARecDetailPageSize(size) {
+    saRecDetailSize = parseInt(size);
+    saRecDetailPage = 1;
+    saRenderRecordDetailsTable();
+}
 
 function saRestoreNavScroll() {
     var nav = document.getElementById('sa-nav');
@@ -17,7 +36,7 @@ function saRestoreNavScroll() {
     var saved = parseInt(sessionStorage.getItem('multitrade_sa_nav_scroll'), 10);
     if (!isNaN(saved)) nav.scrollTop = saved;
     if (!saNavScrollListenerAdded) {
-        nav.addEventListener('scroll', function() {
+        nav.addEventListener('scroll', function () {
             sessionStorage.setItem('multitrade_sa_nav_scroll', String(nav.scrollTop));
         }, { passive: true });
         saNavScrollListenerAdded = true;
@@ -29,13 +48,13 @@ saRestoreNavScroll();
 async function saLoadDB() {
     try {
         var data = await api('/site-attendance/load');
-        SA_DB.employees = (data.employees || []).map(function(e) {
+        SA_DB.employees = (data.employees || []).map(function (e) {
             return { id: e.id, name: e.name, nric: e.nric, company: e.company, phone: e.phone, status: e.status, remark: e.remark, site_id: e.site_id || 0, createdAt: e.created_at };
         });
-        SA_DB.projects = (data.projects || []).map(function(p) {
+        SA_DB.projects = (data.projects || []).map(function (p) {
             return { id: p.id, name: p.name, categoryId: p.category_id };
         });
-        SA_DB.scopes = (data.scopes || []).map(function(s) {
+        SA_DB.scopes = (data.scopes || []).map(function (s) {
             return { id: s.id, name: s.name };
         });
     } catch (e) {
@@ -67,12 +86,12 @@ async function saLoadDB() {
 function saNav(tab, el) {
     saRestoreNavScroll();
     localStorage.setItem('multitrade_sa_page', tab);
-    document.querySelectorAll('#sa-layout .sa-view').forEach(function(v) { v.style.display = 'none'; });
+    document.querySelectorAll('#sa-layout .sa-view').forEach(function (v) { v.style.display = 'none'; });
     var target = document.getElementById('sa-' + tab);
     if (target) target.style.display = '';
 
     var nav = document.getElementById('sa-nav');
-    if (nav) nav.querySelectorAll('.nav-item').forEach(function(n) {
+    if (nav) nav.querySelectorAll('.nav-item').forEach(function (n) {
         n.classList.toggle('active', n.dataset.page === tab);
     });
 
@@ -84,7 +103,7 @@ function saNav(tab, el) {
         case 'sa-print': renderSAPrint(); break;
         case 'sa-records': renderSARecords(); break;
         case 'sa-rates': renderSARates(); break;
-        case 'sa-report':_saReportFirstLoad = true;renderSAReport();break;
+        case 'sa-report': _saReportFirstLoad = true; renderSAReport(); break;
     }
     requestAnimationFrame(saRestoreNavScroll);
 }
@@ -101,7 +120,7 @@ function saGetSiteName(siteId) {
 }
 
 function saGetSiteOptions(selectedId) {
-    return (SA_DB.sites || []).map(function(s) {
+    return (SA_DB.sites || []).map(function (s) {
         return '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' + esc(s.name) + '</option>';
     }).join('');
 }
@@ -136,7 +155,7 @@ function saFilterEmpChecklist() {
     var typed = searchEl ? searchEl.value.trim().toLowerCase() : '';
     var siteVal = siteEl ? parseInt(siteEl.value) || 0 : 0;
 
-    document.querySelectorAll('#sa-emp-checklist .sa-emp-row').forEach(function(row) {
+    document.querySelectorAll('#sa-emp-checklist .sa-emp-row').forEach(function (row) {
         var text = row.getAttribute('data-search') || '';
         var rowSite = parseInt(row.getAttribute('data-site-id')) || 0;
         var matchText = !typed || text.indexOf(typed) !== -1;
@@ -155,10 +174,10 @@ function saGetSelectedEmpIds() {
     if (checked) mode = checked.value;
     var ids = {};
     if (mode === 'all') {
-        SA_DB.employees.filter(function(e) { return e.status === 'active'; })
-            .forEach(function(e) { ids[e.id] = true; });
+        SA_DB.employees.filter(function (e) { return e.status === 'active'; })
+            .forEach(function (e) { ids[e.id] = true; });
     } else {
-        document.querySelectorAll('.sa-emp-cb:checked').forEach(function(cb) {
+        document.querySelectorAll('.sa-emp-cb:checked').forEach(function (cb) {
             ids[parseInt(cb.value)] = true;
         });
     }
@@ -167,7 +186,7 @@ function saGetSelectedEmpIds() {
     var siteVal = siteFilter ? parseInt(siteFilter.value) || 0 : 0;
     if (siteVal) {
         var filtered = {};
-        SA_DB.employees.forEach(function(e) {
+        SA_DB.employees.forEach(function (e) {
             if (ids[e.id] && (e.site_id || 0) === siteVal) filtered[e.id] = true;
         });
         ids = filtered;
@@ -177,7 +196,7 @@ function saGetSelectedEmpIds() {
     var clSiteVal = clSiteFilter ? parseInt(clSiteFilter.value) || 0 : 0;
     if (clSiteVal) {
         var clFiltered = {};
-        SA_DB.employees.forEach(function(e) {
+        SA_DB.employees.forEach(function (e) {
             if (ids[e.id] && (e.site_id || 0) === clSiteVal) clFiltered[e.id] = true;
         });
         ids = clFiltered;
@@ -193,33 +212,33 @@ function renderSAPrint() {
     var el = document.getElementById('sa-sa-print');
     if (!el) { saPrintRenderLock = false; return; }
 
-    var activeEmps = SA_DB.employees.filter(function(e) { return e.status === 'active'; })
-        .sort(function(a, b) { return a.name.localeCompare(b.name); });
+    var activeEmps = SA_DB.employees.filter(function (e) { return e.status === 'active'; })
+        .sort(function (a, b) { return a.name.localeCompare(b.name); });
 
-    var targetNames = ['panel build', 'project'];
+    var targetNames = ['project'];
     var allowedCategoryIds = (SA_DB.scopes || [])
-        .filter(function(s) {
+        .filter(function (s) {
             var n = (s.name || '').trim().toLowerCase();
             return targetNames.indexOf(n) !== -1;
         })
-        .map(function(s) { return s.id; });
+        .map(function (s) { return s.id; });
 
     var seenOther = false;
     var filteredProjects = SA_DB.projects
-        .filter(function(p) { return allowedCategoryIds.indexOf(p.categoryId) !== -1; })
-        .filter(function(p) {
+        .filter(function (p) { return allowedCategoryIds.indexOf(p.categoryId) !== -1; })
+        .filter(function (p) {
             if (p.name.trim().toLowerCase() === 'other') {
                 if (seenOther) return false;
                 seenOther = true;
             }
             return true;
         })
-        .sort(function(a, b) { return a.name.localeCompare(b.name); });
+        .sort(function (a, b) { return a.name.localeCompare(b.name); });
 
     window._saProjectList = filteredProjects;
 
     // Employee checklist
-    var checkboxes = activeEmps.map(function(e) {
+    var checkboxes = activeEmps.map(function (e) {
         var searchText = (e.name + ' ' + (e.company || '')).toLowerCase();
         return '<label class="sa-emp-row" data-search="' + esc(searchText) + '" data-site-id="' + (e.site_id || 0) + '" style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:4px;border-radius:6px;cursor:pointer;transition:background .15s" onmouseover="this.style.background=\'var(--main-bg)\'" onmouseout="this.style.background=\'\'">'
             + '<input type="checkbox" class="sa-emp-cb" value="' + e.id + '" style="accent-color:var(--accent)" onchange="SA_hoursPage=0;saUpdateHoursVisibility();saAutoPreview()">'
@@ -229,50 +248,50 @@ function renderSAPrint() {
     }).join('');
 
     // Project options for per-row dropdown
-    var projOpts = (window._saProjectList || []).map(function(p) {
+    var projOpts = (window._saProjectList || []).map(function (p) {
         return '<option value="' + p.id + '">' + esc(p.name) + '</option>';
     }).join('');
 
-        // Work Hours rows
-        var hourInputRows = activeEmps.map(function(e, idx) {
-            var searchText = (e.name + ' ' + (e.nric || '') + ' ' + (e.company || '')).toLowerCase();
-            var hourInputs = SA_DB.rates.map(function(r) {
-                var c = SA_RATE_COLORS[r.name] || '#6b7280';
-                return '<td style="padding:4px 6px;text-align:center">'
-                    + '<input type="number" class="sa-hours-input" id="sa-hours-' + e.id + '-' + r.name + '" '
-                    + 'placeholder="—" min="0" max="24" step="0.25" value="" '
-                    + 'oninput="saCalcTotals()" '
-                    + 'style="width:65px;padding:4px 6px;font-size:.82rem;text-align:center;border-color:' + c + '88;font-family:var(--font-m)">'
-                    + '</td>';
-            }).join('');
-            return '<tr class="sa-emp-row-hr" data-search="' + esc(searchText) + '" data-emp-id="' + e.id + '">'
-                + '<td style="padding:6px 8px;font-family:var(--font-m);color:var(--main-text3)">' + (idx + 1) + '</td>'
-                + '<td style="padding:6px 8px;font-weight:600;font-size:.85rem">' + esc(e.name) + '</td>'
-                + '<td style="padding:6px 8px;font-family:var(--font-m);font-size:.8rem;color:var(--main-text2)">' + esc(e.nric || '') + '</td>'
-                + '<td style="padding:6px 8px;font-size:.82rem">' + esc(e.company || '') + '</td>'
-                + '<td style="padding:6px 8px;font-size:.78rem;color:var(--main-text2)">' + esc(saGetSiteName(e.site_id || 0)) + '</td>'
-                // Project dropdown
-                + '<td style="padding:4px 6px"><select class="sa-row-project" id="sa-proj-' + e.id + '" '
-                + 'style="width:110px;padding:3px 4px;font-size:.78rem" onchange="saAutoPreview()">'
-                + '<option value="">—</option>' + projOpts + '</select></td>'
-                // Clock In (friendly selects)
-                + '<td style="padding:4px 6px;text-align:center">' + saTimeSelectsHtml(e.id, 'in') + '</td>'
-                // Clock Out (friendly selects)
-                + '<td style="padding:4px 6px;text-align:center">' + saTimeSelectsHtml(e.id, 'out') + '</td>'
-                // Duration
-                + '<td style="padding:6px 8px;text-align:center;font-family:var(--font-m);font-size:.82rem;font-weight:700;color:var(--main-text2)" id="sa-duration-' + e.id + '">—</td>'
-                + hourInputs
-                + '</tr>';
+    // Work Hours rows
+    var hourInputRows = activeEmps.map(function (e, idx) {
+        var searchText = (e.name + ' ' + (e.nric || '') + ' ' + (e.company || '')).toLowerCase();
+        var hourInputs = SA_DB.rates.map(function (r) {
+            var c = SA_RATE_COLORS[r.name] || '#6b7280';
+            return '<td style="padding:4px 6px;text-align:center">'
+                + '<input type="number" class="sa-hours-input" id="sa-hours-' + e.id + '-' + r.name + '" '
+                + 'placeholder="—" min="0" max="24" step="0.25" value="" '
+                + 'oninput="saCalcTotals()" '
+                + 'style="width:65px;padding:4px 6px;font-size:.82rem;text-align:center;border-color:' + c + '88;font-family:var(--font-m)">'
+                + '</td>';
         }).join('');
-
-    // Rate headers + totals
-    var rateHeadersHtml = SA_DB.rates.map(function(r) {
-        var c = SA_RATE_COLORS[r.name] || '#6b7280';
-        return '<th style="background:' + c + '22;color:' + c + ';text-align:center;font-size:.78rem;min-width:80px">'
-            + esc(r.label) + '<br><span style="font-size:.65rem;opacity:.7">(' + parseFloat(r.multiplier).toFixed(2) + '×)</span></th>';
+        return '<tr class="sa-emp-row-hr" data-search="' + esc(searchText) + '" data-emp-id="' + e.id + '">'
+            + '<td style="padding:6px 8px;font-family:var(--font-m);color:var(--main-text3)">' + (idx + 1) + '</td>'
+            + '<td style="padding:6px 8px;font-weight:600;font-size:.85rem">' + esc(e.name) + '</td>'
+            + '<td style="padding:6px 8px;font-family:var(--font-m);font-size:.8rem;color:var(--main-text2)">' + esc(e.nric || '') + '</td>'
+            + '<td style="padding:6px 8px;font-size:.82rem">' + esc(e.company || '') + '</td>'
+            + '<td style="padding:6px 8px;font-size:.78rem;color:var(--main-text2)">' + esc(saGetSiteName(e.site_id || 0)) + '</td>'
+            // Project dropdown
+            + '<td style="padding:4px 6px"><select class="sa-row-project" id="sa-proj-' + e.id + '" '
+            + 'style="width:110px;padding:3px 4px;font-size:.78rem" onchange="saAutoPreview()">'
+            + '<option value="">—</option>' + projOpts + '</select></td>'
+            // Clock In (friendly selects)
+            + '<td style="padding:4px 6px;text-align:center">' + saTimeSelectsHtml(e.id, 'in') + '</td>'
+            // Clock Out (friendly selects)
+            + '<td style="padding:4px 6px;text-align:center">' + saTimeSelectsHtml(e.id, 'out') + '</td>'
+            // Duration
+            + '<td style="padding:6px 8px;text-align:center;font-family:var(--font-m);font-size:.82rem;font-weight:700;color:var(--main-text2)" id="sa-duration-' + e.id + '">—</td>'
+            + hourInputs
+            + '</tr>';
     }).join('');
 
-    var rateTotalsHtml = SA_DB.rates.map(function(r) {
+    // Rate headers + totals
+    var rateHeadersHtml = SA_DB.rates.map(function (r) {
+        var c = SA_RATE_COLORS[r.name] || '#6b7280';
+        return '<th style="background:' + c + '22;color:' + c + ';text-align:center;font-size:.78rem;min-width:80px">'
+            + esc(r.label) + '</th>';
+    }).join('');
+
+    var rateTotalsHtml = SA_DB.rates.map(function (r) {
         var c = SA_RATE_COLORS[r.name] || '#6b7280';
         return '<td style="padding:6px;text-align:center;font-family:var(--font-m);font-weight:700;color:' + c + '" id="sa-total-' + r.name + '">0.0</td>';
     }).join('');
@@ -381,7 +400,13 @@ function renderSAPrint() {
         + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px" class="sa-no-print">'
         + '<h3 style="margin:0;font-size:.95rem;font-family:var(--font-d)">Preview</h3>'
         + '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
-        + '<span style="font-size:.82rem;color:var(--main-text2)">Pages are sized automatically for printing.</span>'
+        // ← Tabs
+        + '<div style="display:flex;border:1px solid var(--main-border);border-radius:8px;overflow:hidden">'
+        + '<button id="sa-tab-nohours" class="btn" onclick="saSwitchPreview(\'nohours\')" '
+        + 'style="padding:6px 14px;font-size:.82rem;border-radius:0;border:none;cursor:pointer;font-weight:600">📋 Attendance List</button>'
+        + '<button id="sa-tab-withhours" class="btn" onclick="saSwitchPreview(\'withhours\')" '
+        + 'style="padding:6px 14px;font-size:.82rem;border-radius:0;border:none;cursor:pointer;font-weight:600">⏱ With Hours</button>'
+        + '</div>'
         + '<button class="btn btn-blue" onclick="saDoPrint()">Print</button>'
         + '</div>'
         + '</div>'
@@ -399,14 +424,14 @@ function renderSAPrint() {
     saUpdateHoursVisibility();
     saLoadHoursForDate();
 
-    setTimeout(function() {
-        el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function(a) {
+    setTimeout(function () {
+        el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function (a) {
             a.classList.remove('pt-anim-filter', 'pt-anim-head', 'pt-anim-table');
         });
     }, 550);
-    setTimeout(function() { saPrintRenderLock = false; }, 550);
+    setTimeout(function () { saPrintRenderLock = false; }, 550);
 }
-document.addEventListener('mousedown', function(e) {
+document.addEventListener('mousedown', function (e) {
     if (e.target.classList && e.target.classList.contains('sa-t3')) return;
     if (e.target.closest && e.target.closest('[id^="sa-t3-dd-"]')) return;
     saT3CloseAll();
@@ -429,7 +454,7 @@ function saApplyBulkTime() {
     var visibleEmpIds = saGetSelectedEmpIds();
     var count = 0;
 
-    document.querySelectorAll('.sa-emp-row-hr').forEach(function(row) {
+    document.querySelectorAll('.sa-emp-row-hr').forEach(function (row) {
         var empId = parseInt(row.getAttribute('data-emp-id'));
         if (!visibleEmpIds[empId]) return;
 
@@ -460,6 +485,12 @@ function saApplyBulkTime() {
     }
 }
 
+function saSwitchPreview(mode) {
+    saPreviewMode = mode;
+    saUpdatePreviewTabs();
+    saRenderPreviewPage(window._saCurrentPage || 0);
+}
+
 // ── Work Hours helpers ──
 
 function saChangeHoursRows(val) {
@@ -481,7 +512,7 @@ function saUpdateHoursVisibility() {
 
     var allRows = Array.from(document.querySelectorAll('.sa-emp-row-hr'));
 
-    var matchedRows = allRows.filter(function(row) {
+    var matchedRows = allRows.filter(function (row) {
         var empId = parseInt(row.getAttribute('data-emp-id'));
         if (!visibleEmpIds[empId]) return false;
         var text = row.getAttribute('data-search') || '';
@@ -495,9 +526,9 @@ function saUpdateHoursVisibility() {
     var start = SA_hoursPage * SA_hoursPageSize;
     var end = start + SA_hoursPageSize;
 
-    allRows.forEach(function(row) { row.style.display = 'none'; });
+    allRows.forEach(function (row) { row.style.display = 'none'; });
 
-    matchedRows.forEach(function(row, i) {
+    matchedRows.forEach(function (row, i) {
         if (i >= start && i < end) row.style.display = '';
     });
 
@@ -561,13 +592,13 @@ function saCalcTotals() {
     var visibleEmpIds = saGetSelectedEmpIds();
     var totals = {};
     var totalAll = 0, count = 0;
-    SA_DB.rates.forEach(function(r) { totals[r.name] = 0; });
+    SA_DB.rates.forEach(function (r) { totals[r.name] = 0; });
 
-    document.querySelectorAll('.sa-emp-row-hr').forEach(function(row) {
+    document.querySelectorAll('.sa-emp-row-hr').forEach(function (row) {
         var empId = parseInt(row.getAttribute('data-emp-id'));
         if (!visibleEmpIds[empId]) return;
         var hasHours = false;
-        SA_DB.rates.forEach(function(r) {
+        SA_DB.rates.forEach(function (r) {
             var input = row.querySelector('#sa-hours-' + empId + '-' + r.name);
             var v = input ? (parseFloat(input.value) || 0) : 0;
             if (v > 0) { totals[r.name] += v; totalAll += v; hasHours = true; }
@@ -575,7 +606,7 @@ function saCalcTotals() {
         if (hasHours) count++;
     });
 
-    SA_DB.rates.forEach(function(r) {
+    SA_DB.rates.forEach(function (r) {
         var el = document.getElementById('sa-total-' + r.name);
         if (el) el.textContent = totals[r.name].toFixed(1);
     });
@@ -586,7 +617,7 @@ function saCalcTotals() {
 
 // ── NEW: Auto-calculate duration and distribute ──
 function saCalcDuration(empId) {
-    if (empId === 0) return; 
+    if (empId === 0) return;
     var inH = document.getElementById('sa-in-h-' + empId);
     var inM = document.getElementById('sa-in-m-' + empId);
     var inAP = document.getElementById('sa-in-ampm-' + empId);
@@ -595,7 +626,7 @@ function saCalcDuration(empId) {
     var outAP = document.getElementById('sa-out-ampm-' + empId);
     var durEl = document.getElementById('sa-duration-' + empId);
 
-    SA_DB.rates.forEach(function(r) {
+    SA_DB.rates.forEach(function (r) {
         var input = document.getElementById('sa-hours-' + empId + '-' + r.name);
         if (input) input.value = '';
     });
@@ -653,7 +684,7 @@ function saCalcDuration(empId) {
 function saApplyProjectToAll() {
     var projId = document.getElementById('sa-print-project') ? document.getElementById('sa-print-project').value : '';
     if (!projId) return;
-    document.querySelectorAll('.sa-emp-row-hr').forEach(function(row) {
+    document.querySelectorAll('.sa-emp-row-hr').forEach(function (row) {
         var sel = row.querySelector('.sa-row-project');
         if (sel) sel.value = projId;
     });
@@ -668,7 +699,7 @@ function saSaveWorkRecords() {
     }
 
     var records = [];
-    document.querySelectorAll('.sa-emp-row-hr').forEach(function(row) {
+    document.querySelectorAll('.sa-emp-row-hr').forEach(function (row) {
         var empId = parseInt(row.getAttribute('data-emp-id'));
 
         // ← 从 SA_DB.employees 找 site_id
@@ -703,7 +734,7 @@ function saSaveWorkRecords() {
         var durationText = durEl ? durEl.textContent : '';
         var duration = parseFloat(durationText) || 0;
 
-        SA_DB.rates.forEach(function(r) {
+        SA_DB.rates.forEach(function (r) {
             var input = row.querySelector('#sa-hours-' + empId + '-' + r.name);
             var hours = input ? (parseFloat(input.value) || 0) : 0;
             if (hours > 0) {
@@ -731,9 +762,9 @@ function saSaveWorkRecords() {
 
     api('/site-attendance/work-records', {
         method: 'POST', body: { records: records }
-    }).then(function() {
+    }).then(function () {
         var totalH = 0;
-        records.forEach(function(r) { totalH += r.hours; });
+        records.forEach(function (r) { totalH += r.hours; });
         showModal(
             '<h3>✅ Records Saved</h3>'
             + '<p style="color:var(--main-text2);line-height:1.6">'
@@ -744,7 +775,7 @@ function saSaveWorkRecords() {
             + '<div class="btns"><button class="btn btn-accent" onclick="hideModal()">OK</button></div>'
         );
         saPreviewPrint();
-    }).catch(function(e) {
+    }).catch(function (e) {
         showModal('<h3>❌ Save Failed</h3><p style="color:var(--danger);line-height:1.6">' + esc(e.message) + '</p><div class="btns"><button class="btn btn-ghost" onclick="hideModal()">OK</button></div>');
     });
 }
@@ -755,20 +786,20 @@ function saLoadHoursForDate() {
     if (!date) { saAutoPreview(); return; }
 
     // Clear all inputs
-    document.querySelectorAll('.sa-hours-input').forEach(function(input) { input.value = ''; });
-    document.querySelectorAll('[id^="sa-in-h-"]').forEach(function(s) { s.value = ''; });
-    document.querySelectorAll('[id^="sa-in-m-"]').forEach(function(s) { s.value = ''; });
-    document.querySelectorAll('[id^="sa-out-h-"]').forEach(function(s) { s.value = ''; });
-    document.querySelectorAll('[id^="sa-out-m-"]').forEach(function(s) { s.value = ''; });
-    document.querySelectorAll('.sa-row-project').forEach(function(sel) { sel.value = ''; });
-    document.querySelectorAll('[id^="sa-duration-"]').forEach(function(el) {
+    document.querySelectorAll('.sa-hours-input').forEach(function (input) { input.value = ''; });
+    document.querySelectorAll('[id^="sa-in-h-"]').forEach(function (s) { s.value = ''; });
+    document.querySelectorAll('[id^="sa-in-m-"]').forEach(function (s) { s.value = ''; });
+    document.querySelectorAll('[id^="sa-out-h-"]').forEach(function (s) { s.value = ''; });
+    document.querySelectorAll('[id^="sa-out-m-"]').forEach(function (s) { s.value = ''; });
+    document.querySelectorAll('.sa-row-project').forEach(function (sel) { sel.value = ''; });
+    document.querySelectorAll('[id^="sa-duration-"]').forEach(function (el) {
         if (el.tagName === 'TD') el.textContent = '—';
     });
 
-    api('/site-attendance/work-records?from=' + date + '&to=' + date).then(function(data) {
+    api('/site-attendance/work-records?from=' + date + '&to=' + date).then(function (data) {
         data = data || [];
         var loadedEmps = {};
-        data.forEach(function(rec) {
+        data.forEach(function (rec) {
             var input = document.getElementById('sa-hours-' + rec.employeeId + '-' + rec.rateType);
             if (input) input.value = rec.hours;
 
@@ -812,7 +843,7 @@ function saLoadHoursForDate() {
         });
         saCalcTotals();
         saAutoPreview();
-    }).catch(function() {
+    }).catch(function () {
         saCalcTotals();
         saAutoPreview();
     });
@@ -833,13 +864,13 @@ function saFilterProjectDropdown() {
     var typed = searchEl.value.trim().toLowerCase();
     var list = window._saProjectList || [];
     var matches = typed
-        ? list.filter(function(p) { return p.name.toLowerCase().indexOf(typed) !== -1; })
+        ? list.filter(function (p) { return p.name.toLowerCase().indexOf(typed) !== -1; })
         : list;
 
     if (!matches.length) {
         dropdownEl.innerHTML = '<div style="padding:10px 12px;font-size:.82rem;color:var(--main-text3)">No matches</div>';
     } else {
-        dropdownEl.innerHTML = matches.map(function(p) {
+        dropdownEl.innerHTML = matches.map(function (p) {
             return '<div class="sa-project-option" style="padding:8px 12px;font-size:.85rem;cursor:pointer" '
                 + 'onmouseover="this.style.background=\'var(--main-bg)\'" onmouseout="this.style.background=\'\'" '
                 + 'onmousedown="event.preventDefault();saSelectProject(' + p.id + ', \'' + esc(p.name).replace(/'/g, "\\'") + '\')">'
@@ -879,13 +910,13 @@ function saTogglePrintMode() {
 function saToggleSelectAll() {
     var allCb = document.getElementById('sa-select-all');
     if (!allCb) return;
-    document.querySelectorAll('.sa-emp-cb').forEach(function(cb) { cb.checked = allCb.checked; });
+    document.querySelectorAll('.sa-emp-cb').forEach(function (cb) { cb.checked = allCb.checked; });
 }
 
 var _saAutoPreviewTimer = null;
 function saAutoPreview() {
     clearTimeout(_saAutoPreviewTimer);
-    _saAutoPreviewTimer = setTimeout(function() { saPreviewPrint(); }, 200);
+    _saAutoPreviewTimer = setTimeout(function () { saPreviewPrint(); }, 200);
 }
 
 function saClearProjectIfTyping() {
@@ -951,7 +982,7 @@ function saT3CheckCalc(empId) {
     if (empId === 0) {
         var bulkFields = ['sa-in-h-0', 'sa-in-m-0', 'sa-in-ampm-0', 'sa-out-h-0', 'sa-out-m-0', 'sa-out-ampm-0'];
         var bulkAll = true;
-        bulkFields.forEach(function(f) {
+        bulkFields.forEach(function (f) {
             var el = document.getElementById(f);
             if (!el || !el.value.trim()) bulkAll = false;
         });
@@ -964,7 +995,7 @@ function saT3CheckCalc(empId) {
 
     var fields = ['sa-in-h-', 'sa-in-m-', 'sa-in-ampm-', 'sa-out-h-', 'sa-out-m-', 'sa-out-ampm-'];
     var allFilled = true;
-    fields.forEach(function(f) {
+    fields.forEach(function (f) {
         var el = document.getElementById(f + empId);
         if (!el || !el.value.trim()) allFilled = false;
     });
@@ -1002,7 +1033,7 @@ function saT3Open(inputEl, type, empId, prefix) {
                     container.style.paddingBottom = '100px';
                     container._saTempPad = true;
                     // ← 腾出空间后自动滚到底部
-                    setTimeout(function() {
+                    setTimeout(function () {
                         container.scrollTop = container.scrollHeight;
                     }, 30);
                 }
@@ -1014,7 +1045,7 @@ function saT3Open(inputEl, type, empId, prefix) {
     if (!dd) return;
 
     var options = saT3Options(type);
-    var html = options.map(function(o) {
+    var html = options.map(function (o) {
         return '<div style="padding:5px 8px;font-size:.82rem;font-family:var(--font-m);font-weight:600;cursor:pointer;text-align:center" '
             + 'onmouseover="this.style.background=\'var(--main-bg)\'" '
             + 'onmouseout="this.style.background=\'\'" '
@@ -1026,7 +1057,7 @@ function saT3Open(inputEl, type, empId, prefix) {
     dd.style.display = '';
 
     // ← 确保 dropdown 可见
-    setTimeout(function() {
+    setTimeout(function () {
         dd.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 60);
 }
@@ -1038,10 +1069,10 @@ function saT3Filter(inputEl, type, empId, prefix) {
     var typed = inputEl.value.trim().toLowerCase();
     var options = saT3Options(type);
     var matches = typed
-        ? options.filter(function(o) { return o.toLowerCase().indexOf(typed) !== -1; })
+        ? options.filter(function (o) { return o.toLowerCase().indexOf(typed) !== -1; })
         : options;
 
-    var html = matches.map(function(o) {
+    var html = matches.map(function (o) {
         return '<div style="padding:5px 8px;font-size:.82rem;font-family:var(--font-m);font-weight:600;cursor:pointer;text-align:center" '
             + 'onmouseover="this.style.background=\'var(--main-bg)\'" '
             + 'onmouseout="this.style.background=\'\'" '
@@ -1062,7 +1093,7 @@ function saT3Select(prefix, empId, type, val) {
     if (type === 'h') {
         var mInput = document.getElementById('sa-' + prefix + '-m-' + empId);
         if (mInput) {
-            setTimeout(function() {
+            setTimeout(function () {
                 mInput.focus();
                 saT3Open(mInput, 'm', empId, prefix);
             }, 50);
@@ -1070,7 +1101,7 @@ function saT3Select(prefix, empId, type, val) {
     } else if (type === 'm') {
         var apInput = document.getElementById('sa-' + prefix + '-ampm-' + empId);
         if (apInput) {
-            setTimeout(function() {
+            setTimeout(function () {
                 apInput.focus();
                 saT3Open(apInput, 'ap', empId, prefix);
             }, 50);
@@ -1094,10 +1125,10 @@ function saT3Select(prefix, empId, type, val) {
 }
 
 function saT3CloseAll() {
-    document.querySelectorAll('[id^="sa-t3-dd-"]').forEach(function(dd) {
+    document.querySelectorAll('[id^="sa-t3-dd-"]').forEach(function (dd) {
         dd.style.display = 'none';
     });
-    document.querySelectorAll('div[style*="padding-bottom: 100px"]').forEach(function(el) {
+    document.querySelectorAll('div[style*="padding-bottom: 100px"]').forEach(function (el) {
         if (el._saTempPad) {
             el.style.paddingBottom = '';
             el._saTempPad = false;
@@ -1106,7 +1137,7 @@ function saT3CloseAll() {
 }
 
 // ── Generate all time options (every 15 min) ──
-var _saTimeOptions = (function() {
+var _saTimeOptions = (function () {
     var list = [];
     for (var h = 0; h < 24; h++) {
         for (var m = 0; m < 60; m++) {
@@ -1118,10 +1149,10 @@ var _saTimeOptions = (function() {
     return list;
 })();
 
-document.addEventListener('mousedown', function(e) {
+document.addEventListener('mousedown', function (e) {
     if (e.target.classList && e.target.classList.contains('sa-time-input')) return;
     if (e.target.closest && e.target.closest('[id^="sa-time-dd-"]')) return;
-    document.querySelectorAll('[id^="sa-time-dd-"]').forEach(function(dd) { dd.style.display = 'none'; });
+    document.querySelectorAll('[id^="sa-time-dd-"]').forEach(function (dd) { dd.style.display = 'none'; });
 });
 
 function saTimeDropdown(prefix, empId) {
@@ -1136,11 +1167,11 @@ function saTimeFilterDropdown(prefix, empId) {
     if (!input || !dd) return;
 
     var typed = input.value.trim().toLowerCase();
-    var matches = _saTimeOptions.filter(function(t) {
+    var matches = _saTimeOptions.filter(function (t) {
         return !typed || t.toLowerCase().indexOf(typed) !== -1;
     }).slice(0, 50);
 
-    var html = matches.map(function(t) {
+    var html = matches.map(function (t) {
         return '<div style="padding:5px 12px;font-size:.82rem;font-family:var(--font-m);cursor:pointer;text-align:center" '
             + 'onmouseover="this.style.background=\'var(--main-bg)\'" '
             + 'onmouseout="this.style.background=\'\'" '
@@ -1243,8 +1274,8 @@ function saTimeToMinutes(val) {
 // ── Preview ──
 function saPreviewPrint() {
     var visibleEmpIds = saGetSelectedEmpIds();
-    var selectedEmps = SA_DB.employees.filter(function(e) { return visibleEmpIds[e.id]; })
-        .sort(function(a, b) { return a.name.localeCompare(b.name); });
+    var selectedEmps = SA_DB.employees.filter(function (e) { return visibleEmpIds[e.id]; })
+        .sort(function (a, b) { return a.name.localeCompare(b.name); });
 
     var title = '';
     var tEl = document.getElementById('sa-print-title');
@@ -1281,9 +1312,9 @@ function saPreviewPrint() {
     var cEl = document.getElementById('sa-print-conducted');
     if (cEl) conducted = cEl.value;
 
-    var empsWithHours = selectedEmps.map(function(emp) {
+    var empsWithHours = selectedEmps.map(function (emp) {
         var hours = {};
-        SA_DB.rates.forEach(function(r) {
+        SA_DB.rates.forEach(function (r) {
             var input = document.querySelector('#sa-hours-' + emp.id + '-' + r.name);
             var v = input ? (parseFloat(input.value) || 0) : 0;
             hours[r.name] = v;
@@ -1329,8 +1360,10 @@ function saRenderPreviewPage(pageIndex) {
 
     var page = pages[pageIndex];
     var rates = SA_DB.rates;
+    var showRates = (saPreviewMode === 'withhours');
     var tableHtml = '';
 
+    // Info table
     if (page.isFirst) {
         tableHtml += '<table class="sa-print-info">';
         tableHtml += '<tr><th colspan="2" class="sa-pt-title">ATTENDANCE NAME LIST</th></tr>';
@@ -1342,37 +1375,52 @@ function saRenderPreviewPage(pageIndex) {
         tableHtml += '</table>';
     }
 
+    // Table
     tableHtml += '<table class="sa-print-table"' + (page.isFirst ? ' style="margin-top:-1px"' : '') + '>';
 
+    // Column widths
     tableHtml += '<colgroup>';
-    tableHtml += '<col style="width:9%">';
-    tableHtml += '<col style="width:25%">';
-    tableHtml += '<col style="width:17%">';
-    tableHtml += '<col style="width:12%">';
-    var rateColW = (100 - 9 - 25 - 17 - 12) / (rates.length + 1);
-    rates.forEach(function() { tableHtml += '<col style="width:' + rateColW + '%">'; });
-    tableHtml += '<col style="width:' + rateColW + '%">';
+    if (showRates) {
+        // With hours: No + Name + NRIC + Company + rates + Sign
+        tableHtml += '<col style="width:9%">';
+        tableHtml += '<col style="width:25%">';
+        tableHtml += '<col style="width:17%">';
+        tableHtml += '<col style="width:12%">';
+        var rateColW = (100 - 9 - 25 - 17 - 12) / (rates.length + 1);
+        rates.forEach(function () { tableHtml += '<col style="width:' + rateColW + '%">'; });
+        tableHtml += '<col style="width:' + rateColW + '%">';
+    } else {
+        // No hours: No + Name + NRIC + Company + Sign
+        tableHtml += '<col style="width:8%">';
+        tableHtml += '<col style="width:28%">';
+        tableHtml += '<col style="width:22%">';
+        tableHtml += '<col style="width:22%">';
+        tableHtml += '<col style="width:20%">';
+    }
     tableHtml += '</colgroup>';
 
+    // Headers
     tableHtml += '<thead><tr>';
     tableHtml += '<th class="sa-pt-no">S/No</th>';
     tableHtml += '<th class="sa-pt-name">Name</th>';
     tableHtml += '<th class="sa-pt-nric">NRIC/<br>Passport</th>';
     tableHtml += '<th class="sa-pt-company">Company</th>';
-    rates.forEach(function(r) {
-        var short = SHORT[r.name] || r.label;
-        tableHtml += '<th class="sa-pt-hours">' + esc(short) + '<br>x' + parseFloat(r.multiplier).toFixed(1) + '</th>';
-    });
+    if (showRates) {
+        rates.forEach(function (r) {
+            var short = SHORT[r.name] || r.label;
+            tableHtml += '<th class="sa-pt-hours">' + esc(short) + '</th>';
+        });
+    }
     tableHtml += '<th class="sa-pt-sig">Sign</th>';
     tableHtml += '</tr></thead><tbody>';
 
+    // Rows
     var startNo = 1;
     for (var p = 0; p < pageIndex; p++) {
         startNo += pages[p].emps.length;
     }
 
     var displayRows = page.emps.length;
-
     for (var i = 0; i < displayRows; i++) {
         var item = page.emps[i];
         tableHtml += '<tr>';
@@ -1380,10 +1428,12 @@ function saRenderPreviewPage(pageIndex) {
         tableHtml += '<td class="sa-pt-name">' + (item ? esc(item.emp.name) : '&nbsp;') + '</td>';
         tableHtml += '<td class="sa-pt-nric">' + (item ? esc(item.emp.nric || '') : '&nbsp;') + '</td>';
         tableHtml += '<td class="sa-pt-company">' + (item ? esc(item.emp.company || '') : '&nbsp;') + '</td>';
-        rates.forEach(function(r) {
-            var v = (item && item.hours && item.hours[r.name]) ? item.hours[r.name].toFixed(1) : '';
-            tableHtml += '<td class="sa-pt-hours">' + (v ? v : '&nbsp;') + '</td>';
-        });
+        if (showRates) {
+            rates.forEach(function (r) {
+                var v = (item && item.hours && item.hours[r.name]) ? item.hours[r.name].toFixed(1) : '';
+                tableHtml += '<td class="sa-pt-hours">' + (v ? v : '&nbsp;') + '</td>';
+            });
+        }
         tableHtml += '<td class="sa-pt-sig">&nbsp;</td>';
         tableHtml += '</tr>';
     }
@@ -1391,6 +1441,26 @@ function saRenderPreviewPage(pageIndex) {
     tableHtml += '</tbody></table>';
 
     document.getElementById('sa-print-area').innerHTML = tableHtml;
+
+    // 更新 tab 样式
+    saUpdatePreviewTabs();
+}
+
+function saUpdatePreviewTabs() {
+    var tabNo = document.getElementById('sa-tab-nohours');
+    var tabWith = document.getElementById('sa-tab-withhours');
+    if (!tabNo || !tabWith) return;
+    if (saPreviewMode === 'nohours') {
+        tabNo.style.background = 'var(--accent)';
+        tabNo.style.color = '#fff';
+        tabWith.style.background = 'var(--main-bg)';
+        tabWith.style.color = 'var(--main-text2)';
+    } else {
+        tabNo.style.background = 'var(--main-bg)';
+        tabNo.style.color = 'var(--main-text2)';
+        tabWith.style.background = 'var(--accent)';
+        tabWith.style.color = '#fff';
+    }
 }
 
 // ── Print ──
@@ -1401,6 +1471,7 @@ function saDoPrint() {
     var allEmps = window._saAllEmps || [];
     var meta = window._saPrintMeta || {};
     var rates = SA_DB.rates;
+    var showRates = (saPreviewMode === 'withhours');
 
     if (!allEmps.length && !window._saPrintPages) {
         window.print();
@@ -1408,12 +1479,12 @@ function saDoPrint() {
     }
 
     var printPages = [{ isFirst: true, emps: allEmps }];
-
     var tableHtml = '';
 
-    printPages.forEach(function(page, pageIndex) {
+    printPages.forEach(function (page, pageIndex) {
         tableHtml += '<div class="sa-print-page">';
 
+        // Info table
         if (page.isFirst) {
             tableHtml += '<table class="sa-print-info">';
             tableHtml += '<tr><th colspan="2" class="sa-pt-title">ATTENDANCE NAME LIST</th></tr>';
@@ -1427,41 +1498,45 @@ function saDoPrint() {
 
         tableHtml += '<table class="sa-print-table"' + (page.isFirst ? ' style="margin-top:-1px"' : '') + '>';
 
+        // Columns
         tableHtml += '<colgroup>';
-        tableHtml += '<col style="width:9%">';
-        tableHtml += '<col style="width:25%">';
-        tableHtml += '<col style="width:17%">';
-        tableHtml += '<col style="width:12%">';
-        var rateColW = (100 - 9 - 25 - 17 - 12) / (rates.length + 1);
-        rates.forEach(function() { tableHtml += '<col style="width:' + rateColW + '%">'; });
-        tableHtml += '<col style="width:' + rateColW + '%">';
+        if (showRates) {
+            tableHtml += '<col style="width:9%"><col style="width:25%"><col style="width:17%"><col style="width:12%">';
+            var rateColW = (100 - 9 - 25 - 17 - 12) / (rates.length + 1);
+            rates.forEach(function () { tableHtml += '<col style="width:' + rateColW + '%">'; });
+            tableHtml += '<col style="width:' + rateColW + '%">';
+        } else {
+            tableHtml += '<col style="width:8%"><col style="width:28%"><col style="width:22%"><col style="width:22%"><col style="width:20%">';
+        }
         tableHtml += '</colgroup>';
 
+        // Headers
         tableHtml += '<thead><tr><th class="sa-pt-no">S/No</th><th class="sa-pt-name">Name</th><th class="sa-pt-nric">NRIC/<br>Passport</th><th class="sa-pt-company">Company</th>';
-        rates.forEach(function(r) {
-            var short = SHORT[r.name] || r.label;
-            tableHtml += '<th class="sa-pt-hours">' + esc(short) + '<br>x' + parseFloat(r.multiplier).toFixed(1) + '</th>';
-        });
+        if (showRates) {
+            rates.forEach(function (r) {
+                tableHtml += '<th class="sa-pt-hours">' + esc(SHORT[r.name] || r.label) + '</th>';
+            });
+        }
         tableHtml += '<th class="sa-pt-sig">Sign</th></tr></thead><tbody>';
 
+        // Rows
         var startNo = 1;
         for (var p = 0; p < pageIndex; p++) {
             startNo += printPages[p].emps.length;
         }
-
-        var displayRows = page.emps.length;
-
-        for (var i = 0; i < displayRows; i++) {
+        for (var i = 0; i < page.emps.length; i++) {
             var item = page.emps[i];
             tableHtml += '<tr>';
             tableHtml += '<td class="sa-pt-no">' + (startNo + i) + '</td>';
             tableHtml += '<td class="sa-pt-name">' + (item ? esc(item.emp.name) : '&nbsp;') + '</td>';
             tableHtml += '<td class="sa-pt-nric">' + (item ? esc(item.emp.nric || '') : '&nbsp;') + '</td>';
             tableHtml += '<td class="sa-pt-company">' + (item ? esc(item.emp.company || '') : '&nbsp;') + '</td>';
-            rates.forEach(function(r) {
-                var v = (item && item.hours && item.hours[r.name]) ? item.hours[r.name].toFixed(1) : '';
-                tableHtml += '<td class="sa-pt-hours">' + (v ? v : '&nbsp;') + '</td>';
-            });
+            if (showRates) {
+                rates.forEach(function (r) {
+                    var v = (item && item.hours && item.hours[r.name]) ? item.hours[r.name].toFixed(1) : '';
+                    tableHtml += '<td class="sa-pt-hours">' + (v ? v : '&nbsp;') + '</td>';
+                });
+            }
             tableHtml += '<td class="sa-pt-sig">&nbsp;</td>';
             tableHtml += '</tr>';
         }
@@ -1471,7 +1546,7 @@ function saDoPrint() {
 
     document.getElementById('sa-print-area').innerHTML = tableHtml;
 
-    setTimeout(function() {
+    setTimeout(function () {
         window.print();
         saRenderPreviewPage(window._saCurrentPage || 0);
     }, 100);
@@ -1482,6 +1557,8 @@ function saDoPrint() {
    ========================================================== */
 
 var saRecFilteredData = [];
+var saRecDetailData = [];
+var saRecDetailRequestId = 0;
 var saRecCurrentPage = 1;
 var saRecPageSize = 25;
 var saRecDisplayData = [];
@@ -1516,7 +1593,7 @@ function saRecBuildMultiDropdown(type, options) {
 
 function saRecOpenDropdown(type) {
     // Close others first
-    ['emp', 'rate', 'site'].forEach(function(t) {
+    ['emp', 'rate', 'site'].forEach(function (t) {
         if (t !== type) {
             var el = document.getElementById('sa-rec-' + t + '-dropdown');
             if (el) el.style.display = 'none';
@@ -1539,7 +1616,7 @@ function saRecFilterDropdown(type) {
     var state = saRecDropdownState[type];
     var typed = state.typing ? searchEl.value.trim().toLowerCase() : '';
     var matches = typed
-        ? state.data.filter(function(o) { return o.label.toLowerCase().indexOf(typed) !== -1; })
+        ? state.data.filter(function (o) { return o.label.toLowerCase().indexOf(typed) !== -1; })
         : state.data;
 
     var allChecked = state.selected.length === 0;
@@ -1557,7 +1634,7 @@ function saRecFilterDropdown(type) {
     if (!matches.length) {
         html += '<div style="padding:10px 12px;font-size:.82rem;color:var(--main-text3)">No matches</div>';
     } else {
-        matches.forEach(function(o) {
+        matches.forEach(function (o) {
             var checked = state.selected.indexOf(String(o.value)) !== -1;
             html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer" '
                 + 'onmouseover="this.style.background=\'var(--main-bg)\'" onmouseout="this.style.background=\'\'" '
@@ -1590,7 +1667,7 @@ function saRecClearAll(type) {
 }
 
 function saRecCloseAllDropdowns() {
-    ['emp', 'rate', 'site'].forEach(function(type) {
+    ['emp', 'rate', 'site'].forEach(function (type) {
         var el = document.getElementById('sa-rec-' + type + '-dropdown');
         if (el) el.style.display = 'none';
         saRecDropdownState[type].open = false;
@@ -1600,7 +1677,7 @@ function saRecCloseAllDropdowns() {
 }
 
 function saRecCloseDropdownsOutside(e) {
-    ['emp', 'rate', 'site'].forEach(function(type) {
+    ['emp', 'rate', 'site'].forEach(function (type) {
         var dropdownEl = document.getElementById('sa-rec-' + type + '-dropdown');
         var searchEl = document.getElementById('sa-rec-' + type + '-search');
         if (!dropdownEl || !searchEl) return;
@@ -1619,8 +1696,8 @@ function saRecUpdateDisplay(type) {
     if (!searchEl) return;
 
     state.typing = false;
-    var labels = state.selected.map(function(v) {
-        var f = state.data.find(function(o) { return String(o.value) === v; });
+    var labels = state.selected.map(function (v) {
+        var f = state.data.find(function (o) { return String(o.value) === v; });
         return f ? f.label : v;
     });
 
@@ -1640,6 +1717,7 @@ function saRecOnDropdownChange(type) {
     } else {
         saRenderRecordsTable();
     }
+    saLoadRecordDetails();
 }
 
 // ── Page Render ──
@@ -1648,7 +1726,8 @@ function renderSARecords() {
     var el = document.getElementById('sa-sa-records');
     if (!el) return;
 
-    var todayDate = new Date().toISOString().slice(0, 10);
+    var todayDate = new Date();
+    var currentMonth = todayDate.getFullYear() + '-' + String(todayDate.getMonth() + 1).padStart(2, '0');
     var isAdmin = currentUser && currentUser.role === 'admin';
 
     // site-admin 的 site 信息
@@ -1656,36 +1735,40 @@ function renderSARecords() {
     var mySiteName = isAdmin ? '' : saGetSiteName(mySiteId);
 
     el.innerHTML = ''
-    + '<div class="app-header pt-anim-filter"><h2>Work Records</h2><div class="header-sub">'
-    + (isAdmin ? 'View and manage work hour records' : 'View work hour records — ' + esc(mySiteName))
-    + '</div></div>'
-    + '<div class="app-body">'
-    + '<div class="pt-anim-head" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px">'
-    + '<h3 style="margin:0 0 14px;font-size:.9rem;font-family:var(--font-d)">Filter</h3>'
-    + '<div class="sa-rec-filter-grid">'
-    + '<div class="sa-rec-filter-item" style="flex:0 1 300px"><label>Search</label><input class="input" id="sa-rec-search" placeholder="Search name, company, site..." oninput="saQueueRecordsTable()"></div>'
-    + '<div class="sa-rec-filter-item sa-ios-date-field"><label>From</label><input class="input" id="sa-rec-from" type="date" value="" onchange="saLoadRecords()"></div>'
-    + '<div class="sa-rec-filter-item sa-ios-date-field"><label>To</label><input class="input" id="sa-rec-to" type="date" value="" onchange="saLoadRecords()"></div>'
-    + saRecDropdownHtml('emp', 'Employee')
-    + saRecDropdownHtml('rate', 'Rate Type')
-    // admin → dropdown，site_admin → 锁定 label
-    + (isAdmin
-        ? saRecDropdownHtml('site', 'Site')
-        : '')
-    + '<div class="sa-rec-filter-item sa-rec-filter-item--btns">'
-    + '<button class="btn btn-ghost" onclick="saResetRecordsFilter()">Reset</button>'
-    + '<button class="btn btn-blue" onclick="saExportRecords()">Export</button>'
-    + '</div>'
-    + '</div>'
-    + '</div>'
-    + '<div id="sa-records-table-area" class="pt-anim-table"><div style="padding:30px;text-align:center;color:var(--main-text3)">Loading records…</div></div>'
-    + '</div>';
+        + '<div class="app-header"><h2>Work Records</h2><div class="header-sub">'
+        + (isAdmin ? 'Monthly employee work hours' : 'Monthly work hours — ' + esc(mySiteName))
+        + '</div></div>'
+        + '<div class="app-body">'
+        + '<div class="pt-anim-filter" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px">'
+        + '<h3 style="margin:0 0 14px;font-size:.9rem;font-family:var(--font-d)">Filter</h3>'
+        + '<div class="sa-rec-filter-grid">'
+        + '<div class="sa-rec-filter-item"><label>Month</label><input class="input" id="sa-rec-month" type="month" value="' + currentMonth + '" onchange="saLoadRecords()"></div>'
+        + '<div class="sa-rec-filter-item" style="flex:0 1 300px"><label>Search</label><input class="input" id="sa-rec-search" placeholder="Search name, company, site, project..." oninput="saQueueRecordsTable()"></div>'
+        + saRecDropdownHtml('emp', 'Employee')
+        // admin → dropdown，site_admin → 锁定 label
+        + (isAdmin
+            ? saRecDropdownHtml('site', 'Site')
+            : '')
+        + '<div class="sa-rec-filter-item sa-rec-filter-item--btns">'
+        + '<button class="btn btn-ghost" onclick="saResetRecordsFilter()">Reset</button>'
+        + '<button class="btn btn-blue" onclick="saExportRecords()">Export Monthly</button>'
+        + '</div>'
+        + '</div>'
+        + '</div>'
+        + '<div class="pt-anim-head section-head" style="display:flex;justify-content:space-between;align-items:center;margin:0 0 12px">'
+        + '<h2 style="margin:0;font-size:1.1rem;font-family:var(--font-d)">Work Records</h2>'
+        + '</div>'
+        + '<div class="pt-anim-table">'
+        + '<div id="sa-records-table-area"><div style="padding:30px;text-align:center;color:var(--main-text3)">Loading records…</div></div>'
+        + '</div>'
+        + '<div id="sa-record-details-section" style="margin-top:24px"></div>'
+        + '</div>';
 
     // Fill dropdown data
-    var empOpts = SA_DB.employees.slice().sort(function(a, b) { return a.name.localeCompare(b.name); })
-        .map(function(e) { return { value: e.id, label: e.name }; });
-    var rateOpts = SA_DB.rates.map(function(r) { return { value: r.name, label: r.label }; });
-    var siteOpts = (SA_DB.sites || []).map(function(s) { return { value: s.id, label: s.name }; });
+    var empOpts = SA_DB.employees.slice().sort(function (a, b) { return a.name.localeCompare(b.name); })
+        .map(function (e) { return { value: e.id, label: e.name }; });
+    var rateOpts = SA_DB.rates.map(function (r) { return { value: r.name, label: r.label }; });
+    var siteOpts = (SA_DB.sites || []).map(function (s) { return { value: s.id, label: s.name }; });
 
     saRecBuildMultiDropdown('emp', empOpts);
     saRecBuildMultiDropdown('rate', rateOpts);
@@ -1693,9 +1776,10 @@ function renderSARecords() {
 
     document.addEventListener('click', saRecCloseDropdownsOutside);
     saLoadRecords();
+    saRenderRecordDetailsSection(currentMonth + '-01', saRecMonthInfo(currentMonth).lastDate);
 
-    setTimeout(function() {
-        el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function(a) {
+    setTimeout(function () {
+        el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function (a) {
             a.classList.remove('pt-anim-filter', 'pt-anim-head', 'pt-anim-table');
         });
     }, 550);
@@ -1704,52 +1788,218 @@ function renderSARecords() {
 
 // ── Load & Filter ──
 
+function saRecMonthInfo(value) {
+    var match = /^(\d{4})-(\d{2})$/.exec(value || '');
+    var now = new Date();
+    var year = match ? parseInt(match[1], 10) : now.getFullYear();
+    var monthIndex = match ? parseInt(match[2], 10) - 1 : now.getMonth();
+    var dayCount = new Date(year, monthIndex + 1, 0).getDate();
+    var weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    var monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    var days = [];
+    for (var day = 1; day <= dayCount; day++) {
+        var date = new Date(year, monthIndex, day);
+        days.push({
+            number: day,
+            date: year + '-' + String(monthIndex + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0'),
+            dayOfWeek: date.getDay(),
+            weekday: weekdays[date.getDay()]
+        });
+    }
+    return { year: year, monthIndex: monthIndex, firstDate: days[0].date, lastDate: days[days.length - 1].date, days: days, label: monthNames[monthIndex] + ' ' + year };
+}
+
+function saRecProjectName(projectId) {
+    if (!projectId) return '';
+    var project = (SA_DB.projects || []).find(function (p) { return p.id === projectId; });
+    return project ? project.name : '';
+}
+
 function saLoadRecords() {
-    var from = document.getElementById('sa-rec-from') ? document.getElementById('sa-rec-from').value : '';
-    var to = document.getElementById('sa-rec-to') ? document.getElementById('sa-rec-to').value : '';
+    var month = document.getElementById('sa-rec-month') ? document.getElementById('sa-rec-month').value : '';
+    var monthInfo = saRecMonthInfo(month);
+    var from = monthInfo.firstDate;
+    var to = monthInfo.lastDate;
 
     var selEmp = saRecDropdownState.emp.selected;
-    var selRate = saRecDropdownState.rate.selected;
 
     var params = [];
     if (from) params.push('from=' + from);
     if (to) params.push('to=' + to);
     if (selEmp.length === 1) params.push('employeeId=' + encodeURIComponent(selEmp[0]));
-    if (selRate.length === 1) params.push('rateType=' + encodeURIComponent(selRate[0]));
     var qs = params.length ? '?' + params.join('&') : '';
 
     var requestId = ++saRecordsRequestId;
-    api('/site-attendance/work-records' + qs).then(function(data) {
+    api('/site-attendance/work-records' + qs).then(function (data) {
         if (requestId !== saRecordsRequestId) return;
         saRecFilteredData = data || [];
         saRenderRecordsTable();
-    }).catch(function(e) {
+    }).catch(function (e) {
         if (requestId !== saRecordsRequestId) return;
         var container = document.getElementById('sa-records-table-area');
         if (container) container.innerHTML = '<div style="color:var(--danger);padding:20px;text-align:center">Load failed: ' + esc(e.message) + '</div>';
     });
 }
 
+function saRenderRecordDetailsSection(from, to) {
+    var section = document.getElementById('sa-record-details-section');
+    if (!section) return;
+    section.innerHTML = '<div class="pt-anim-head pt-anim-table" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:16px 20px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">'
+        + '<div><h3 style="margin:0;font-size:.95rem;font-family:var(--font-d)">Detailed Records</h3><div style="font-size:.78rem;color:var(--main-text3);margin-top:3px">Daily projects, time entries, hours, and remarks</div></div>'
+        + '<button class="btn btn-blue" onclick="saExportRecordDetails()">Export Detail</button>'
+        + '</div>'
+        + '<div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">'
+        + '<div class="sa-rec-filter-item sa-ios-date-field"><label>From</label><input class="input" id="sa-rec-detail-from" type="date" value="' + from + '" onchange="saLoadRecordDetails()"></div>'
+        + '<div class="sa-rec-filter-item sa-ios-date-field"><label>To</label><input class="input" id="sa-rec-detail-to" type="date" value="' + to + '" onchange="saLoadRecordDetails()"></div>'
+        + '</div>'
+        + '<div id="sa-record-details-table" style="margin-top:16px"><div style="padding:20px;text-align:center;color:var(--main-text3)">Loading detailed records…</div></div></div>';
+    saLoadRecordDetails();
+}
+
+function saLoadRecordDetails() {
+    var from = document.getElementById('sa-rec-detail-from');
+    var to = document.getElementById('sa-rec-detail-to');
+    var table = document.getElementById('sa-record-details-table');
+    if (!from || !to || !table) return;
+    if (!from.value || !to.value || from.value > to.value) {
+        table.innerHTML = '<div style="padding:20px;text-align:center;color:var(--danger)">Choose a valid date range.</div>';
+        return;
+    }
+    var params = ['from=' + encodeURIComponent(from.value), 'to=' + encodeURIComponent(to.value)];
+    var selectedEmployees = saRecDropdownState.emp.selected;
+    if (selectedEmployees.length === 1) params.push('employeeId=' + encodeURIComponent(selectedEmployees[0]));
+    var requestId = ++saRecDetailRequestId;
+    table.innerHTML = '<div style="padding:20px;text-align:center;color:var(--main-text3)">Loading detailed records…</div>';
+    api('/site-attendance/work-records?' + params.join('&')).then(function (data) {
+        if (requestId !== saRecDetailRequestId) return;
+        saRecDetailData = data || [];
+        saRenderRecordDetailsTable();
+    }).catch(function (e) {
+        if (requestId !== saRecDetailRequestId) return;
+        table.innerHTML = '<div style="padding:20px;text-align:center;color:var(--danger)">Load failed: ' + esc(e.message) + '</div>';
+    });
+}
+
+function saRenderRecordDetailsTable() {
+    var table = document.getElementById('sa-record-details-table');
+    if (!table) return;
+
+    var search = (document.getElementById('sa-rec-search') ? document.getElementById('sa-rec-search').value || '' : '').trim().toLowerCase();
+    var selectedEmployees = saRecDropdownState.emp.selected;
+    var isAdmin = currentUser && currentUser.role === 'admin';
+    var selectedSites = isAdmin ? saRecDropdownState.site.selected.map(function (v) { return parseInt(v); }) : [currentUser ? currentUser.siteId || 0 : 0];
+
+    var groups = {};
+    saRecDetailData.forEach(function (record) {
+        var matchesEmployee = selectedEmployees.length === 0 || selectedEmployees.indexOf(String(record.employeeId)) !== -1;
+        var matchesSite = selectedSites.length === 0 || selectedSites.indexOf(record.siteId || 0) !== -1;
+        var text = ((record.employeeName || '') + ' ' + saGetSiteName(record.siteId || 0) + ' ' + saRecProjectName(record.projectId) + ' ' + (record.date || '') + ' ' + (record.remark || '')).toLowerCase();
+        if (!matchesEmployee || !matchesSite || (search && text.indexOf(search) === -1)) return;
+        var key = record.employeeId + '_' + record.date;
+        if (!groups[key]) groups[key] = { employeeName: record.employeeName, siteId: record.siteId, date: record.date, projectId: record.projectId, clockIn: record.clockIn || '', clockOut: record.clockOut || '', remark: record.remark || '', hours: {}, recordIds: {} };
+        groups[key].hours[record.rateType] = parseFloat(record.hours) || 0;
+        groups[key].recordIds[record.rateType] = record.id;
+    });
+
+    var detailRows = Object.keys(groups).map(function (key) { return groups[key]; });
+    detailRows.sort(function (a, b) { return a.date === b.date ? a.employeeName.localeCompare(b.employeeName) : (a.date < b.date ? 1 : -1); });
+
+    if (!detailRows.length) {
+        table.innerHTML = '<div class="crud-anim" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:30px;text-align:center;color:var(--main-text3)">No detailed records found for this range.</div>';
+        return;
+    }
+
+    // ← Store for pagination
+    saRecDetailRows = detailRows;
+
+    // ── Pagination ──
+    var totalPages = Math.ceil(detailRows.length / saRecDetailSize) || 1;
+    if (saRecDetailPage > totalPages) saRecDetailPage = totalPages;
+    if (saRecDetailPage < 1) saRecDetailPage = 1;
+    var start = (saRecDetailPage - 1) * saRecDetailSize;
+    var pageRows = detailRows.slice(start, start + saRecDetailSize);
+
+    var rows = pageRows.map(function (group, index) {
+        var total = 0;
+        var rateCells = SA_DB.rates.map(function (rate) {
+            var value = group.hours[rate.name] || 0;
+            total += value;
+            return '<td style="text-align:right;font-family:var(--font-m);color:' + (value ? (SA_RATE_COLORS[rate.name] || 'var(--main-text)') : 'var(--main-text3)') + '">' + (value ? value.toFixed(1) : '—') + '</td>';
+        }).join('');
+
+        var recordIds = JSON.stringify(group.recordIds).replace(/"/g, '&quot;');
+        return '<tr>'
+            + '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (start + index + 1) + '</td>'
+            + '<td style="font-family:var(--font-m)">' + esc(group.date) + '</td>'
+            + '<td style="font-weight:600">' + esc(group.employeeName) + '</td>'
+            + '<td>' + esc(saGetSiteName(group.siteId || 0)) + '</td>'
+            + '<td>' + esc(saRecProjectName(group.projectId) || '—') + '</td>'
+            + '<td style="text-align:center">' + esc(group.clockIn || '—') + '</td>'
+            + '<td style="text-align:center">' + esc(group.clockOut || '—') + '</td>'
+            + rateCells
+            + '<td style="text-align:right;font-family:var(--font-m);font-weight:700">' + total.toFixed(1) + '</td>'
+            + '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(group.remark) + '">' + esc(group.remark || '—') + '</td>'
+            + '<td><div class="actions-cell">'
+            + '<button class="btn-icon" onclick="saEditRecordGroup(\'' + recordIds + '\')" title="Edit">&#9998;</button>'
+            + '<button class="btn-icon danger" onclick="saDeleteRecordGroup(\'' + recordIds + '\')" title="Delete">&#10005;</button>'
+            + '</div></td></tr>';
+    }).join('');
+
+    var headers = SA_DB.rates.map(function (rate) { return '<th style="text-align:right">' + esc(SHORT[rate.name] || rate.label) + '</th>'; }).join('');
+
+    // ── Pagination bar ──
+    var pagHtml = '';
+    if (typeof buildPagination === 'function' && detailRows.length > 0) {
+        pagHtml = buildPagination(detailRows.length, saRecDetailPage, saRecDetailSize,
+            'goSARecDetailPage', 'changeSARecDetailPageSize', { label: 'records', sizes: [5, 10, 25, 50] });
+    }
+
+    table.innerHTML = '<div class="crud-anim" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">'
+        + '<div style="font-size:.8rem;color:var(--main-text3);margin-bottom:10px">' + detailRows.length + ' daily record' + (detailRows.length === 1 ? '' : 's') + '</div>'
+        + '<div class="table-wrap"><table><thead><tr><th>No</th><th>Date</th><th>Employee</th><th>Site</th><th>Project</th><th>Clock In</th><th>Clock Out</th>' + headers + '<th>Total Hrs</th><th>Remark</th><th>Actions</th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+        + pagHtml
+        + '</div>';
+}
+
 function saQueueRecordsTable() {
     clearTimeout(saRecordsSearchTimer);
-    saRecordsSearchTimer = setTimeout(saRenderRecordsTable, 120);
+    saRecordsSearchTimer = setTimeout(function () { saRenderRecordsTable(); saRenderRecordDetailsTable(); }, 120);
 }
 
 function saResetRecordsFilter() {
-    document.getElementById('sa-rec-from').value = '';
-    document.getElementById('sa-rec-to').value = '';
+    var now = new Date();
+    document.getElementById('sa-rec-month').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
     document.getElementById('sa-rec-search').value = '';
-    ['emp', 'rate', 'site'].forEach(function(type) {
+    ['emp', 'rate', 'site'].forEach(function (type) {
         saRecDropdownState[type].selected = [];
         saRecUpdateDisplay(type);
     });
     saRecCurrentPage = 1;
     saLoadRecords();
+    saLoadRecordDetails();
 }
 
 function saRenderRecordsTable() {
     var container = document.getElementById('sa-records-table-area');
     if (!container) return;
+
+    if (!document.getElementById('sa-matrix-style')) {
+        var styleEl = document.createElement('style');
+        styleEl.id = 'sa-matrix-style';
+        styleEl.textContent = '@keyframes ptAnimPopIn {\n'
+            + '  from { opacity: 0; transform: translateY(10px) scale(.95); }\n'
+            + '  to   { opacity: 1; transform: translateY(0) scale(1); }\n'
+            + '}\n'
+            + '.pt-anim-table { animation: ptAnimPopIn .4s cubic-bezier(.34, 1.56, .64, 1) .35s both !important; }\n'
+            + '.table-wrap table.sa-matrix-table tbody td { padding: 2px 4px !important; font-size: .78rem; line-height: 1.3; height: 22px; border-bottom: none !important; border-top: none !important; }\n'
+            + '.table-wrap table.sa-matrix-table tbody tr.sa-emp-row { border-top: 2px solid var(--main-border) !important; }\n'
+            + '.table-wrap table.sa-matrix-table tbody tr.sa-subrow td { border-top: none !important; border-bottom: none !important; padding: 2px 4px !important; }\n'
+            + '.table-wrap table.sa-matrix-table tbody td:last-child { position: static !important; box-shadow: none !important; background: transparent; }\n'
+            + '.table-wrap table.sa-matrix-table tbody tr:hover td:last-child { background: var(--tr-hover); }\n'
+            + '.table-wrap table.sa-matrix-table tbody td.sa-day-sunday { background: #fef3c7 !important; }\n';
+        document.head.appendChild(styleEl);
+    }
 
     var searchEl = document.getElementById('sa-rec-search');
     var typed = searchEl ? searchEl.value.trim().toLowerCase() : '';
@@ -1758,29 +2008,19 @@ function saRenderRecordsTable() {
 
     var selectedSites = [];
     if (isAdmin) {
-        selectedSites = saRecDropdownState.site.selected.map(function(v) { return parseInt(v); });
+        selectedSites = saRecDropdownState.site.selected.map(function (v) { return parseInt(v); });
     } else {
         selectedSites = [currentUser ? currentUser.siteId || 0 : 0];
     }
 
-    function getProjectName(pid) {
-        if (!pid) return '—';
-        for (var i = 0; i < SA_DB.projects.length; i++) {
-            if (SA_DB.projects[i].id === pid) return SA_DB.projects[i].name;
-        }
-        return 'Proj ' + pid;
-    }
-
     var selEmp = saRecDropdownState.emp.selected;
-    var selRate = saRecDropdownState.rate.selected;
-    var sourceData = saRecFilteredData.filter(function(r) {
+    var sourceData = saRecFilteredData.filter(function (r) {
         var okEmp = selEmp.length === 0 || selEmp.indexOf(String(r.employeeId)) !== -1;
-        var okRate = selRate.length === 0 || selRate.indexOf(String(r.rateType)) !== -1;
-        return okEmp && okRate;
+        return okEmp;
     });
 
     var groups = {};
-    sourceData.forEach(function(r) { 
+    sourceData.forEach(function (r) {
         var key = r.employeeId + '_' + r.date;
         if (!groups[key]) {
             groups[key] = {
@@ -1797,123 +2037,144 @@ function saRenderRecordsTable() {
         groups[key].recordIds[r.rateType] = r.id;
     });
 
-    var allGroups = Object.keys(groups).map(function(k) { return groups[k]; });
+    var allGroups = Object.keys(groups).map(function (k) { return groups[k]; });
+    var monthInfo = saRecMonthInfo(document.getElementById('sa-rec-month') ? document.getElementById('sa-rec-month').value : '');
 
-    var data = allGroups.filter(function(g) {
-        var projName = getProjectName(g.projectId || 0);
-        var searchText = ((g.employeeName || '') + ' ' + saGetSiteName(g.siteId || 0) + ' ' + projName + ' ' + (g.remark || '') + ' ' + (g.clockIn || '') + ' ' + (g.clockOut || '') + ' ' + g.date + ' ' + g.totalHours.toFixed(1) + ' ' + g.totalAmount.toFixed(2)).toLowerCase();
-        var matchText = !typed || searchText.indexOf(typed) !== -1;
+    // Build a map: employeeId → set of project names (from this month's records)
+    var empProjectNames = {};
+    allGroups.forEach(function (grp) {
+        if (!empProjectNames[grp.employeeId]) empProjectNames[grp.employeeId] = [];
+        var pname = saRecProjectName(grp.projectId);
+        if (pname) empProjectNames[grp.employeeId].push(pname.toLowerCase());
+    });
+
+    var employeeMap = {};
+    SA_DB.employees.forEach(function (e) {
+        var matchesEmployee = selEmp.length === 0 || selEmp.indexOf(String(e.id)) !== -1;
+        var matchesSite = selectedSites.length === 0 || selectedSites.indexOf(e.site_id || 0) !== -1;
+        if (e.status === 'active' && matchesEmployee && matchesSite) {
+            employeeMap[e.id] = { employeeId: e.id, employeeName: e.name, siteId: e.site_id || 0, company: e.company || '' };
+        }
+    });
+
+    var data = Object.keys(employeeMap).map(function (key) { return employeeMap[key]; }).filter(function (g) {
+        var searchText = ((g.employeeName || '') + ' ' + saGetSiteName(g.siteId || 0) + ' ' + (g.company || '')).toLowerCase();
+        // Also check project names for this employee's records this month
+        var projNames = (empProjectNames[g.employeeId] || []).join(' ');
+        var matchText = !typed || searchText.indexOf(typed) !== -1 || projNames.indexOf(typed) !== -1;
         var matchSite = selectedSites.length === 0 || selectedSites.indexOf(g.siteId || 0) !== -1;
         return matchText && matchSite;
     });
 
-    data.sort(function(a, b) {
-        if (a.date !== b.date) return a.date < b.date ? 1 : -1;
-        return a.employeeName.localeCompare(b.employeeName);
-    });
+    data.sort(function (a, b) { return a.employeeName.localeCompare(b.employeeName); });
 
-    saRecDisplayData = data;
+    saRecTableData = data;
+    saRecDisplayData = { employees: data, groups: allGroups, monthInfo: monthInfo };
 
     if (!data.length) {
-        container.innerHTML = '<div style="text-align:center;color:var(--main-text3);padding:30px">No records found</div>';
+        container.innerHTML = '';
+        void container.offsetWidth;
+        container.innerHTML = '<div class="pt-anim-table" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:30px;text-align:center;color:var(--main-text3)">No records found</div>';
         return;
     }
 
     // ── Pagination ──
-    var totalPages = Math.ceil(data.length / saRecPageSize) || 1;
-    if (saRecCurrentPage > totalPages) saRecCurrentPage = totalPages;
-    if (saRecCurrentPage < 1) saRecCurrentPage = 1;
-    var start = (saRecCurrentPage - 1) * saRecPageSize;
-    var page = data.slice(start, start + saRecPageSize);
+    var totalPages = Math.ceil(data.length / saRecTableSize) || 1;
+    if (saRecTablePage > totalPages) saRecTablePage = totalPages;
+    if (saRecTablePage < 1) saRecTablePage = 1;
+    var start = (saRecTablePage - 1) * saRecTableSize;
+    var pageEmps = data.slice(start, start + saRecTableSize);
 
-    // Grand totals for ALL data (not just page)
-    var grandHours = 0, grandAmount = 0;
-    data.forEach(function(g) {
-        grandHours += g.totalHours;
-        grandAmount += g.totalAmount;
-    });
+    var groupMap = {};
+    allGroups.forEach(function (g) { groupMap[g.employeeId + '_' + g.date] = g; });
 
-    var rows = page.map(function(g, i) {
-        var rateCells = SA_DB.rates.map(function(r) {
+    var dayHeaders = monthInfo.days.map(function (day) {
+        var sunday = day.dayOfWeek === 0;
+        return '<th style="min-width:42px;text-align:center;' + (sunday ? 'background:#fef3c7;color:#92400e;' : '') + '"><div style="font-size:.68rem">' + day.weekday + '</div><div>' + day.number + '</div></th>';
+    }).join('');
+
+    // ← Rate total headers (NH / OT / Sun / PH)
+    var rateTotalHeaders = SA_DB.rates.map(function (r) {
+        var c = SA_RATE_COLORS[r.name] || '#6b7280';
+        return '<th style="text-align:right;background:' + c + '15;min-width:50px;position:static">' + esc(SHORT[r.name] || r.label) + '</th>';
+    }).join('');
+
+    var rows = pageEmps.map(function (employee, index) {
+        // ← 先算每个 rate 的 total
+        var rateTotals = {};
+        var grandTotal = 0;
+        SA_DB.rates.forEach(function (rate) {
+            rateTotals[rate.name] = 0;
+            monthInfo.days.forEach(function (day) {
+                var group = groupMap[employee.employeeId + '_' + day.date];
+                if (group && group.hours[rate.name]) rateTotals[rate.name] += group.hours[rate.name];
+            });
+            grandTotal += rateTotals[rate.name];
+        });
+
+        // ← Rate total cells（rowspan，只在第一行显示）
+        var rateTotalCells = SA_DB.rates.map(function (r) {
             var c = SA_RATE_COLORS[r.name] || '#6b7280';
-            var v = g.hours[r.name] || 0;
-            return '<td style="text-align:right;font-family:var(--font-m);color:' + (v > 0 ? c : 'var(--main-text3)') + '">' + (v > 0 ? v.toFixed(1) : '—') + '</td>';
+            var v = rateTotals[r.name];
+            return '<td rowspan="' + SA_DB.rates.length + '" class="sa-cell-total" style="text-align:right;font-family:var(--font-m);font-weight:700;position:static;vertical-align:middle;color:' + (v > 0 ? c : 'var(--main-text3)') + '">' + (v > 0 ? v.toFixed(1) : '—') + '</td>';
         }).join('');
+        rateTotalCells += '<td rowspan="' + SA_DB.rates.length + '" class="sa-cell-total" style="text-align:right;font-family:var(--font-m);font-weight:700;font-size:.9rem;position:static;vertical-align:middle;padding-right:16px">' + grandTotal.toFixed(1) + '</td>';
 
-        var recIds = JSON.stringify(g.recordIds).replace(/"/g, '&quot;');
+        return SA_DB.rates.map(function (rate, rateIndex) {
+            var dayCells = monthInfo.days.map(function (day) {
+                var group = groupMap[employee.employeeId + '_' + day.date];
+                var value = group && group.hours[rate.name] ? group.hours[rate.name] : 0;
+                var sunday = day.dayOfWeek === 0;
+                return '<td class="sa-day-cell' + (sunday ? ' sa-day-sunday' : '') + '" style="text-align:center;font-family:var(--font-m);' + (sunday ? 'background:#fef3c7;' : '') + (value ? 'font-weight:600;' : 'color:var(--main-text3);') + '">' + (value ? value.toFixed(1) : '') + '</td>';
+            }).join('');
 
-        return '<tr>'
-            + '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (start + i + 1) + '</td>'
-            + '<td style="font-family:var(--font-m)">' + esc(g.date) + '</td>'
-            + '<td style="font-weight:600">' + esc(g.employeeName) + '</td>'
-            + '<td style="font-size:.82rem">' + esc(saGetSiteName(g.siteId || 0)) + '</td>'
-            + '<td style="font-size:.82rem">' + esc(getProjectName(g.projectId || 0)) + '</td>'
-            + '<td style="font-family:var(--font-m);font-size:.82rem;text-align:center">' + esc(g.clockIn || '—') + '</td>'
-            + '<td style="font-family:var(--font-m);font-size:.82rem;text-align:center">' + esc(g.clockOut || '—') + '</td>'
-            + rateCells
-            + '<td style="text-align:right;font-family:var(--font-m);font-weight:700">' + g.totalHours.toFixed(1) + '</td>'
-            + '<td style="text-align:right;font-family:var(--font-m);font-weight:700">' + g.totalAmount.toFixed(2) + '</td>'
-            + '<td style="font-size:.82rem;color:var(--main-text2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(g.remark) + '">' + esc(g.remark || '—') + '</td>'
-            + '<td><div class="actions-cell">'
-            + '<button class="btn-icon" onclick="saEditRecordGroup(\'' + recIds + '\')" title="Edit">&#9998;</button> '
-            + '<button class="btn-icon danger" onclick="saDeleteRecordGroup(\'' + recIds + '\')" title="Delete">&#10005;</button>'
-            + '</div></td></tr>';
+            return '<tr class="' + (rateIndex === 0 ? 'sa-emp-row' : 'sa-subrow') + '"' + (rateIndex === 0 ? ' style="border-top:2px solid var(--main-border)"' : ' style="border-top:none;border-bottom:none"') + '>'
+                + (rateIndex === 0
+                    ? '<td rowspan="' + SA_DB.rates.length + '" class="sa-cell-no" style="font-family:var(--font-m);color:var(--main-text3);text-align:center;vertical-align:middle">' + (start + index + 1) + '</td>'
+                    + '<td rowspan="' + SA_DB.rates.length + '" class="sa-cell-emp" style="font-weight:700;min-width:150px;vertical-align:middle">' + esc(employee.employeeName) + '<div style="font-size:.72rem;font-weight:400;color:var(--main-text3)">' + esc(saGetSiteName(employee.siteId)) + '</div></td>'
+                    : '')
+                + '<td style="font-size:.75rem;font-weight:600;color:' + (SA_RATE_COLORS[rate.name] || 'var(--main-text2)') + '">' + esc(SHORT[rate.name] || rate.label) + '</td>'
+                + dayCells
+                + (rateIndex === 0 ? rateTotalCells : '')
+                + '</tr>';
+        }).join('');
     }).join('');
 
-    var rateHeaders = SA_DB.rates.map(function(r) {
-        var c = SA_RATE_COLORS[r.name] || '#6b7280';
-        return '<th style="text-align:right;background:' + c + '15">'
-            + esc(SHORT[r.name] || r.label)
-            + '<br><span style="font-size:.65rem;opacity:.7">x' + parseFloat(r.multiplier).toFixed(1) + '</span></th>';
-    }).join('');
-
-    var rateTotals = SA_DB.rates.map(function(r) {
-        var sum = 0;
-        data.forEach(function(g) { sum += g.hours[r.name] || 0; });
-        var c = SA_RATE_COLORS[r.name] || '#6b7280';
-        return '<td style="text-align:right;font-family:var(--font-m);font-weight:700;color:' + c + '">' + sum.toFixed(1) + '</td>';
-    }).join('');
-
-    // ── Pagination HTML ──
+    // ── Pagination bar ──
     var pagHtml = '';
-    if (typeof buildPagination === 'function') {
-        pagHtml = buildPagination(data.length, saRecCurrentPage, saRecPageSize,
-            'goSARecPage', 'changeSARecPageSize', { label: 'records', sizes: [10, 25, 50, 100] });
+    if (typeof buildPagination === 'function' && data.length > 0) {
+        pagHtml = buildPagination(data.length, saRecTablePage, saRecTableSize,
+            'goSARecPage', 'changeSARecPageSize', { label: 'employees', sizes: [5, 10, 25, 50] });
     }
 
-    container.innerHTML = ''
-        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
-        + '<span style="font-size:.82rem;color:var(--main-text3)">' + data.length + ' entries</span>'
-        + '<span style="font-size:.82rem;color:var(--main-text2);font-weight:600">Total: ' + grandHours.toFixed(1) + ' hours / ' + grandAmount.toFixed(2) + ' units</span>'
-        + '</div>'
-        + '<div class="table-wrap"><table><thead><tr>'
-        + '<th style="width:50px">No</th><th>Date</th><th>Employee</th><th>Site</th><th>Project</th>'
-        + '<th style="text-align:center">Clock In</th><th style="text-align:center">Clock Out</th>'
-        + rateHeaders
-        + '<th style="text-align:right">Total Hrs</th><th style="text-align:right">Amount</th><th style="width:120px">Remark</th><th style="width:90px">Actions</th>'
-        + '</tr></thead>'
-        + '<tfoot><tr style="border-top:2px solid var(--main-border);font-weight:700">'
-        + '<td colspan="7" style="padding:8px;text-align:right;font-size:.85rem">Total &rarr;</td>'
-        + rateTotals
-        + '<td style="text-align:right;font-family:var(--font-m);font-weight:700">' + grandHours.toFixed(1) + '</td>'
-        + '<td style="text-align:right;font-family:var(--font-m);font-weight:700">' + grandAmount.toFixed(2) + '</td>'
-        + '<td colspan="2"></td></tr></tfoot>'
-        + '<tbody>' + rows + '</tbody></table></div>'
-        + pagHtml;
-}
+    container.innerHTML = '';
+    void container.offsetWidth;
 
+    container.innerHTML = '<div class="pt-anim-table" style="background:var(--main-surface);border:1px solid var(--main-border);border-radius:var(--radius);padding:20px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+        + '<span style="font-size:.82rem;color:var(--main-text3)">' + data.length + ' employee' + (data.length === 1 ? '' : 's') + ' · ' + esc(monthInfo.label) + '</span>'
+        + '<span style="font-size:.78rem;color:#92400e;background:#fef3c7;padding:4px 8px;border-radius:4px">Sunday</span>'
+        + '</div>'
+        + '<div class="table-wrap"><table class="sa-matrix-table"><thead><tr><th style="width:45px">No</th><th>Employee</th><th style="min-width:42px">Hours</th>'
+        + dayHeaders
+        + rateTotalHeaders
+        + '<th style="text-align:right;min-width:65px;position:static;padding-right:16px">Total</th>'
+        + '</tr></thead><tbody>'
+        + rows + '</tbody></table></div>'
+        + pagHtml
+        + '</div>';
+}
 function goSARecPage(page) {
-    var totalPages = Math.ceil(saRecDisplayData.length / saRecPageSize) || 1;
-    saRecCurrentPage = Math.max(1, Math.min(page, totalPages));
+    var totalPages = Math.ceil(saRecTableData.length / saRecTableSize) || 1;
+    saRecTablePage = Math.max(1, Math.min(page, totalPages));
     saRenderRecordsTable();
 }
 
 function changeSARecPageSize(size) {
-    saRecPageSize = parseInt(size);
-    saRecCurrentPage = 1;
+    saRecTableSize = parseInt(size);
+    saRecTablePage = 1;
     saRenderRecordsTable();
 }
-
 
 // ── Edit / Delete / Export (unchanged) ──
 function saEditRecordGroup(recIdsJson) {
@@ -1921,7 +2182,7 @@ function saEditRecordGroup(recIdsJson) {
     _saEditRecIds = recIds;
 
     var g = null;
-    saRecFilteredData.forEach(function(r) {
+    saRecAllData().forEach(function (r) {
         if (!g && recIds[r.rateType] === r.id) {
             g = {
                 employeeId: r.employeeId, employeeName: r.employeeName,
@@ -1940,33 +2201,33 @@ function saEditRecordGroup(recIdsJson) {
     if (!projList.length && SA_DB.projects && SA_DB.scopes) {
         var targetNames = ['panel build', 'project'];
         var allowedCategoryIds = (SA_DB.scopes || [])
-            .filter(function(s) {
+            .filter(function (s) {
                 var n = (s.name || '').trim().toLowerCase();
                 return targetNames.indexOf(n) !== -1;
             })
-            .map(function(s) { return s.id; });
+            .map(function (s) { return s.id; });
         var seenOther = false;
         projList = SA_DB.projects
-            .filter(function(p) { return allowedCategoryIds.indexOf(p.categoryId) !== -1; })
-            .filter(function(p) {
+            .filter(function (p) { return allowedCategoryIds.indexOf(p.categoryId) !== -1; })
+            .filter(function (p) {
                 if (p.name.trim().toLowerCase() === 'other') {
                     if (seenOther) return false;
                     seenOther = true;
                 }
                 return true;
             })
-            .sort(function(a, b) { return a.name.localeCompare(b.name); });
+            .sort(function (a, b) { return a.name.localeCompare(b.name); });
     }
     var projOpts = '<option value="">—</option>';
-    projList.forEach(function(p) {
+    projList.forEach(function (p) {
         projOpts += '<option value="' + p.id + '"' + (p.id === g.projectId ? ' selected' : '') + '>' + esc(p.name) + '</option>';
     });
     var projField = '<div class="field"><label>Project</label><select class="input" id="sa-edit-project">' + projOpts + '</select></div>';
 
-    var rateInputs = SA_DB.rates.map(function(r) {
+    var rateInputs = SA_DB.rates.map(function (r) {
         var recId = recIds[r.name];
         var rec = null;
-        saRecFilteredData.forEach(function(x) {
+        saRecAllData().forEach(function (x) {
             if (x.id === recId) rec = x;
         });
         var val = rec ? rec.hours : '';
@@ -2031,6 +2292,12 @@ function saEditRecordGroup(recIdsJson) {
     );
 }
 
+function saRecAllData() {
+    var byId = {};
+    (saRecFilteredData || []).concat(saRecDetailData || []).forEach(function (record) { byId[record.id] = record; });
+    return Object.keys(byId).map(function (id) { return byId[id]; });
+}
+
 function saEditCalcDuration() {
     var inH = document.getElementById('sa-edit-in-h');
     var inM = document.getElementById('sa-edit-in-m');
@@ -2063,8 +2330,8 @@ function saEditCalcDuration() {
     var dateStr = _saEditDate || '';
     if (!dateStr && _saEditRecIds) {
         // Try to find date from saRecFilteredData
-        var someId = Object.keys(_saEditRecIds).map(function(k) { return _saEditRecIds[k]; })[0];
-        saRecFilteredData.forEach(function(r) {
+        var someId = Object.keys(_saEditRecIds).map(function (k) { return _saEditRecIds[k]; })[0];
+        saRecAllData().forEach(function (r) {
             if (r.id === someId) dateStr = r.date;
         });
     }
@@ -2075,7 +2342,7 @@ function saEditCalcDuration() {
     }
 
     // 先清空所有 rate inputs
-    SA_DB.rates.forEach(function(r) {
+    SA_DB.rates.forEach(function (r) {
         var input = document.getElementById('sa-edit-h-' + r.name);
         if (input) input.value = '';
     });
@@ -2126,7 +2393,7 @@ function saSaveRecordGroup() {
     }
 
     var promises = [];
-    SA_DB.rates.forEach(function(r) {
+    SA_DB.rates.forEach(function (r) {
         var input = document.getElementById('sa-edit-h-' + r.name);
         if (!input) return;
         var hours = parseFloat(input.value) || 0;
@@ -2146,10 +2413,11 @@ function saSaveRecordGroup() {
         );
     });
 
-    Promise.all(promises).then(function() {
+    Promise.all(promises).then(function () {
         hideModal();
         saLoadRecords();
-    }).catch(function(e) {
+        saLoadRecordDetails();
+    }).catch(function (e) {
         if (errEl) errEl.textContent = 'Failed: ' + e.message;
     });
 }
@@ -2158,7 +2426,7 @@ function saDeleteRecordGroup(recIdsJson) {
     var recIds = JSON.parse(recIdsJson.replace(/&quot;/g, '"'));
     _saEditRecIds = recIds;
 
-    var count = Object.keys(recIds).filter(function(k) { return recIds[k]; }).length;
+    var count = Object.keys(recIds).filter(function (k) { return recIds[k]; }).length;
     showModal(
         '<h3>Delete Record</h3>'
         + '<p style="color:var(--main-text2);line-height:1.6">Delete ' + count + ' record(s) for this employee on this date?</p>'
@@ -2171,22 +2439,23 @@ function saDoDeleteRecordGroup() {
     var recIds = _saEditRecIds;
     if (!recIds) { hideModal(); return; }
 
-    var ids = Object.keys(recIds).map(function(k) { return recIds[k]; }).filter(function(id) { return id; });
+    var ids = Object.keys(recIds).map(function (k) { return recIds[k]; }).filter(function (id) { return id; });
 
     if (!ids.length) { hideModal(); return; }
 
     var deleted = 0, failed = 0;
     var total = ids.length;
 
-    ids.forEach(function(id) {
+    ids.forEach(function (id) {
         api('/site-attendance/work-records/' + id, { method: 'DELETE' })
-            .then(function() { deleted++; })
-            .catch(function(e) { console.error('Delete fail:', e); failed++; })
-            .then(function() {
+            .then(function () { deleted++; })
+            .catch(function (e) { console.error('Delete fail:', e); failed++; })
+            .then(function () {
                 if (deleted + failed === total) {
                     hideModal();
                     if (failed) alert(failed + ' delete(s) failed');
                     saLoadRecords();
+                    saLoadRecordDetails();
                 }
             });
     });
@@ -2194,44 +2463,155 @@ function saDoDeleteRecordGroup() {
 
 function saDoDeleteRecord(id) {
     api('/site-attendance/work-records/' + id, { method: 'DELETE' })
-        .then(function() { hideModal(); saLoadRecords(); })
-        .catch(function(e) { alert('Delete failed: ' + e.message); });
+        .then(function () { hideModal(); saLoadRecords(); saLoadRecordDetails(); })
+        .catch(function (e) { alert('Delete failed: ' + e.message); });
 }
 
 function saExportRecords() {
-    if (!saRecDisplayData || !saRecDisplayData.length) { alert('No data to export'); return; }
+    if (!saRecDisplayData || !saRecDisplayData.employees || !saRecDisplayData.employees.length) { alert('No employees to export'); return; }
+    if (typeof XLSX === 'undefined') { alert('Excel library not loaded'); return; }
+    var info = saRecDisplayData.monthInfo;
+    var employees = saRecDisplayData.employees;
+    var groupMap = {};
+    saRecDisplayData.groups.forEach(function (g) { groupMap[g.employeeId + '_' + g.date] = g; });
+    var headerWeekdays = ['No', 'Employee', 'Hours'].concat(info.days.map(function (day) { return day.weekday; }), ['Normal', 'OT', 'Sunday', 'Public Holiday', 'Total']);
+    var headerDays = ['', '', ''].concat(info.days.map(function (day) { return day.number; }), ['', '', '', '', '']);
+    var rows = [['Worker Attendance Record'], ['Month', info.label], [], headerWeekdays, headerDays];
+    employees.forEach(function (employee, employeeIndex) {
+        SA_DB.rates.forEach(function (rate, rateIndex) {
+            var row = [rateIndex === 0 ? employeeIndex + 1 : '', rateIndex === 0 ? employee.employeeName : '', SHORT[rate.name] || rate.label];
+            var totals = {};
+            SA_DB.rates.forEach(function (summaryRate) { totals[summaryRate.name] = 0; });
+            info.days.forEach(function (day) {
+                var group = groupMap[employee.employeeId + '_' + day.date];
+                var value = group && group.hours[rate.name] ? group.hours[rate.name] : 0;
+                row.push(value || '');
+                totals[rate.name] += value;
+            });
+            SA_DB.rates.forEach(function (summaryRate) { row.push(totals[summaryRate.name] || ''); });
+            row.push(totals[rate.name] || '');
+            rows.push(row);
+        });
+    });
+    var wb = XLSX.utils.book_new();
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    var lastColumn = 2 + info.days.length + SA_DB.rates.length + 1;
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastColumn } }];
+    ws['!cols'] = [{ wch: 5 }, { wch: 24 }, { wch: 14 }].concat(info.days.map(function () { return { wch: 6 }; }), SA_DB.rates.map(function () { return { wch: 14 }; }), [{ wch: 11 }]);
+    ws['!rows'] = [{ hpt: 24 }, { hpt: 18 }, { hpt: 8 }, { hpt: 18 }, { hpt: 18 }];
+    ws['!freeze'] = { xSplit: 3, ySplit: 5 };
+    ws['A1'].s = { font: { bold: true, sz: 16, color: { rgb: '111827' } }, alignment: { horizontal: 'left', vertical: 'center' } };
+    ws['A2'].s = { font: { bold: true }, fill: { fgColor: { rgb: 'E5E7EB' } } };
+    for (var col = 0; col <= lastColumn; col++) {
+        var weekdayCell = XLSX.utils.encode_cell({ r: 3, c: col });
+        var dayCell = XLSX.utils.encode_cell({ r: 4, c: col });
+        var isSunday = col >= 3 && col < 3 + info.days.length && info.days[col - 3].dayOfWeek === 0;
+        var headerStyle = { font: { bold: true, color: { rgb: isSunday ? '92400E' : 'FFFFFF' } }, fill: { fgColor: { rgb: isSunday ? 'FEF3C7' : '374151' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'thin', color: { rgb: '111827' } }, bottom: { style: 'thin', color: { rgb: '111827' } }, left: { style: 'thin', color: { rgb: '111827' } }, right: { style: 'thin', color: { rgb: '111827' } } } };
+        if (ws[weekdayCell]) ws[weekdayCell].s = headerStyle;
+        if (ws[dayCell]) ws[dayCell].s = headerStyle;
+    }
+    for (var rowIndex = 5; rowIndex < rows.length; rowIndex++) {
+        var rateIndex = (rowIndex - 5) % SA_DB.rates.length;
+        for (var cellCol = 0; cellCol <= lastColumn; cellCol++) {
+            var cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: cellCol });
+            if (!ws[cellRef]) ws[cellRef] = { t: 's', v: '' };
+            var isSunday = cellCol >= 3 && cellCol < 3 + info.days.length && info.days[cellCol - 3].dayOfWeek === 0;
+            ws[cellRef].s = { fill: { fgColor: { rgb: isSunday ? 'FEF3C7' : 'FFFFFF' } }, alignment: { horizontal: cellCol >= 3 ? 'center' : 'left', vertical: 'center' }, border: { bottom: { style: rateIndex === SA_DB.rates.length - 1 ? 'medium' : 'thin', color: { rgb: 'D1D5DB' } } } };
+        }
+    }
+    XLSX.utils.book_append_sheet(wb, ws, 'Monthly Work Records');
+    XLSX.writeFile(wb, 'work_records_' + info.year + '-' + String(info.monthIndex + 1).padStart(2, '0') + '.xlsx');
+}
+
+function saExportRecordDetails() {
+    if (!saRecDetailRows || !saRecDetailRows.length) { alert('No detailed records to export'); return; }
     if (typeof XLSX === 'undefined') { alert('Excel library not loaded'); return; }
 
-    function getProjectName(pid) {
-        if (!pid) return '';
-        for (var i = 0; i < SA_DB.projects.length; i++) {
-            if (SA_DB.projects[i].id === pid) return SA_DB.projects[i].name;
-        }
-        return '';
-    }
+    var fromEl = document.getElementById('sa-rec-detail-from');
+    var toEl = document.getElementById('sa-rec-detail-to');
+    var fromVal = fromEl ? fromEl.value : '';
+    var toVal = toEl ? toEl.value : '';
 
-    var rows = saRecDisplayData.map(function(g) {
-        var row = {
-            'Date': g.date,
-            'Employee': g.employeeName,
-            'Site': saGetSiteName(g.siteId || 0),
-            'Project': getProjectName(g.projectId || 0),
-            'Clock In': g.clockIn || '',
-            'Clock Out': g.clockOut || ''
-        };
-        SA_DB.rates.forEach(function(r) {
-            row[SHORT[r.name] || r.label] = g.hours[r.name] || 0;
+    // Header
+    var header = ['No', 'Date', 'Employee', 'Site', 'Project', 'Clock In', 'Clock Out'];
+    SA_DB.rates.forEach(function (r) { header.push(SHORT[r.name] || r.label); });
+    header.push('Total Hrs', 'Remark');
+
+    var rows = [['Detailed Work Records'], ['From', fromVal, 'To', toVal], [], header];
+
+    saRecDetailRows.forEach(function (group, index) {
+        var total = 0;
+        var row = [
+            index + 1,
+            group.date,
+            group.employeeName,
+            saGetSiteName(group.siteId || 0),
+            saRecProjectName(group.projectId) || '—',
+            group.clockIn || '—',
+            group.clockOut || '—'
+        ];
+        SA_DB.rates.forEach(function (rate) {
+            var value = group.hours[rate.name] || 0;
+            total += value;
+            row.push(value || '');
         });
-        row['Total Hours'] = g.totalHours.toFixed(1);
-        row['Amount'] = g.totalAmount.toFixed(2);
-        row['Remark'] = g.remark || '';
-        return row;
+        row.push(total);
+        row.push(group.remark || '');
+        rows.push(row);
     });
 
     var wb = XLSX.utils.book_new();
-    var ws = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'Work Records');
-    XLSX.writeFile(wb, 'work_records_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+    var ws = XLSX.utils.aoa_to_sheet(rows);
+    var lastCol = header.length - 1;
+
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } }];
+    ws['!cols'] = [
+        { wch: 5 }, { wch: 12 }, { wch: 20 }, { wch: 14 }, { wch: 18 },
+        { wch: 10 }, { wch: 10 }
+    ];
+    SA_DB.rates.forEach(function () { ws['!cols'].push({ wch: 10 }); });
+    ws['!cols'].push({ wch: 10 }, { wch: 25 });
+
+    // Title style
+    ws['A1'].s = { font: { bold: true, sz: 16, color: { rgb: '111827' } }, alignment: { horizontal: 'left', vertical: 'center' } };
+    ws['!rows'] = [{ hpt: 24 }, { hpt: 18 }, { hpt: 8 }];
+
+    // Header style (row 3)
+    for (var c = 0; c <= lastCol; c++) {
+        var ref = XLSX.utils.encode_cell({ r: 3, c: c });
+        if (ws[ref]) {
+            ws[ref].s = {
+                font: { bold: true, color: { rgb: 'FFFFFF' } },
+                fill: { fgColor: { rgb: '374151' } },
+                alignment: { horizontal: 'center', vertical: 'center' },
+                border: {
+                    top: { style: 'thin', color: { rgb: '111827' } },
+                    bottom: { style: 'thin', color: { rgb: '111827' } },
+                    left: { style: 'thin', color: { rgb: '111827' } },
+                    right: { style: 'thin', color: { rgb: '111827' } }
+                }
+            };
+        }
+    }
+
+    // Data rows border
+    for (var r = 4; r < rows.length; r++) {
+        for (var c = 0; c <= lastCol; c++) {
+            var ref = XLSX.utils.encode_cell({ r: r, c: c });
+            if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+            ws[ref].s = {
+                alignment: { horizontal: c >= 4 && c < 7 ? 'center' : 'left', vertical: 'center' },
+                border: { bottom: { style: 'thin', color: { rgb: 'D1D5DB' } } }
+            };
+        }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Detailed Records');
+
+    var fname = 'detail_records';
+    if (fromVal) fname += '_' + fromVal;
+    if (toVal) fname += '_to_' + toVal;
+    XLSX.writeFile(wb, fname + '.xlsx');
 }
 
 /* ==========================================================
@@ -2243,7 +2623,7 @@ function renderSARates() {
     if (!el) return;
     var isAdmin = currentUser && currentUser.role === 'admin';
 
-    var rateRows = SA_DB.rates.map(function(r, i) {
+    var rateRows = SA_DB.rates.map(function (r, i) {
         return '<tr>'
             + '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (i + 1) + '</td>'
             + '<td style="font-weight:600">' + esc(r.label) + '</td>'
@@ -2262,11 +2642,11 @@ function renderSARates() {
         + '<th style="width:50px">No</th><th>Rate Type</th><th style="width:120px">Multiplier</th><th>Description</th>'
         + '</tr></thead><tbody>' + rateRows + '</tbody></table></div></div>'
         + (isAdmin ? '<div style="margin-top:16px"><button class="btn btn-accent" onclick="saSaveRates()">Save Rates</button></div>'
-                   : '<div style="margin-top:12px;font-size:.8rem;color:var(--main-text3)">&#9888; Only Admin can edit rates.</div>')
+            : '<div style="margin-top:12px;font-size:.8rem;color:var(--main-text3)">&#9888; Only Admin can edit rates.</div>')
         + '</div></div>';
 
-    setTimeout(function() {
-        el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function(a) {
+    setTimeout(function () {
+        el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function (a) {
             a.classList.remove('pt-anim-filter', 'pt-anim-head', 'pt-anim-table');
         });
     }, 550);
@@ -2282,7 +2662,7 @@ function saSaveRates() {
         return;
     }
     var rates = [];
-    SA_DB.rates.forEach(function(r) {
+    SA_DB.rates.forEach(function (r) {
         var input = document.getElementById('sa-rate-' + r.name);
         var val = input ? (parseFloat(input.value) || r.multiplier) : r.multiplier;
         rates.push({ name: r.name, multiplier: val });
@@ -2290,14 +2670,14 @@ function saSaveRates() {
         r.multiplier = val;
     });
     api('/site-attendance/rates', { method: 'PUT', body: { rates: rates } })
-        .then(function() {
+        .then(function () {
             showModal(
                 '<h3>✅ Rates Saved</h3>'
                 + '<p style="color:var(--main-text2);line-height:1.6">All rate multipliers have been updated.</p>'
                 + '<div class="btns"><button class="btn btn-accent" onclick="hideModal()">OK</button></div>'
             );
         })
-        .catch(function(e) {
+        .catch(function (e) {
             showModal(
                 '<h3>❌ Save Failed</h3>'
                 + '<p style="color:var(--danger);line-height:1.6">' + esc(e.message) + '</p>'
@@ -2331,7 +2711,7 @@ function renderSAEmployees() {
     if (statusEl) statusVal = statusEl.value;
 
     // ← Site filter
-    var siteVal = '';  
+    var siteVal = '';
     var siteFilterEl = document.getElementById('sa-emp-site-filter');
     if (siteFilterEl) siteVal = siteFilterEl.value;
 
@@ -2339,7 +2719,7 @@ function renderSAEmployees() {
 
     // ← Search all columns including site name
     if (searchVal) {
-        list = list.filter(function(e) {
+        list = list.filter(function (e) {
             var siteName = (saGetSiteName(e.site_id || 0) || '').toLowerCase();
             return (e.name || '').toLowerCase().indexOf(searchVal) !== -1
                 || (e.nric || '').toLowerCase().indexOf(searchVal) !== -1
@@ -2351,13 +2731,13 @@ function renderSAEmployees() {
     }
 
     if (statusVal !== 'all') {
-        list = list.filter(function(e) { return e.status === statusVal; });
+        list = list.filter(function (e) { return e.status === statusVal; });
     }
 
     // ← Filter by site dropdown
     if (siteVal && siteVal !== '0') {
         var sid = parseInt(siteVal) || 0;
-        list = list.filter(function(e) { return (e.site_id || 0) === sid; });
+        list = list.filter(function (e) { return (e.site_id || 0) === sid; });
     }
 
     saEmpFilteredData = list;
@@ -2371,7 +2751,7 @@ function renderSAEmployees() {
     if (list.length === 0) {
         rows = '<tr><td colspan="9" style="text-align:center;color:var(--main-text3);padding:30px">No employees found</td></tr>';
     } else {
-        rows = page.map(function(e, i) {
+        rows = page.map(function (e, i) {
             var statusHtml = e.status === 'active'
                 ? '<span style="color:var(--ok);font-weight:600">Active</span>'
                 : '<span style="color:var(--main-text3)">Inactive</span>';
@@ -2440,8 +2820,8 @@ function renderSAEmployees() {
     }
 
     if (saEmpFirstRender) {
-        setTimeout(function() {
-            el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function(a) {
+        setTimeout(function () {
+            el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function (a) {
                 a.classList.remove('pt-anim-filter', 'pt-anim-head', 'pt-anim-table');
             });
             saEmpFirstRender = false;
@@ -2705,9 +3085,9 @@ function renderSAReport() {
         + '<div class="sa-rec-filter-item sa-ios-date-field"><label>To</label><input class="input" id="sa-rpt-to" type="date" value="' + defaultTo + '" onchange="saLoadReport()"></div>'
         + (isAdmin
             ? '<div class="sa-rec-filter-item"><label>Site</label><select class="input" id="sa-rpt-site" onchange="saLoadReport()">'
-              + '<option value="">All Sites</option>'
-              + saGetSiteOptions(0)
-              + '</select></div>'
+            + '<option value="">All Sites</option>'
+            + saGetSiteOptions(0)
+            + '</select></div>'
             : '')
         + '<div class="sa-rec-filter-item sa-rec-filter-item--btns">'
         + '<button class="btn btn-ghost" onclick="saResetReportFilter()">Reset</button>'
@@ -2722,8 +3102,8 @@ function renderSAReport() {
 
     saLoadReport();
 
-    setTimeout(function() {
-        el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function(a) {
+    setTimeout(function () {
+        el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function (a) {
             a.classList.remove('pt-anim-filter', 'pt-anim-head', 'pt-anim-table');
         });
         _saReportFirstLoad = false;
@@ -2752,11 +3132,11 @@ function saLoadReport() {
     var qs = params.length ? '?' + params.join('&') : '';
 
     clearTimeout(saReportTimer);
-    saReportTimer = setTimeout(function() {
-        api('/site-attendance/work-records' + qs).then(function(data) {
+    saReportTimer = setTimeout(function () {
+        api('/site-attendance/work-records' + qs).then(function (data) {
             saReportData = data || [];
             saRenderReport();
-        }).catch(function(e) {
+        }).catch(function (e) {
             var container = document.getElementById('sa-report-content');
             if (container) container.innerHTML = '<div style="color:var(--danger);padding:20px;text-align:center">Load failed: ' + esc(e.message) + '</div>';
         });
@@ -2773,12 +3153,12 @@ function saRenderReport() {
     var records = saReportData;
     if (!isAdmin) {
         var mySiteId = currentUser ? currentUser.siteId || 0 : 0;
-        records = records.filter(function(r) { return r.siteId === mySiteId; });
+        records = records.filter(function (r) { return r.siteId === mySiteId; });
     } else {
         var siteEl = document.getElementById('sa-rpt-site');
         var selectedSite = siteEl ? parseInt(siteEl.value) || 0 : 0;
         if (selectedSite) {
-            records = records.filter(function(r) { return r.siteId === selectedSite; });
+            records = records.filter(function (r) { return r.siteId === selectedSite; });
         }
     }
 
@@ -2790,7 +3170,7 @@ function saRenderReport() {
     // ── Aggregate helpers ──
     function makeAgg() {
         var agg = {};
-        SA_DB.rates.forEach(function(r) { agg[r.name] = 0; });
+        SA_DB.rates.forEach(function (r) { agg[r.name] = 0; });
         agg._total = 0;
         agg._amount = 0;
         agg._count = 0;
@@ -2802,11 +3182,11 @@ function saRenderReport() {
         agg._total += parseFloat(r.hours) || 0;
         agg._amount += (parseFloat(r.hours) || 0) * (parseFloat(r.multiplier) || 1);
     }
-
     function getProjectName(pid) {
         if (!pid) return '—';
+        var id = parseInt(pid);
         for (var i = 0; i < SA_DB.projects.length; i++) {
-            if (SA_DB.projects[i].id === pid) return SA_DB.projects[i].name;
+            if (parseInt(SA_DB.projects[i].id) === id) return SA_DB.projects[i].name;
         }
         return 'Proj ' + pid;
     }
@@ -2814,14 +3194,14 @@ function saRenderReport() {
     // ═══ 1. Summary Cards ═══
     var summary = makeAgg();
     var empSet = {};
-    records.forEach(function(r) {
+    records.forEach(function (r) {
         addRec(summary, r);
         empSet[r.employeeId] = true;
     });
     var empCount = Object.keys(empSet).length;
     var otHours = summary['ot'] || 0;
     var workDays = {};
-    records.forEach(function(r) { workDays[r.date] = true; });
+    records.forEach(function (r) { workDays[r.date] = true; });
     var dayCount = Object.keys(workDays).length;
 
     var cardsHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;width:100%">'
@@ -2847,7 +3227,7 @@ function saRenderReport() {
 
     // ═══ 3. By Employee + Project ═══
     var empAggs = {};
-    records.forEach(function(r) {
+    records.forEach(function (r) {
         var key = r.employeeId + '_' + (r.projectId || 0);
         if (!empAggs[key]) {
             empAggs[key] = makeAgg();
@@ -2858,14 +3238,14 @@ function saRenderReport() {
         addRec(empAggs[key], r);
     });
 
-    var empRows = Object.keys(empAggs).map(function(k) { return empAggs[k]; })
-        .sort(function(a, b) { return b._total - a._total; });
+    var empRows = Object.keys(empAggs).map(function (k) { return empAggs[k]; })
+        .sort(function (a, b) { return b._total - a._total; });
 
     var empTable = saReportTable('By Employee', [
         { key: '_name', label: 'Employee', align: 'left' },
         { key: '_siteName', label: 'Site', align: 'left' },
         { key: '_projName', label: 'Project', align: 'left' }
-    ], empRows, true, function(agg) {
+    ], empRows, true, function (agg) {
         return {
             _name: agg._name,
             _siteName: saGetSiteName(agg._siteId || 0),
@@ -2875,7 +3255,7 @@ function saRenderReport() {
 
     // ═══ 4. By Project ═══
     var projAggs = {};
-    records.forEach(function(r) {
+    records.forEach(function (r) {
         var key = r.projectId || 0;
         if (!projAggs[key]) {
             projAggs[key] = makeAgg();
@@ -2884,12 +3264,12 @@ function saRenderReport() {
         addRec(projAggs[key], r);
     });
 
-    var projRows = Object.keys(projAggs).map(function(k) { return projAggs[k]; })
-        .sort(function(a, b) { return b._total - a._total; });
+    var projRows = Object.keys(projAggs).map(function (k) { return projAggs[k]; })
+        .sort(function (a, b) { return b._total - a._total; });
 
     var projTable = saReportTable('By Project', [
         { key: '_name', label: 'Project', align: 'left' }
-    ], projRows, true, function(agg) {
+    ], projRows, true, function (agg) {
         return { _name: agg._name };
     }, 'proj');
 
@@ -2897,7 +3277,7 @@ function saRenderReport() {
     var siteTable = '';
     if (isAdmin) {
         var siteAggs = {};
-        records.forEach(function(r) {
+        records.forEach(function (r) {
             var key = r.siteId || 0;
             if (!siteAggs[key]) {
                 siteAggs[key] = makeAgg();
@@ -2906,19 +3286,19 @@ function saRenderReport() {
             addRec(siteAggs[key], r);
         });
 
-        var siteRows = Object.keys(siteAggs).map(function(k) { return siteAggs[k]; })
-            .sort(function(a, b) { return b._total - a._total; });
+        var siteRows = Object.keys(siteAggs).map(function (k) { return siteAggs[k]; })
+            .sort(function (a, b) { return b._total - a._total; });
 
         siteTable = saReportTable('By Site', [
             { key: '_name', label: 'Site', align: 'left' }
-        ], siteRows, true, function(agg) {
+        ], siteRows, true, function (agg) {
             return { _name: agg._name };
         }, 'site');
     }
 
     // ═══ 6. Daily Summary ═══
     var dayAggs = {};
-    records.forEach(function(r) {
+    records.forEach(function (r) {
         if (!dayAggs[r.date]) {
             dayAggs[r.date] = makeAgg();
             dayAggs[r.date]._name = r.date;
@@ -2926,12 +3306,12 @@ function saRenderReport() {
         addRec(dayAggs[r.date], r);
     });
 
-    var dayRows = Object.keys(dayAggs).map(function(k) { return dayAggs[k]; })
-        .sort(function(a, b) { return a._name.localeCompare(b._name); });
+    var dayRows = Object.keys(dayAggs).map(function (k) { return dayAggs[k]; })
+        .sort(function (a, b) { return a._name.localeCompare(b._name); });
 
     var dayTable = saReportTable('Daily Summary', [
         { key: '_name', label: 'Date', align: 'left' }
-    ], dayRows, true, function(agg) {
+    ], dayRows, true, function (agg) {
         return { _name: agg._name };
     }, 'day');
 
@@ -2940,22 +3320,22 @@ function saRenderReport() {
 
     // ← 首次才有动画，更新数据不播
     if (_saReportFirstLoad) {
-        setTimeout(function() {
-            container.querySelectorAll('.bar-grow').forEach(function(bar, i) {
-                setTimeout(function() {
+        setTimeout(function () {
+            container.querySelectorAll('.bar-grow').forEach(function (bar, i) {
+                setTimeout(function () {
                     bar.style.height = bar.getAttribute('data-h') + '%';
                 }, i * 30);
             });
         }, 300);
     } else {
-        container.querySelectorAll('.bar-grow').forEach(function(bar) {
+        container.querySelectorAll('.bar-grow').forEach(function (bar) {
             bar.style.height = bar.getAttribute('data-h') + '%';
         });
-        container.querySelectorAll('.stat-anim').forEach(function(el) {
+        container.querySelectorAll('.stat-anim').forEach(function (el) {
             el.classList.remove('stat-anim');
             el.style.opacity = '1';
         });
-        container.querySelectorAll('.crud-anim').forEach(function(el) {
+        container.querySelectorAll('.crud-anim').forEach(function (el) {
             el.classList.remove('crud-anim');
         });
     }
@@ -2997,10 +3377,10 @@ function saMoveTip(e) {
 /* ═══ Employee Hours Bar (Horizontal) ═══ */
 function saReportEmployeeBar(records) {
     var empAggs = {};
-    records.forEach(function(r) {
+    records.forEach(function (r) {
         if (!empAggs[r.employeeId]) {
             empAggs[r.employeeId] = {};
-            SA_DB.rates.forEach(function(rt) { empAggs[r.employeeId][rt.name] = 0; });
+            SA_DB.rates.forEach(function (rt) { empAggs[r.employeeId][rt.name] = 0; });
             empAggs[r.employeeId]._name = r.employeeName;
             empAggs[r.employeeId]._total = 0;
         }
@@ -3008,18 +3388,18 @@ function saReportEmployeeBar(records) {
         empAggs[r.employeeId]._total += parseFloat(r.hours) || 0;
     });
 
-    var emps = Object.keys(empAggs).map(function(k) { return empAggs[k]; })
-        .sort(function(a, b) { return b._total - a._total; })
+    var emps = Object.keys(empAggs).map(function (k) { return empAggs[k]; })
+        .sort(function (a, b) { return b._total - a._total; })
         .slice(0, 10);
 
     if (!emps.length) return '';
 
     var maxVal = 0;
-    emps.forEach(function(e) { if (e._total > maxVal) maxVal = e._total; });
+    emps.forEach(function (e) { if (e._total > maxVal) maxVal = e._total; });
     if (maxVal === 0) maxVal = 1;
 
-    var rows = emps.map(function(e, i) {
-        var segments = SA_DB.rates.map(function(r) {
+    var rows = emps.map(function (e, i) {
+        var segments = SA_DB.rates.map(function (r) {
             var v = e[r.name] || 0;
             if (v <= 0) return '';
             var pct = (v / e._total) * 100;
@@ -3048,7 +3428,7 @@ function saReportEmployeeBar(records) {
             + '</div>';
     }).join('');
 
-    var legend = SA_DB.rates.map(function(r) {
+    var legend = SA_DB.rates.map(function (r) {
         var c = SA_RATE_COLORS[r.name] || '#6b7280';
         return '<div style="display:flex;align-items:center;gap:5px">'
             + '<div style="width:12px;height:12px;border-radius:4px;background:' + c + '"></div>'
@@ -3067,23 +3447,23 @@ function saReportEmployeeBar(records) {
 function saReportDonut(records) {
     var totals = {};
     var grand = 0;
-    SA_DB.rates.forEach(function(r) { totals[r.name] = 0; });
+    SA_DB.rates.forEach(function (r) { totals[r.name] = 0; });
 
-    records.forEach(function(r) {
+    records.forEach(function (r) {
         totals[r.rateType] = (totals[r.rateType] || 0) + (parseFloat(r.hours) || 0);
         grand += parseFloat(r.hours) || 0;
     });
 
     if (grand === 0) return '';
 
-    var visible = SA_DB.rates.filter(function(r) { return (totals[r.name] || 0) > 0; });
+    var visible = SA_DB.rates.filter(function (r) { return (totals[r.name] || 0) > 0; });
 
     var cx = 70, cy = 70, r = 70, ri = 44;
     var circumference = 2 * Math.PI * ((r + ri) / 2);
     var strokeW = r - ri;
     var offset = 0;
 
-    var svgPaths = visible.map(function(rate) {
+    var svgPaths = visible.map(function (rate) {
         var v = totals[rate.name];
         var pct = (v / grand) * 100;
         var c = SA_RATE_COLORS[rate.name] || '#6b7280';
@@ -3107,7 +3487,7 @@ function saReportDonut(records) {
         return path;
     }).join('');
 
-    var legendRows = SA_DB.rates.map(function(r, i) {
+    var legendRows = SA_DB.rates.map(function (r, i) {
         var v = totals[r.name] || 0;
         var pct = grand > 0 ? ((v / grand) * 100).toFixed(1) : '0.0';
         var c = SA_RATE_COLORS[r.name] || '#6b7280';
@@ -3139,15 +3519,14 @@ function saReportDonut(records) {
 /* ═══ Report Table with Pagination ═══ */
 function saReportTable(title, extraCols, data, showTotal, transform, tableKey) {
     // Rate headers
-    var rateHeaders = SA_DB.rates.map(function(r) {
+    var rateHeaders = SA_DB.rates.map(function (r) {
         var c = SA_RATE_COLORS[r.name] || '#6b7280';
         return '<th style="text-align:right;background:' + c + '15">'
-            + esc(SHORT[r.name] || r.label)
-            + '<br><span style="font-size:.65rem;opacity:.7">x' + parseFloat(r.multiplier).toFixed(1) + '</span></th>';
+            + esc(SHORT[r.name] || r.label) + '</th>';
     }).join('');
 
     // Extra headers
-    var extraHeaders = extraCols.map(function(c) {
+    var extraHeaders = extraCols.map(function (c) {
         return '<th style="text-align:' + (c.align || 'left') + '">' + esc(c.label) + '</th>';
     }).join('');
 
@@ -3195,24 +3574,24 @@ function saReportTable(title, extraCols, data, showTotal, transform, tableKey) {
     var pageData = data.slice(start, start + curSize);
 
     // Grand totals for ALL data (not just current page)
-    var grand = SA_DB.rates.map(function(r) { return 0; });
+    var grand = SA_DB.rates.map(function (r) { return 0; });
     var grandTotal = 0, grandAmount = 0;
-    data.forEach(function(agg) {
+    data.forEach(function (agg) {
         grandTotal += agg._total;
         grandAmount += agg._amount;
-        SA_DB.rates.forEach(function(r, ri) {
+        SA_DB.rates.forEach(function (r, ri) {
             grand[ri] += agg[r.name] || 0;
         });
     });
 
     // ── Rows ──
-    var rows = pageData.map(function(agg, i) {
+    var rows = pageData.map(function (agg, i) {
         var extra = transform ? transform(agg) : {};
-        var extraCells = extraCols.map(function(c) {
+        var extraCells = extraCols.map(function (c) {
             return '<td style="text-align:' + (c.align || 'left') + '">' + esc(extra[c.key] || '—') + '</td>';
         }).join('');
 
-        var rateCells = SA_DB.rates.map(function(r) {
+        var rateCells = SA_DB.rates.map(function (r) {
             var c = SA_RATE_COLORS[r.name] || '#6b7280';
             var v = agg[r.name] || 0;
             return '<td style="text-align:right;font-family:var(--font-m);color:' + (v > 0 ? c : 'var(--main-text3)') + '">' + (v > 0 ? v.toFixed(1) : '—') + '</td>';
@@ -3230,7 +3609,7 @@ function saReportTable(title, extraCols, data, showTotal, transform, tableKey) {
     // ── Total row ──
     var totalRow = '';
     if (showTotal && data.length) {
-        var rateTotals = SA_DB.rates.map(function(r, ri) {
+        var rateTotals = SA_DB.rates.map(function (r, ri) {
             var c = SA_RATE_COLORS[r.name] || '#6b7280';
             return '<td style="text-align:right;font-family:var(--font-m);font-weight:700;color:' + c + '">' + grand[ri].toFixed(1) + '</td>';
         }).join('');
@@ -3318,7 +3697,7 @@ function saExportReport() {
     var records = saReportData;
     if (!isAdmin) {
         var mySiteId = currentUser ? currentUser.siteId || 0 : 0;
-        records = records.filter(function(r) { return r.siteId === mySiteId; });
+        records = records.filter(function (r) { return r.siteId === mySiteId; });
     }
 
     function getProjectName(pid) {
@@ -3331,11 +3710,11 @@ function saExportReport() {
 
     // ── Sheet 1: By Employee + Project ──
     var empAggs = {};
-    records.forEach(function(r) {
+    records.forEach(function (r) {
         var key = r.employeeId + '_' + (r.projectId || 0);
         if (!empAggs[key]) {
             empAggs[key] = {};
-            SA_DB.rates.forEach(function(rt) { empAggs[key][rt.name] = 0; });
+            SA_DB.rates.forEach(function (rt) { empAggs[key][rt.name] = 0; });
             empAggs[key]._name = r.employeeName;
             empAggs[key]._siteId = r.siteId;
             empAggs[key]._projectId = r.projectId || 0;
@@ -3347,14 +3726,14 @@ function saExportReport() {
         empAggs[key]._amount += (parseFloat(r.hours) || 0) * (parseFloat(r.multiplier) || 1);
     });
 
-    var empSheetData = Object.keys(empAggs).map(function(k) {
+    var empSheetData = Object.keys(empAggs).map(function (k) {
         var a = empAggs[k];
         var row = {
             'Employee': a._name,
             'Site': saGetSiteName(a._siteId || 0),
             'Project': getProjectName(a._projectId || 0)
         };
-        SA_DB.rates.forEach(function(r) {
+        SA_DB.rates.forEach(function (r) {
             row[SHORT[r.name] || r.label] = a[r.name] || 0;
         });
         row['Total Hours'] = a._total.toFixed(1);
@@ -3364,11 +3743,11 @@ function saExportReport() {
 
     // ── Sheet 2: By Project ──
     var projAggs = {};
-    records.forEach(function(r) {
+    records.forEach(function (r) {
         var key = r.projectId || 0;
         if (!projAggs[key]) {
             projAggs[key] = {};
-            SA_DB.rates.forEach(function(rt) { projAggs[key][rt.name] = 0; });
+            SA_DB.rates.forEach(function (rt) { projAggs[key][rt.name] = 0; });
             projAggs[key]._name = getProjectName(key);
             projAggs[key]._total = 0;
             projAggs[key]._amount = 0;
@@ -3378,10 +3757,10 @@ function saExportReport() {
         projAggs[key]._amount += (parseFloat(r.hours) || 0) * (parseFloat(r.multiplier) || 1);
     });
 
-    var projSheetData = Object.keys(projAggs).map(function(k) {
+    var projSheetData = Object.keys(projAggs).map(function (k) {
         var a = projAggs[k];
         var row = { 'Project': a._name };
-        SA_DB.rates.forEach(function(r) {
+        SA_DB.rates.forEach(function (r) {
             row[SHORT[r.name] || r.label] = a[r.name] || 0;
         });
         row['Total Hours'] = a._total.toFixed(1);
@@ -3393,11 +3772,11 @@ function saExportReport() {
     var siteSheetData = [];
     if (isAdmin) {
         var siteAggs = {};
-        records.forEach(function(r) {
+        records.forEach(function (r) {
             var key = r.siteId || 0;
             if (!siteAggs[key]) {
                 siteAggs[key] = {};
-                SA_DB.rates.forEach(function(rt) { siteAggs[key][rt.name] = 0; });
+                SA_DB.rates.forEach(function (rt) { siteAggs[key][rt.name] = 0; });
                 siteAggs[key]._name = saGetSiteName(key);
                 siteAggs[key]._total = 0;
                 siteAggs[key]._amount = 0;
@@ -3407,10 +3786,10 @@ function saExportReport() {
             siteAggs[key]._amount += (parseFloat(r.hours) || 0) * (parseFloat(r.multiplier) || 1);
         });
 
-        siteSheetData = Object.keys(siteAggs).map(function(k) {
+        siteSheetData = Object.keys(siteAggs).map(function (k) {
             var a = siteAggs[k];
             var row = { 'Site': a._name };
-            SA_DB.rates.forEach(function(r) {
+            SA_DB.rates.forEach(function (r) {
                 row[SHORT[r.name] || r.label] = a[r.name] || 0;
             });
             row['Total Hours'] = a._total.toFixed(1);
@@ -3421,10 +3800,10 @@ function saExportReport() {
 
     // ── Sheet 4: Daily Summary ──
     var dayAggs = {};
-    records.forEach(function(r) {
+    records.forEach(function (r) {
         if (!dayAggs[r.date]) {
             dayAggs[r.date] = {};
-            SA_DB.rates.forEach(function(rt) { dayAggs[r.date][rt.name] = 0; });
+            SA_DB.rates.forEach(function (rt) { dayAggs[r.date][rt.name] = 0; });
             dayAggs[r.date]._total = 0;
             dayAggs[r.date]._amount = 0;
         }
@@ -3433,10 +3812,10 @@ function saExportReport() {
         dayAggs[r.date]._amount += (parseFloat(r.hours) || 0) * (parseFloat(r.multiplier) || 1);
     });
 
-    var daySheetData = Object.keys(dayAggs).sort().map(function(k) {
+    var daySheetData = Object.keys(dayAggs).sort().map(function (k) {
         var a = dayAggs[k];
         var row = { 'Date': k };
-        SA_DB.rates.forEach(function(r) {
+        SA_DB.rates.forEach(function (r) {
             row[SHORT[r.name] || r.label] = a[r.name] || 0;
         });
         row['Total Hours'] = a._total.toFixed(1);

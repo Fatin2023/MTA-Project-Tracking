@@ -8,7 +8,7 @@
 <title>Multitrade</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=2">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
@@ -135,6 +135,9 @@
     <div class="nav-item" data-page="files" data-tooltip="Files" onclick="adminNav('files',this)">
       <span class="nav-icon">&#128194;</span><span class="nav-label">Files</span>
     </div>
+    <div class="nav-item" data-page="filetitles" data-tooltip="File Titles" onclick="adminNav('filetitles',this)">
+      <span class="nav-icon">&#128196;</span><span class="nav-label">File Titles</span>
+    </div>
   </div>
 </div>
     <div class="sidebar-footer">
@@ -166,6 +169,7 @@
     <div id="admin-report" class="admin-view" style="display:none"></div>
     <div id="admin-worklist" class="admin-view" style="display:none"></div>
     <div id="admin-files" class="admin-view" style="display:none"></div>
+    <div id="admin-filetitles" class="admin-view" style="display:none"></div>
   </div>
   <div class="mobile-header">
     <button class="mobile-menu-btn" onclick="toggleMobileMenu()">&#9776;</button>

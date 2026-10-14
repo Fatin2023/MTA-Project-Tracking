@@ -4422,8 +4422,8 @@ const showEmpUploadFile = () => {
         <div style="flex-shrink:0">
             <h3>Upload File</h3>
             <div class="field">
-                <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Display name, optional, applied to all)</span></label>
-                <input class="input" id="upload-title" placeholder="e.g. Project Report">
+                <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Applied to all)</span></label>
+                <select class="input" id="upload-title">${getTitleOptionsHtml()}</select>
             </div>
             <div class="field">
                 <label>Select File <span style="font-size:.72rem;color:var(--main-text3)">(Max 20MB each · Multiple allowed)</span></label>
@@ -4613,7 +4613,7 @@ const showEmpEditFileModal = id => {
         <div style="flex-shrink:0">
             <h3>Edit File</h3>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-                <div class="field"><label>Title</label><input class="input" id="emp-edit-file-title" value="${esc(f.title || '')}" placeholder="Display name"></div>
+                <div class="field"><label>Title</label><select class="input" id="emp-edit-file-title">${getTitleOptionsHtml(f.title || '')}</select></div>
                 <div class="field"><label>Remark</label><input class="input" id="emp-edit-file-remark" value="${esc(f.remark || '')}" placeholder="Optional remark"></div>
             </div>
             <div class="field" style="margin-bottom:12px">
@@ -7542,8 +7542,8 @@ const showUploadFile = () => {
             <div style="flex-shrink:0">
                 <h3>Upload File</h3>
                 <div class="field">
-                    <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Display name, optional, applied to all)</span></label>
-                    <input class="input" id="upload-title" placeholder="e.g. Project Report">
+                    <label>Title <span style="font-size:.72rem;color:var(--main-text3)">(Applied to all)</span></label>
+                    <select class="input" id="upload-title">${getTitleOptionsHtml()}</select>
                 </div>
                 <div class="field">
                     <label>Select File <span style="font-size:.72rem;color:var(--main-text3)">(Max 20MB each · Multiple allowed)</span></label>
@@ -7735,7 +7735,7 @@ const showEditFileModal = id => {
         <div style="flex-shrink:0">
             <h3>Edit File</h3>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-                <div class="field"><label>Title</label><input class="input" id="edit-file-title" value="${esc(f.title || '')}" placeholder="Display name"></div>
+                <div class="field"><label>Title</label><select class="input" id="edit-file-title">${getTitleOptionsHtml(f.title || '')}</select></div>
                 <div class="field"><label>Remark</label><input class="input" id="edit-file-remark" value="${esc(f.remark || '')}" placeholder="Optional remark"></div>
             </div>
             <div class="field" style="margin-bottom:12px">
@@ -8796,6 +8796,236 @@ const showTaskSubmissions = async id => {
         <button class="btn btn-ghost" onclick="renderFileTasksContent()">Back</button>
     </div>`);
 };
+
+/* ==========================================================
+   FILE TITLES (CRUD)
+   ========================================================== */
+var titleCurrentPage = 1, titlePageSize = 10, titleFilteredData = [];
+var _titleFirstRender = true;
+
+function loadFileTitles() {
+    return api('/file-titles').then(function(data) {
+        DB.fileTitles = data || [];
+    }).catch(function() {
+        if (!DB.fileTitles) DB.fileTitles = [];
+    });
+}
+
+function renderAdminFileTitles() {
+    var el = document.getElementById('admin-filetitles');
+    if (!el) return;
+
+    var focusedId = document.activeElement ? document.activeElement.id : null;
+    var selStart = null, selEnd = null;
+    if (focusedId === 'title-search') {
+        selStart = document.activeElement.selectionStart;
+        selEnd = document.activeElement.selectionEnd;
+    }
+
+    var searchVal = '';
+    var searchEl = document.getElementById('title-search');
+    if (searchEl) searchVal = searchEl.value.toLowerCase();
+
+    var list = (DB.fileTitles || []).slice();
+    if (searchVal) {
+        list = list.filter(function(t) {
+            return (t.name || '').toLowerCase().indexOf(searchVal) !== -1;
+        });
+    }
+
+    titleFilteredData = list;
+    var totalPages = Math.ceil(list.length / titlePageSize) || 1;
+    if (titleCurrentPage > totalPages) titleCurrentPage = totalPages;
+    if (titleCurrentPage < 1) titleCurrentPage = 1;
+    var start = (titleCurrentPage - 1) * titlePageSize;
+    var page = list.slice(start, start + titlePageSize);
+
+    var rows = '';
+    if (list.length === 0) {
+        rows = '<tr><td colspan="3" style="text-align:center;color:var(--main-text3);padding:30px">No titles found</td></tr>';
+    } else {
+        rows = page.map(function(t, i) {
+            return '<tr>'
+                + '<td style="font-family:var(--font-m);color:var(--main-text3)">' + (start + i + 1) + '</td>'
+                + '<td style="font-weight:600">' + esc(t.name) + '</td>'
+                + '<td><div class="actions-cell">'
+                + '<button class="btn-icon" onclick="showEditTitle(' + t.id + ')" title="Edit">&#9998;</button> '
+                + '<button class="btn-icon danger" onclick="confirmDeleteTitle(' + t.id + ')" title="Delete">&#10005;</button>'
+                + '</div></td></tr>';
+        }).join('');
+    }
+
+    var pagHtml = '';
+    if (typeof buildPagination === 'function' && list.length > 0) {
+        pagHtml = buildPagination(list.length, titleCurrentPage, titlePageSize,
+            'goTitlePage', 'changeTitlePageSize', { label: 'titles', sizes: [10, 25, 50] });
+    }
+
+    var animF = _titleFirstRender ? ' pt-anim-filter' : '';
+    var animH = _titleFirstRender ? ' pt-anim-head' : '';
+    var animT = _titleFirstRender ? ' pt-anim-table' : '';
+
+    el.innerHTML = ''
+        + '<div class="app-header' + animF + '">'
+        + '<h2 style="margin:0">File Titles</h2><div class="header-sub">Manage title categories for files</div>'
+        + '</div>'
+        + '<div class="app-body">'
+        + '<div class="' + animH.trim() + '" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">'
+        + '<input type="text" class="input" id="title-search" placeholder="Search title..." value="' + esc(searchVal) + '" oninput="titleCurrentPage=1;renderAdminFileTitles()" style="max-width:280px">'
+        + '<span style="font-size:.78rem;color:var(--main-text3)">' + list.length + ' titles</span>'
+        + '<button class="btn btn-green" onclick="showAddTitle()" style="margin-left:auto">+ Add Title</button>'
+        + '</div>'
+        + '<div class="' + animT.trim() + '"><div class="table-wrap"><table><thead><tr>'
+        + '<th style="width:50px">No</th><th>Title</th><th style="width:90px">Actions</th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+        + pagHtml
+        + '</div>'
+        + '</div>';
+
+    if (focusedId === 'title-search') {
+        var input = document.getElementById('title-search');
+        if (input) {
+            input.focus();
+            input.setSelectionRange(selStart, selEnd);
+        }
+    }
+
+    if (_titleFirstRender) {
+        setTimeout(function() {
+            el.querySelectorAll('.pt-anim-filter, .pt-anim-head, .pt-anim-table').forEach(function(a) {
+                a.classList.remove('pt-anim-filter', 'pt-anim-head', 'pt-anim-table');
+            });
+            _titleFirstRender = false;
+        }, 550);
+    }
+}
+
+/* ── Add Title ── */
+function showAddTitle() {
+    if (typeof showModal !== 'function') return;
+    showModal(
+        '<h3>Add Title</h3>'
+        + '<div class="field"><label>Title Name *</label><input class="input" id="title-name" placeholder="e.g. Monthly Report"></div>'
+        + '<p class="auth-error" id="title-error"></p>'
+        + '<div class="btns" style="margin-top:16px">'
+        + '<button class="btn btn-ghost" onclick="hideModal()">Cancel</button> '
+        + '<button class="btn btn-accent" onclick="doAddTitle()">Save</button>'
+        + '</div>'
+    );
+}
+
+function doAddTitle() {
+    var errEl = document.getElementById('title-error');
+    var name = document.getElementById('title-name').value.trim();
+    if (!name) { errEl.textContent = 'Title name required'; return; }
+
+    var exists = (DB.fileTitles || []).some(function(t) {
+        return (t.name || '').toLowerCase() === name.toLowerCase();
+    });
+    if (exists) { errEl.textContent = 'Title already exists'; return; }
+
+    api('/file-titles', {
+        method: 'POST',
+        body: { name: name }
+    }).then(function() {
+        return loadFileTitles();
+    }).then(function() {
+        hideModal();
+        renderAdminFileTitles();
+    }).catch(function(e) {
+        errEl.textContent = 'Failed: ' + e.message;
+    });
+}
+
+/* ── Edit Title ── */
+function showEditTitle(id) {
+    var title = null;
+    (DB.fileTitles || []).forEach(function(t) { if (t.id === id) title = t; });
+    if (!title || typeof showModal !== 'function') return;
+
+    showModal(
+        '<h3>Edit Title</h3>'
+        + '<div class="field"><label>Title Name *</label><input class="input" id="title-name" value="' + esc(title.name) + '"></div>'
+        + '<p class="auth-error" id="title-error"></p>'
+        + '<div class="btns" style="margin-top:16px">'
+        + '<button class="btn btn-ghost" onclick="hideModal()">Cancel</button> '
+        + '<button class="btn btn-accent" onclick="doEditTitle(' + id + ')">Save</button>'
+        + '</div>'
+    );
+}
+
+function doEditTitle(id) {
+    var errEl = document.getElementById('title-error');
+    var name = document.getElementById('title-name').value.trim();
+    if (!name) { errEl.textContent = 'Title name required'; return; }
+
+    var exists = (DB.fileTitles || []).some(function(t) {
+        return t.id !== id && (t.name || '').toLowerCase() === name.toLowerCase();
+    });
+    if (exists) { errEl.textContent = 'Title already exists'; return; }
+
+    api('/file-titles/' + id, {
+        method: 'PUT',
+        body: { name: name }
+    }).then(function() {
+        return loadFileTitles();
+    }).then(function() {
+        hideModal();
+        renderAdminFileTitles();
+    }).catch(function(e) {
+        errEl.textContent = 'Failed: ' + e.message;
+    });
+}
+
+/* ── Delete Title ── */
+function confirmDeleteTitle(id) {
+    var title = null;
+    (DB.fileTitles || []).forEach(function(t) { if (t.id === id) title = t; });
+    if (!title || typeof showModal !== 'function') return;
+
+    showModal(
+        '<h3>Delete Title</h3>'
+        + '<p style="color:var(--main-text2);line-height:1.6">Delete <strong>' + esc(title.name) + '</strong>?</p>'
+        + '<div class="btns">'
+        + '<button class="btn btn-ghost" onclick="hideModal()">Cancel</button> '
+        + '<button class="btn btn-danger" onclick="doDeleteTitle(' + id + ')">Delete</button>'
+        + '</div>'
+    );
+}
+
+function doDeleteTitle(id) {
+    api('/file-titles/' + id, { method: 'DELETE' }).then(function() {
+        return loadFileTitles();
+    }).then(function() {
+        hideModal();
+        renderAdminFileTitles();
+    }).catch(function(e) {
+        alert('Failed: ' + e.message);
+    });
+}
+
+/* ── Pagination ── */
+function goTitlePage(page) {
+    var totalPages = Math.ceil(titleFilteredData.length / titlePageSize) || 1;
+    titleCurrentPage = Math.max(1, Math.min(page, totalPages));
+    renderAdminFileTitles();
+}
+
+function changeTitlePageSize(size) {
+    titlePageSize = parseInt(size);
+    titleCurrentPage = 1;
+    renderAdminFileTitles();
+}
+
+/* ── Helper: Title dropdown for upload/edit file ── */
+function getTitleOptionsHtml(selectedName) {
+    var titles = DB.fileTitles || [];
+    var html = '<option value="">— Select Title —</option>';
+    titles.forEach(function(t) {
+        html += '<option value="' + esc(t.name) + '"' + (t.name === selectedName ? ' selected' : '') + '>' + esc(t.name) + '</option>';
+    });
+    return html;
+}
 
 
 /*BOM Panel Material Tracking Part */

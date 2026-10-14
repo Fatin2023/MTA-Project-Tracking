@@ -70,6 +70,7 @@ async function adminNav(tab, el) {
         case 'report': renderAdminReport(); break;
         case 'worklist': renderWorkList(); break;
         case 'files': renderAdminFiles(); break;
+        case 'filetitles': renderAdminFileTitles(); break;
     }
     _initPTRDebounce();
 }
