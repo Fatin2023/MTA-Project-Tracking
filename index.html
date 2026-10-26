@@ -74,6 +74,25 @@
     </div>
     <!-- Admin nav 示例 -->
 <div class="sidebar-nav" id="admin-nav">
+
+  <!-- ↓↓↓ Module Switcher ↓↓↓ -->
+  <div class="mod-title">Module</div>
+  <div class="mod-switcher">
+    <div class="mod-card active" onclick="switchModule('attendance')">
+      <div class="mod-icon">&#128202;</div>
+      <div class="mod-label">Project</div>
+    </div>
+    <div class="mod-card" onclick="switchModule('panel')">
+      <div class="mod-icon">&#128230;</div>
+      <div class="mod-label">Panel</div>
+    </div>
+    <div class="mod-card" onclick="switchModule('site')">
+      <div class="mod-icon">&#128203;</div>
+      <div class="mod-label">Site</div>
+    </div>
+  </div>
+  <!-- ↑↑↑ Module Switcher end ↑↑↑ -->
+
   <div class="nav-section" onclick="toggleNavGroup(this)">
     Overview <span class="nav-arrow">▾</span>
   </div>
@@ -315,7 +334,26 @@
       <h1>Multi<span>trade</span></h1>
       <div class="brand-sub">Panel Tracking</div>
     </div>
-    <div class="sidebar-nav" id="pt-nav">
+  <div class="sidebar-nav" id="pt-nav">
+
+  <!-- ↓↓↓ Module Switcher ↓↓↓ -->
+  <div class="mod-title">Module</div>
+  <div class="mod-switcher">
+    <div class="mod-card" onclick="switchModule('attendance')">
+      <div class="mod-icon">&#128202;</div>
+      <div class="mod-label">Project</div>
+    </div>
+    <div class="mod-card active" onclick="switchModule('panel')">
+      <div class="mod-icon">&#128230;</div>
+      <div class="mod-label">Panel</div>
+    </div>
+    <div class="mod-card" onclick="switchModule('site')">
+      <div class="mod-icon">&#128203;</div>
+      <div class="mod-label">Site</div>
+    </div>
+  </div>
+  <!-- ↑↑↑ Module Switcher end ↑↑↑ -->
+
   <div class="nav-section" onclick="toggleNavGroup(this)">
     Main <span class="nav-arrow">▾</span>
   </div>
@@ -523,6 +561,25 @@
       <div class="brand-sub">Site Attendance</div>
     </div>
     <div class="sidebar-nav" id="sa-nav">
+
+      <!-- ↓↓↓ Module Switcher ↓↓↓ -->
+      <div class="mod-title">Module</div>
+      <div class="mod-switcher">
+        <div class="mod-card" onclick="switchModule('attendance')">
+          <div class="mod-icon">&#128202;</div>
+          <div class="mod-label">Project</div>
+        </div>
+        <div class="mod-card" onclick="switchModule('panel')">
+          <div class="mod-icon">&#128230;</div>
+          <div class="mod-label">Panel</div>
+        </div>
+        <div class="mod-card active" onclick="switchModule('site')">
+          <div class="mod-icon">&#128203;</div>
+          <div class="mod-label">Site</div>
+        </div>
+      </div>
+      <!-- ↑↑↑ Module Switcher end ↑↑↑ -->
+
       <div class="nav-section" onclick="toggleNavGroup(this)">
         Site Attendance <span class="nav-arrow">▾</span>
       </div>

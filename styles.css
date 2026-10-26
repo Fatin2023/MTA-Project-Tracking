@@ -978,6 +978,36 @@ h3 {
   transform: translateY(-50%) translateX(0)
 }
 
+/* ── Sidebar Collapsed 时的 Module Switcher ── */
+.sidebar.collapsed .mod-title {
+  display: none;
+}
+
+.sidebar.collapsed .mod-switcher {
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--main-border);
+}
+
+.sidebar.collapsed .mod-card {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  padding: 0;
+  border-radius: 10px;
+  justify-content: center;
+  gap: 0;
+}
+
+.sidebar.collapsed .mod-label {
+  display: none;
+}
+
+.sidebar.collapsed .mod-icon {
+  font-size: 1.1rem;
+}
+
 /* ==========================================================
    NAV GROUP TOGGLE — 干净版，不影响滚动
    ========================================================== */
@@ -4335,4 +4365,76 @@ input[type="radio"] {
 .table-wrap table.sa-matrix-table tbody tr:nth-child(even) td.sa-day-sunday,
 .table-wrap table.sa-matrix-table tbody tr td.sa-day-sunday:last-child {
   background: #fef3c7 !important;
+}
+
+/* ==========================================================
+  MOdule Switcher for Admin
+   ========================================================== */
+
+/* ── Module Switcher ── */
+.mod-title {
+  font-size: .65rem;
+  font-weight: 700;
+  color: var(--main-text3);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  padding: 10px 12px 0;
+}
+
+.mod-switcher {
+  display: flex;
+  gap: 6px;
+  padding: 10px 8px 10px;
+  border-bottom: 1px solid var(--main-border);
+}
+
+.mod-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 2px 6px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all .25s cubic-bezier(.4,0,.2,1);
+}
+
+.mod-card:hover {
+  transform: translateY(-2px);
+}
+
+.mod-card:nth-child(1) { background: #2d2a5e; }
+.mod-card:nth-child(2) { background: #4d3a10; }
+.mod-card:nth-child(3) { background: #1a3a2e; }
+
+.mod-card:nth-child(1).active { background: #6366f1; border-color: #818cf8; }
+.mod-card:nth-child(2).active { background: #f59e0b; border-color: #fbbf24; }
+.mod-card:nth-child(3).active { background: #10b981; border-color: #34d399; }
+
+.mod-card.active { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+.mod-card.active .mod-label { color: #fff; font-weight: 700; }
+
+.mod-icon { font-size: 1.15rem; line-height: 1; }
+
+.mod-label {
+  font-size: .62rem;
+  font-weight: 600;
+  color: #aaa;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+/* Module Switcher - 默认隐藏 */
+.mod-switcher, .mod-title {
+  display: none;
+}
+
+/* admin 显示 */
+.mod-switcher.show {
+  display: flex;
+}
+
+.mod-title.show {
+  display: block;
 }

@@ -21,6 +21,15 @@ const applyNavPermissions = () => {
     const role = getCurrentRole();
     const allowed = ROLE_PERMISSIONS[role] || ['all'];
 
+    // ← admin only display Module Switcher
+    document.querySelectorAll('.mod-switcher, .mod-title').forEach(el => {
+        if (role === 'admin') {
+            el.classList.add('show');
+        } else {
+            el.classList.remove('show');
+        }
+    });
+
     document.querySelectorAll('.sidebar-nav').forEach(nav => {
         nav.querySelectorAll('.nav-group').forEach(group => {
             let hasVisible = false;
@@ -223,4 +232,49 @@ function doLogout() {
 
     window.location.href = window.location.pathname;
     hideModal();
+}
+
+/* ===== Module switch（no need login again） ===== */
+function switchModule(module) {
+    if (!currentUser) return;
+    if (currentUser.role !== 'admin') return;
+
+    localStorage.setItem('multitrade_module', module);
+    document.querySelectorAll('.auth-page,.app-layout').forEach(function(el) { el.classList.remove('active'); });
+
+    // ← 失败时的 fallback
+    function showError(msg) {
+        alert(msg);
+        // 回到 Project Tracking
+        localStorage.setItem('multitrade_module', 'attendance');
+        document.querySelectorAll('.auth-page,.app-layout').forEach(function(el) { el.classList.remove('active'); });
+        document.getElementById('admin-layout').classList.add('active');
+    }
+
+    if (module === 'site') {
+        document.getElementById('sa-layout').classList.add('active');
+        saLoadDB().then(function() {
+            saNav('sa-print');
+        }).catch(function(e) {
+            showError('Site Attendance load failed: ' + (e.message || e));
+        });
+    } else if (module === 'panel') {
+        document.getElementById('panel-layout').classList.add('active');
+        ptLoadDB().then(function() {
+            ptNav('pt-dashboard');
+        }).catch(function(e) {
+            showError('Panel Tracking load failed: ' + (e.message || e));
+        });
+    } else {
+        document.getElementById('admin-layout').classList.add('active');
+        loadDB().then(function() {
+            adminNav('dashboard');
+        }).catch(function(e) {
+            document.getElementById('admin-layout').querySelector('.app-main').innerHTML =
+                '<div style="padding:40px;text-align:center;color:var(--danger)">Load failed: ' + esc(e.message || e) + '</div>';
+        });
+    }
+    applyNavPermissions();
+    updateAvatars();
+    closeMobileMenu();
 }
