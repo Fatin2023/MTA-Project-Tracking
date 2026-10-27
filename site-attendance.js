@@ -148,6 +148,7 @@ function saGetSiteField(empSiteId) {
    ========================================================== */
 var SA_RATE_COLORS = { normal: '#3b82f6', ot: '#f59e0b', sunday: '#ef4444', public_holiday: '#8b5cf6' };
 var SHORT = { normal: 'NH', ot: 'OT', sunday: 'Sun', public_holiday: 'PH' };
+var _saExistingRecords = {};
 
 function saFilterEmpChecklist() {
     var searchEl = document.getElementById('sa-emp-checklist-search');
@@ -698,11 +699,12 @@ function saSaveWorkRecords() {
         return;
     }
 
-    var records = [];
+    var newRecords = [];
+    var updatePromises = [];
+
     document.querySelectorAll('.sa-emp-row-hr').forEach(function (row) {
         var empId = parseInt(row.getAttribute('data-emp-id'));
 
-        // ← 从 SA_DB.employees 找 site_id
         var empSiteId = 0;
         for (var i = 0; i < SA_DB.employees.length; i++) {
             if (SA_DB.employees[i].id === empId) {
@@ -738,9 +740,9 @@ function saSaveWorkRecords() {
             var input = row.querySelector('#sa-hours-' + empId + '-' + r.name);
             var hours = input ? (parseFloat(input.value) || 0) : 0;
             if (hours > 0) {
-                records.push({
+                var key = empId + '_' + r.name;
+                var body = {
                     employeeId: empId,
-                    // ← 传 siteId
                     siteId: empSiteId,
                     date: date,
                     hours: hours,
@@ -750,30 +752,59 @@ function saSaveWorkRecords() {
                     clockIn: clockIn,
                     clockOut: clockOut,
                     duration: duration
-                });
+                };
+
+                if (_saExistingRecords[key]) {
+                    // ← 已有记录 → UPDATE
+                    var recId = _saExistingRecords[key].id;
+                    updatePromises.push(
+                        api('/site-attendance/work-records/' + recId, {
+                            method: 'PUT', body: body
+                        })
+                    );
+                } else {
+                    // ← 没有记录 → 新增
+                    newRecords.push(body);
+                }
             }
         });
     });
 
-    if (!records.length) {
+    if (!newRecords.length && !updatePromises.length) {
         showModal('<h3>No Records</h3><p style="color:var(--main-text2);line-height:1.6">No hours entered to save.</p><div class="btns"><button class="btn btn-ghost" onclick="hideModal()">OK</button></div>');
         return;
     }
 
-    api('/site-attendance/work-records', {
-        method: 'POST', body: { records: records }
-    }).then(function () {
+    var allPromises = [];
+
+    // 新增
+    if (newRecords.length) {
+        allPromises.push(api('/site-attendance/work-records', {
+            method: 'POST', body: { records: newRecords }
+        }));
+    }
+
+    // 更新
+    allPromises = allPromises.concat(updatePromises);
+
+    Promise.all(allPromises).then(function () {
+        var updateCount = updatePromises.length;
+        var newCount = newRecords.length;
         var totalH = 0;
-        records.forEach(function (r) { totalH += r.hours; });
+        newRecords.forEach(function (r) { totalH += r.hours; });
+
         showModal(
             '<h3>✅ Records Saved</h3>'
             + '<p style="color:var(--main-text2);line-height:1.6">'
-            + records.length + ' records saved<br>'
-            + 'Total: <strong>' + totalH.toFixed(1) + ' hours</strong><br>'
+            + (newCount ? newCount + ' new record(s) added<br>' : '')
+            + (updateCount ? updateCount + ' record(s) updated<br>' : '')
             + 'Date: <strong>' + esc(date) + '</strong>'
             + '</p>'
             + '<div class="btns"><button class="btn btn-accent" onclick="hideModal()">OK</button></div>'
         );
+
+        // ← 重新加载存最新 ID
+        saLoadHoursForDate();
         saPreviewPrint();
     }).catch(function (e) {
         showModal('<h3>❌ Save Failed</h3><p style="color:var(--danger);line-height:1.6">' + esc(e.message) + '</p><div class="btns"><button class="btn btn-ghost" onclick="hideModal()">OK</button></div>');
@@ -784,6 +815,9 @@ function saLoadHoursForDate() {
     var dateEl = document.getElementById('sa-print-datetime');
     var date = dateEl ? dateEl.value : '';
     if (!date) { saAutoPreview(); return; }
+
+    // ← 清掉旧的
+    _saExistingRecords = {};
 
     // Clear all inputs
     document.querySelectorAll('.sa-hours-input').forEach(function (input) { input.value = ''; });
@@ -798,6 +832,12 @@ function saLoadHoursForDate() {
 
     api('/site-attendance/work-records?from=' + date + '&to=' + date).then(function (data) {
         data = data || [];
+
+        // ← 存已有记录
+        data.forEach(function (rec) {
+            _saExistingRecords[rec.employeeId + '_' + rec.rateType] = rec;
+        });
+
         var loadedEmps = {};
         data.forEach(function (rec) {
             var input = document.getElementById('sa-hours-' + rec.employeeId + '-' + rec.rateType);
@@ -806,7 +846,6 @@ function saLoadHoursForDate() {
             if (!loadedEmps[rec.employeeId]) {
                 loadedEmps[rec.employeeId] = true;
 
-                // Fill clock in/out
                 if (rec.clockIn) {
                     var p = rec.clockIn.trim().split(/\s+/);
                     if (p.length === 2) {
@@ -832,11 +871,9 @@ function saLoadHoursForDate() {
                     }
                 }
 
-                // Fill project
                 var projSel = document.getElementById('sa-proj-' + rec.employeeId);
                 if (projSel && rec.projectId) projSel.value = rec.projectId;
 
-                // Fill duration
                 var durEl = document.getElementById('sa-duration-' + rec.employeeId);
                 if (durEl && rec.duration) durEl.textContent = parseFloat(rec.duration).toFixed(1) + 'h';
             }
@@ -2031,6 +2068,11 @@ function saRenderRecordsTable() {
                 recordIds: {}, remark: r.remark || ''
             };
         }
+
+        if (r.projectId) groups[key].projectId = r.projectId;
+        if (r.clockIn) groups[key].clockIn = r.clockIn;
+        if (r.clockOut) groups[key].clockOut = r.clockOut;
+        if (r.remark) groups[key].remark = r.remark;
         groups[key].hours[r.rateType] = parseFloat(r.hours) || 0;
         groups[key].totalHours += parseFloat(r.hours) || 0;
         groups[key].totalAmount += (parseFloat(r.hours) || 0) * (parseFloat(r.multiplier) || 1);
@@ -2199,7 +2241,7 @@ function saEditRecordGroup(recIdsJson) {
     // ── Project dropdown (same filter as print sheet) ──
     var projList = window._saProjectList || [];
     if (!projList.length && SA_DB.projects && SA_DB.scopes) {
-        var targetNames = ['panel build', 'project'];
+        var targetNames = ['project'];
         var allowedCategoryIds = (SA_DB.scopes || [])
             .filter(function (s) {
                 var n = (s.name || '').trim().toLowerCase();
@@ -2415,8 +2457,10 @@ function saSaveRecordGroup() {
 
     Promise.all(promises).then(function () {
         hideModal();
-        saLoadRecords();
-        saLoadRecordDetails();
+        setTimeout(function() {
+            saLoadRecords();
+            saLoadRecordDetails();
+        }, 300);
     }).catch(function (e) {
         if (errEl) errEl.textContent = 'Failed: ' + e.message;
     });
@@ -3161,6 +3205,20 @@ function saRenderReport() {
             records = records.filter(function (r) { return r.siteId === selectedSite; });
         }
     }
+
+    // ← 去重：同 employee + date + rateType 只保留一条
+    var seen = {};
+    var uniqueRecords = [];
+    records.forEach(function(r) {
+        var key = r.employeeId + '_' + r.date + '_' + r.rateType;
+        if (seen[key] !== undefined) {
+            uniqueRecords[seen[key]] = r;  // ← 覆盖旧的
+        } else {
+            seen[key] = uniqueRecords.length;
+            uniqueRecords.push(r);
+        }
+    });
+    records = uniqueRecords;
 
     if (!records.length) {
         container.innerHTML = '<div style="text-align:center;color:var(--main-text3);padding:40px">No records found for the selected period</div>';
