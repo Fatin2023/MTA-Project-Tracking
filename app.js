@@ -4031,6 +4031,22 @@ const renderEmployeeFiles = () => {
         + '<option value="">All Folders</option>'
         + driveOpts
         + '</select></div>'
+
+        + '<div style="display:flex;align-items:center;gap:6px">'
+        + '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">File Title</label>'
+        + '<select class="input" id="emp-file-title-filter" onchange="applyEmpFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">'
+        + '<option value="">All Titles</option>'
+        + (() => {
+            var titles = {};
+            (DB.files || []).forEach(function(f) {
+                if (f.title && !titles[f.title]) titles[f.title] = true;
+            });
+            return Object.keys(titles).sort().map(function(t) {
+                return '<option value="' + esc(t) + '">' + esc(t) + '</option>';
+            }).join('');
+        })()
+        + '</select></div>'
+
         + '<div style="display:flex;align-items:center;gap:6px">'
         + '<label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label>'
         + '<input class="input" type="date" id="emp-file-date-from" onchange="applyEmpFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">'
@@ -4211,6 +4227,7 @@ const togglePendingTasksBar = () => {
 const resetEmpFileFilter = () => {
     document.getElementById('emp-file-search').value = '';
     document.getElementById('emp-file-drive-filter').value = '';
+    document.getElementById('emp-file-title-filter').value = '';  // ← 加
     document.getElementById('emp-file-date-from').value = '';
     document.getElementById('emp-file-date-to').value = '';
     empFileCurrentPage = 1;
@@ -4220,6 +4237,7 @@ const resetEmpFileFilter = () => {
 const applyEmpFileFilter = () => {
     const search = (document.getElementById('emp-file-search')?.value || '').toLowerCase();
     const driveFilter = document.getElementById('emp-file-drive-filter')?.value || '';
+    const titleFilter = document.getElementById('emp-file-title-filter')?.value || '';  // ← 加
     const dateFrom = document.getElementById('emp-file-date-from')?.value || '';
     const dateTo = document.getElementById('emp-file-date-to')?.value || '';
     const driveNameMap = {};
@@ -4227,6 +4245,7 @@ const applyEmpFileFilter = () => {
 
     let filtered = (DB.files || []).filter(f => {
         if (driveFilter && String(f.driveSettingId) !== driveFilter) return false;
+        if (titleFilter && (f.title || '') !== titleFilter) return false;  // ← 加
         if (dateFrom || dateTo) {
             const fileDate = f.createdAt ? f.createdAt.slice(0, 10) : '';
             if (!fileDate) return false;
@@ -6850,6 +6869,21 @@ const renderAdminFiles = () => {
                 </select>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
+                <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">File Title</label>
+                <select class="input" id="file-title-filter" onchange="applyFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
+                <option value="">All Titles</option>
+                ${(() => {
+                    var titles = {};
+                    (DB.files || []).forEach(function(f) {
+                        if (f.title && !titles[f.title]) titles[f.title] = true;
+                    });
+                    return Object.keys(titles).sort().map(function(t) {
+                        return '<option value="' + esc(t) + '">' + esc(t) + '</option>';
+                    }).join('');
+                })()}
+                </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
                 <label style="font-size:.78rem;color:var(--main-text3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">From</label>
                 <input class="input" type="date" id="file-date-from" onchange="applyFileFilter()" style="width:150px;padding:8px 10px;font-size:.82rem">
             </div>
@@ -7327,6 +7361,7 @@ const doDeleteNoticeFromModal = async id => {
 const resetFileFilter = () => {
     document.getElementById('file-search').value = '';
     document.getElementById('file-drive-filter').value = '';
+    document.getElementById('file-title-filter').value = '';  // ← 加
     document.getElementById('file-date-from').value = '';
     document.getElementById('file-date-to').value = '';
     fileCurrentPage = 1;
@@ -7336,6 +7371,7 @@ const resetFileFilter = () => {
 const applyFileFilter = () => {
     const search = (document.getElementById('file-search')?.value || '').toLowerCase();
     const driveFilter = document.getElementById('file-drive-filter')?.value || '';
+    const titleFilter = document.getElementById('file-title-filter')?.value || '';  // ← 加
     const dateFrom = document.getElementById('file-date-from')?.value || '';
     const dateTo = document.getElementById('file-date-to')?.value || '';
     const driveNameMap = {};
@@ -7343,6 +7379,7 @@ const applyFileFilter = () => {
 
     let filtered = (DB.files || []).filter(f => {
         if (driveFilter && String(f.driveSettingId) !== driveFilter) return false;
+        if (titleFilter && (f.title || '') !== titleFilter) return false;  // ← 加
         if (dateFrom || dateTo) {
             const fileDate = f.createdAt ? f.createdAt.slice(0, 10) : '';
             if (!fileDate) return false;
